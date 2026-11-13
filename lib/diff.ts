@@ -1,5 +1,5 @@
 // Change diff between two extractions of one source, and the verdict on a saved decision. Pure.
-import type { PricingModel } from "./domain";
+import type { FeatureFact, Meter, PricingModel } from "./domain";
 import { rank, type Assumptions } from "./pricing.ts";
 
 export type Fact = string | number | boolean | null;
@@ -36,24 +36,32 @@ export function diffModels(before: PricingModel | null, after: PricingModel | nu
     .map((path) => ({ path, before: a[path], after: b[path] }));
 }
 
+/** A part of a model that confirmed() took from the old model: its key in Snapshot.evidence and the prefix of its paths in Snapshot.quarantined. */
+export type Kept = { evidence: string; prefix: string };
+
 /**
  * The agreement rule. Extraction is not deterministic, and a single read can report a value that is not on the page, so a
  * fact of a real source changes only when two fresh extractions state the same thing. The result is the old model with
- * exactly those facts replaced. A plan price, a meter or a feature on which the two reads differ keeps its old state.
- * `kept` lists the parts taken from the old model, as "<plan>/base", "<plan>/meter/<id>" or "<plan>/feature/<id>".
+ * exactly those facts replaced. A plan price, a meter or a feature on which the two reads differ keeps its old state,
+ * and is listed in `kept`.
  */
-export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): { model: PricingModel; kept: string[] } {
-  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
-  const kept: string[] = [];
+export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): { model: PricingModel; kept: Kept[] } {
+  // Facts only, in a fixed shape: key order, a missing key or a different quote must not make two equal reads differ.
+  const same = (x: Fact[], y: Fact[]) => x.length === y.length && x.every((v, i) => v === y[i]);
+  const meter = (m: Meter): Fact[] => [m.included ?? null, m.overage_allowed ?? null, ...(m.tiers ?? []).flatMap((t) => [t.up_to ?? null, t.price ?? null, t.per_units ?? null])];
+  const feature = (f: FeatureFact): Fact[] => [f.status ?? null, f.addon_price ?? null];
+  const kept: Kept[] = [];
+  const keep = (name: string, kind: "meter" | "feature", id: string) => kept.push({ evidence: `${name}/${kind}/${id}`, prefix: `${name} / ${id} /` });
+  const keepBase = (name: string) => kept.push({ evidence: `${name}/base`, prefix: `${name} / base price` });
   const plan = (m: PricingModel, name: string) => m.plans?.find((p) => p.name === name);
   /** One list of a plan (meters or features): the entries both reads state alike, else the old entry. */
-  function entries<T extends { quote: string | null }>(kind: string, name: string, id: (x: T) => string, was: T[], x: T[], y: T[]): T[] {
+  function entries<T>(kind: "meter" | "feature", name: string, id: (x: T) => string, facts: (x: T) => Fact[], was: T[], x: T[], y: T[]): T[] {
     const ids = [...new Set([...y, ...x, ...was].map(id))];
     return ids.flatMap((k) => {
       const [o, p, q] = [was, x, y].map((list) => list.find((e) => id(e) === k));
       if (!p && !q) return []; // both reads say it is gone
-      if (p && q && same({ ...p, quote: null }, { ...q, quote: null })) return [q];
-      kept.push(`${name}/${kind}/${k}`);
+      if (p && q && same(facts(p), facts(q))) return [q];
+      keep(name, kind, k);
       return o ? [o] : [];
     });
   }
@@ -62,12 +70,14 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
     const [o, p, q] = [plan(old, name), plan(a, name), plan(b, name)];
     if (!p && !q) return [];
     if (!p || !q) {
-      // Only one read has this plan: it stays as it was, or stays absent.
-      kept.push(`${name}/base`);
+      // Only one read has this plan: every part of it stays as it was, or the plan stays absent.
+      keepBase(name);
+      for (const m of [...(o?.meters ?? []), ...((p ?? q)!.meters ?? [])]) keep(name, "meter", m.metric);
+      for (const f of [...(o?.features ?? []), ...((p ?? q)!.features ?? [])]) keep(name, "feature", f.feature);
       return o ? [o] : [];
     }
-    const price = same([p.base_price, p.custom_pricing], [q.base_price, q.custom_pricing]);
-    if (!price) kept.push(`${name}/base`);
+    const price = same([p.base_price ?? null, p.custom_pricing ?? null], [q.base_price ?? null, q.custom_pricing ?? null]);
+    if (!price) keepBase(name);
     const base = price ? q : (o ?? { base_price: null, custom_pricing: null, price_quote: null });
     return [
       {
@@ -75,12 +85,12 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
         base_price: base.base_price,
         custom_pricing: base.custom_pricing,
         price_quote: base.price_quote,
-        meters: entries("meter", name, (m) => m.metric, o?.meters ?? [], p.meters ?? [], q.meters ?? []),
-        features: entries("feature", name, (f) => f.feature, o?.features ?? [], p.features ?? [], q.features ?? []),
+        meters: entries("meter", name, (m) => m.metric, meter, o?.meters ?? [], p.meters ?? [], q.meters ?? []),
+        features: entries("feature", name, (f) => f.feature, feature, o?.features ?? [], p.features ?? [], q.features ?? []),
       },
     ];
   });
-  return { model: { vendor: b.vendor, currency: b.currency, plans }, kept };
+  return { model: { vendor: a.vendor === b.vendor ? b.vendor : old.vendor, currency: a.currency === b.currency ? b.currency : old.currency, plans }, kept };
 }
 
 /** `tolerance`: the decision is still fine while the chosen vendor costs at most this much more per month than the cheapest. */

@@ -18,7 +18,7 @@ pnpm install
 pnpm dev
 ```
 
-This binds to 127.0.0.1 on port 43117. Use `PORT=<port> pnpm dev` for another port. The app needs `CONTEXT_DEV_API_KEY` in `.env.local` (git-ignored).
+This binds to 127.0.0.1 on port 43117. Use `PORT=<port> pnpm dev` for another port. The dev server uses webpack on purpose: with Turbopack (the default of this Next.js version) a page reloaded in a loop when an API request came before the first page load, which is what an agent does. The app needs `CONTEXT_DEV_API_KEY` in `.env.local` (git-ignored).
 
 Open http://127.0.0.1:43117/ for the list of playgrounds. The built-in example is "Which auth provider should a B2B SaaS use?" at `/p/auth-providers`: the public pricing pages of Clerk, WorkOS, Supabase Auth and Stytch, plus one clearly labelled demo vendor (Northwind Auth) whose pricing page this app serves, so a presenter can change a price live.
 
@@ -66,7 +66,7 @@ There is no auth: the app binds to 127.0.0.1. Every state-changing `/api` route 
 3. Playground: the controls come from the config and the extracted data. Every move recomputes the cost per vendor, the ranking and the crossover points in the browser. After the person pauses, the browser reports the range tried and the final value per control; that summary is for the agent.
 4. Standing decision: the saved state is the assumptions, the chosen vendor and a tolerance. Rule: the decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the tolerance (dollars per month, default 0) more than the cheapest fully priced vendor. `standing()` in `lib/diff.ts` is the one implementation; the screen, the change verdict and the agent tools all use it.
 5. Change detection: a webhook from a Context.dev page monitor, the "Re-check" buttons, the agent's `recheck_playground` and the watch loop of the demo source all call the same `recheck()`. It reads the page text (1 credit) and compares its hash. Only when the text changed, it extracts again (5 credits) and diffs the facts.
-6. Confirmation: extraction is not deterministic. A change on a real source is recorded only when a second fresh extraction reports it too. A fact changes only when both reads state the same thing: `confirmed()` in `lib/diff.ts` keeps the old state of every plan price, meter and feature on which the two reads differ. When the second read fails, nothing of the first read is stored. The demo source needs no confirmation.
+6. Confirmation: extraction is not deterministic. A change on a real source is recorded only when a second fresh extraction reports it too. A fact changes only when both reads state the same thing: `confirmed()` in `lib/diff.ts` keeps the old state of every plan price, meter and feature on which the two reads differ. While such a part exists, the source shows a note and the next re-check reads the page again. When the second read fails, nothing of the first read is stored. The demo source needs no confirmation.
 
 ## Layout
 
@@ -96,7 +96,7 @@ The two-read confirmation can be checked without Context.dev: start `node script
 ## Deployment (not done)
 
 - Environment: `CONTEXT_DEV_API_KEY`, `PUBLIC_BASE_URL` (the public https origin; it turns on "Start webhook monitors" and makes Context.dev read the demo page like any other source), optional `MONITOR_INTERVAL_MINUTES` (10 or more; the API default is one run per day).
-- Auth: the MCP endpoint and the API routes have none. A public deployment needs it before anything else.
+- Auth: the MCP endpoint and the API routes have none. A public deployment needs it before anything else. `pnpm start` binds to 127.0.0.1 unless `HOST` is set.
 - Storage: `lib/store.ts` writes `.data/store.json`. Vercel's filesystem is read-only, so `load()` and `update()` need a real store (for example Upstash Redis or Postgres). The webhook secrets must stay in that server-side store.
 - Webhook URL: `<PUBLIC_BASE_URL>/api/webhooks/context/<playgroundId>/<sourceId>`, set per monitor by "Start webhook monitors".
 - `run/requests.jsonl` logging is skipped where the filesystem is read-only.

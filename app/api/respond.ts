@@ -19,8 +19,6 @@ export const failure = (e: unknown) => Response.json({ error: e instanceof Error
  * Context.dev webhook do not. A request with an Origin must come from the page of this app itself, and the app must be
  * addressed by localhost, by an IP address or by the PUBLIC_BASE_URL host, so a foreign name that is made to resolve to
  * this machine is refused too. Returns the refusal, or null when the request may go on.
- * (A Next.js proxy file would do this in one place, but in dev mode it sends the first page into a reload loop when an
- * API request arrives before the first page load, which is what an agent does.)
  */
 export function refused(req: Request): Response | null {
   const origin = req.headers.get("origin");

@@ -131,10 +131,11 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
   const moved = useRef(false);
   useEffect(() => {
     for (const [k, v] of Object.entries(usage)) seen.current[k] = { min: Math.min(seen.current[k]?.min ?? v, v), max: Math.max(seen.current[k]?.max ?? v, v) };
-    // Nothing is sent until the person changes something: opening the page is not exploring.
-    // The reported selection is the vendor the person clicked, and only while the screen still shows it as selected.
+    // Nothing is sent until the person changes something: opening the page is not exploring, and neither is a change of
+    // the sources in the background. The reported selection is the vendor the person clicked, and only while the screen
+    // shows it as selected.
     const selected = chosen === pick ? chosen : null;
-    const now = JSON.stringify([usage, required, selected]);
+    const now = JSON.stringify([usage, required, chosen]);
     reported.current ??= now;
     if (reported.current !== now) moved.current = true;
     if (!moved.current) return;

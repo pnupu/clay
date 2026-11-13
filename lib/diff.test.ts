@@ -77,7 +77,13 @@ test("agreement: a fact changes only when two fresh extractions state the same t
   // Both reads say the base price is 35. They differ on the tier price, so that meter keeps its old state.
   const partly = confirmed(old, model(35, 0.05), model(35, 0.03));
   assert.deepEqual(diffModels(old, partly.model), [{ path: "Pro / base price", before: 25, after: 35 }]);
-  assert.deepEqual(partly.kept, ["Pro/meter/mau"]);
+  assert.deepEqual(partly.kept, [{ evidence: "Pro/meter/mau", prefix: "Pro / mau /" }]);
+  // Equal facts count as equal, whatever the key order, a missing key or the quote.
+  const reordered = model(35, 0.02, "other words");
+  reordered.plans![0].meters![0].tiers = [{ per_units: 1, price: 0.02 } as never];
+  assert.deepEqual(confirmed(old, model(35, 0.02), reordered).kept, []);
+  // The currency needs two agreeing reads too.
+  assert.equal(confirmed(old, model(25, 0.02), { ...model(25, 0.02), currency: "EUR" }).model.currency, "USD");
   // Full agreement: every fact of the reads is taken.
   assert.deepEqual(diffModels(model(35, 0.03), confirmed(old, model(35, 0.03), model(35, 0.03)).model), []);
   // Same fact, two different new values: nothing changes.

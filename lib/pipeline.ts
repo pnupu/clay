@@ -224,6 +224,8 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   let snapshot = src.snapshot;
   let error: string | null = null;
   let unconfirmed = 0;
+  /** Shown on the source like an error, until a re-check settles it. */
+  let note: string | null = null;
   try {
     if (hash(await readText(src, origin)) !== src.snapshot.textHash) {
       const first = await readModel(before.domain, src, origin);
@@ -233,10 +235,19 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
         // Nothing of the first read is stored before the second one is back: when it fails, the facts stay as they were.
         const second = await readModel(before.domain, src, origin);
         const { model, kept } = confirmed(src.snapshot.model, first.model, second.model);
-        const old = src.snapshot.evidence;
-        next = { ...second, model, evidence: { ...second.evidence, ...Object.fromEntries(kept.filter((k) => k in old).map((k) => [k, old[k]])) } };
-        const paths = new Set([...diffModels(src.snapshot.model, first.model), ...diffModels(src.snapshot.model, second.model)].map((c) => c.path));
-        unconfirmed = [...paths].filter((p) => !diffModels(src.snapshot!.model, model).some((c) => c.path === p)).length;
+        const was = src.snapshot;
+        // Parts kept from the old model keep their old evidence mark and quarantine entries; the rest comes from the second read.
+        const evidence = { ...second.evidence };
+        for (const k of kept) {
+          if (k.evidence in was.evidence) evidence[k.evidence] = was.evidence[k.evidence];
+          else delete evidence[k.evidence];
+        }
+        const ofKept = (q: { path: string }) => kept.some((k) => q.path.startsWith(k.prefix));
+        const quarantined = [...second.quarantined.filter((q) => !ofKept(q)), ...was.quarantined.filter(ofKept)];
+        unconfirmed = kept.length;
+        // While the reads disagree on a part, the old page hash stays, so the next re-check reads the page again.
+        next = { ...second, model, evidence, quarantined, textHash: unconfirmed ? was.textHash : second.textHash };
+        if (unconfirmed) note = `Two reads of this page disagreed on ${unconfirmed} ${unconfirmed === 1 ? "part" : "parts"} of the pricing. ${unconfirmed === 1 ? "It keeps its" : "They keep their"} earlier values, and the next re-check reads the page again.`;
       }
       const changes = diffModels(src.snapshot.model, next.model);
       snapshot = next;
@@ -261,7 +272,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       const p = s.playgrounds[pg];
       if (!p?.sources[id]) return; // revised or removed while the page was read
       // The demo page lives on this app's origin, which changes with the port.
-      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
     });
   }
