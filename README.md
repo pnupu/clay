@@ -224,3 +224,22 @@ Environment variables (Vercel project `clay`, Production):
 - Function duration: the routes that read pricing pages set `maxDuration = 300` seconds. Vercel Pro allows 800 seconds with fluid compute; a build takes 10 to 120 seconds.
 - Webhook URL: `<public base URL>/api/webhooks/context/<playgroundId>/<sourceId>`, set per monitor by "Start webhook monitors". A page monitor run costs 1 Context.dev credit.
 - Known limits: request pacing and the re-check queue are per function instance (see the `lean:` comments in `lib/contextdev.ts` and `lib/pipeline.ts`). `run/requests.jsonl` logging is skipped where the filesystem is read-only.
+
+## Evals: does Clay just work?
+
+`evals/` measures the first-try pass rate of real agents on 20 fixed, vague requests (`evals/requests.ts`): 6 price decisions, 5 look and 4 feel cases on real code (they need the kit and are skipped on a server without it), 3 cases where no playground is right, and 2 return visits. For each case the runner starts a headless agent (`claude` or `codex exec`) with only Clay's MCP tools and file access to one scratch directory, then an objective checker (no model as judge) reads the transcript and opens the playground in headless Chromium as the person: did the agent build when it should, did the build succeed, does the page load without errors, does every control change something visible, do the ranges fit the numbers the person gave, and after the person settles, did the agent read the result back.
+
+```bash
+node --test evals/check.test.ts     # the checker's pure parts
+node evals/selftest.ts              # the checker must fail broken fixture pages for the right reason
+# The whole set, against a server and an agent key (a local dev server needs no key):
+CLAY_ACCESS_KEY=<key> node evals/run.ts --base-url https://clay-steel-nu.vercel.app
+CLAY_ACCESS_KEY=<key> node evals/run.ts --base-url https://clay-steel-nu.vercel.app --subject codex
+# One case, or one kind:
+node evals/run.ts --base-url http://127.0.0.1:43117 --cases price-email
+node evals/run.ts --base-url http://127.0.0.1:43117 --kind price,none --concurrency 2 --timeout 600
+```
+
+Output: `evals/out/<run id>/report.md` (git-ignored) with the pass rate overall and by kind, one row per case with the first failing check, failures grouped by cause, and a contact sheet of screenshots (`contact.html`). `--one-leg <ids|all>` skips the second leg, `--from <run dir>` re-runs the checker on saved transcripts without starting agents, and `node evals/run.ts report <run dir> <run dir>` merges runs into one report. `node evals/fixture-web.ts <port>` is a stand-in for Context.dev that answers for any playground with fictional prices, for agent runs that must not spend requests (start the app with `CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture CONTEXT_DEV_DAILY_CAP=0`).
+
+Everything that depends on Clay's tool names, tool results and page markup is in `evals/adapter.ts`. Change that file when the tools or the page change. Each agent run uses the person's own model subscription, and a build on a real server spends Context.dev requests.

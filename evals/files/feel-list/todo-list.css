@@ -1,0 +1,9 @@
+/* Items get .entering when added and .leaving before removal (the script removes the node after --leave-ms). */
+.todo-list { --enter-ms: 0ms; --leave-ms: 0ms; --shift-px: 0px; list-style: none; padding: 0; width: 320px; }
+.todo-list li {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  transition: opacity var(--enter-ms) linear, transform var(--enter-ms) linear;
+}
+.todo-list li.entering { opacity: 0; transform: translateY(var(--shift-px)); }
+.todo-list li.leaving { opacity: 0; transition-duration: var(--leave-ms); }

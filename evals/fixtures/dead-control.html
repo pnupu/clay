@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: a playground with a dead control</title>
+<!-- Same markup hooks as the real playground page. The first slider drives the ranking; the second one drives nothing. -->
+<main class="shell">
+  <h1>Which email service should our app use? (fixture)</h1>
+  <section class="card controls">
+    <div class="control"><label for="emails_per_month">Emails per month</label><input id="emails_per_month" type="range" min="0" max="1000" value="100"></div>
+    <div class="control"><label for="seats">Seats</label><input id="seats" type="range" min="0" max="1000" value="100"></div>
+  </section>
+  <section class="results">
+    <ol class="rank">
+      <li class="vendor"><span class="name">1. Alpha Mail</span> <span class="cost" id="a"></span></li>
+      <li class="vendor"><span class="name">2. Beta Mail</span> <span class="cost" id="b"></span></li>
+    </ol>
+  </section>
+</main>
+<script>
+  const emails = document.getElementById("emails_per_month");
+  const draw = () => { a.textContent = "$" + (10 + Number(emails.value)); b.textContent = "$" + (40 + Number(emails.value) / 2); };
+  emails.addEventListener("input", draw);
+  draw();
+</script>

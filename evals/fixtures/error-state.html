@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: a playground in an error state</title>
+<main class="shell">
+  <h1>Which email service should our app use? (fixture)</h1>
+  <p class="alert">Alpha Mail: Context.dev POST /web/scrape -> 500 FIXTURE_FAILURE fixture read failed</p>
+  <section class="card controls"><div class="control"><input id="emails_per_month" type="range" min="0" max="1000" value="100"></div></section>
+  <section class="results"><ol class="rank"></ol></section>
+</main>
+<script>console.error("fixture console error");</script>

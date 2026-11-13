@@ -1,0 +1,136 @@
+// Unit tests of the checker's pure parts. Run: node --test evals/check.test.ts
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { creation, directAnswer, fileMatches, lastBuild, namesChoice, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
+import { CASES } from "./requests.ts";
+
+const dim = (id: string, min: number, max: number, initial: number, label = id, unit = "units") => ({ id, label, unit, min, max, initial });
+const call = (tool: string, input: Record<string, unknown> = {}, result: unknown = {}, isError = false): Call => ({ tool, mcp: true, input, result: typeof result === "string" ? result : JSON.stringify(result), isError });
+const byId = (id: string) => CASES.find((c) => c.id === id)!;
+
+test("the request set: 20 cases with unique ids, no product words in a request", () => {
+  assert.equal(CASES.length, 20);
+  assert.equal(new Set(CASES.map((c) => c.id)).size, 20);
+  for (const c of CASES) assert.doesNotMatch(c.request, /clay|playground|slider|create_|mcp/i, c.id);
+  assert.deepEqual(Object.fromEntries(["price", "look", "feel", "none", "return"].map((k) => [k, CASES.filter((c) => c.kind === k).length])), { price: 6, look: 5, feel: 4, none: 3, return: 2 });
+  assert.ok(CASES.filter((c) => c.kind === "look" || c.kind === "feel").every((c) => c.needsKit));
+});
+
+test("range sanity: the given number must be the starting value", () => {
+  const g = { about: /email/i, value: 30_000, mentioned: [30_000, 200_000] };
+  assert.equal(rangeProblem(g, dim("emails", 5_000, 300_000, 30_000)), null);
+  assert.match(rangeProblem(g, dim("emails", 5_000, 300_000, 50_000))!, /starts at 50,000, the person said 30,000/);
+});
+
+test("range sanity: the range must contain every number the person mentioned", () => {
+  const g = { about: /email/i, value: 30_000, mentioned: [30_000, 200_000] };
+  assert.match(rangeProblem(g, dim("emails", 10_000, 100_000, 30_000))!, /leaves out 200,000/);
+  assert.match(rangeProblem(g, dim("emails", 30_001, 300_000, 30_001))!, /leaves out 30,000/);
+});
+
+test("range sanity: a range more than 20 times what the person mentioned fails", () => {
+  const g = { about: /hour/i, value: 200 };
+  assert.equal(rangeProblem(g, dim("hours", 0, 4_000, 200)), null);
+  assert.match(rangeProblem(g, dim("hours", 0, 4_001, 200))!, /more than 20 times the 200/);
+  assert.match(rangeProblem({ about: /email/i, value: 30_000 }, dim("emails", 0, 5_000_000, 30_000))!, /more than 20 times/);
+});
+
+test("range sanity: a unit of thousands or millions is the same number", () => {
+  const g = { about: /input/i, value: 40_000_000, mentioned: [40_000_000, 200_000_000] };
+  assert.equal(rangeProblem(g, dim("input_mtok", 5, 400, 40)), null);
+  assert.match(rangeProblem(g, dim("input_mtok", 5, 100, 40))!, /leaves out 200,000,000/);
+});
+
+test("ranges: the control is found by id, label or unit; a missing control fails; no numbers is not applicable", () => {
+  const given = byId("price-auth").given;
+  assert.equal(ranges(given, [dim("mau", 1_000, 100_000, 12_000, "Monthly active users"), dim("sso", 0, 50, 5, "Enterprise SSO connections")]).status, "pass");
+  const r = ranges(given, [dim("mau", 1_000, 100_000, 12_000)]);
+  assert.equal(r.status, "fail");
+  assert.match(r.reason, /no control for/);
+  assert.equal(ranges(undefined, []).status, "na");
+  assert.equal(ranges(given, null).status, "fail");
+  // Two controls match "input": one of them being right is enough.
+  assert.equal(ranges([{ about: /input/i, value: 40 }], [dim("cached_input", 0, 100, 10), dim("input", 0, 400, 40)]).status, "pass");
+});
+
+test("tool use: a build case needs the create tool, a no-playground case must not build", () => {
+  assert.equal(toolUse(byId("price-email"), [call("create_playground")], null).status, "pass");
+  const none = toolUse(byId("price-email"), [call("read_playground")], null);
+  assert.deepEqual([none.id, none.status], ["tool_use", "fail"]);
+  assert.match(toolUse(byId("price-email"), [], null).reason, /never called create_playground or any Clay tool/);
+  assert.equal(toolUse(byId("none-fact"), [], null).status, "pass");
+  assert.deepEqual([toolUse(byId("none-fact"), [call("create_playground")], null).id, toolUse(byId("none-exact"), [call("revise_playground")], null).status], ["no_playground", "fail"]);
+  // A tool of the same name from another server does not count.
+  assert.equal(toolUse(byId("price-email"), [{ ...call("create_playground"), mcp: false }], null).status, "fail");
+});
+
+test("tool use: return visits work on the prepared playground", () => {
+  const holds = byId("return-holds");
+  assert.equal(toolUse(holds, [call("read_playground", { playground_id: "p1" }), call("recheck_playground", { playground_id: "p1" })], "p1").status, "pass");
+  assert.match(toolUse(holds, [call("read_playground", { playground_id: "p1" })], "p1").reason, /never called recheck_playground/);
+  assert.match(toolUse(holds, [call("read_playground", { playground_id: "other" }), call("recheck_playground", { playground_id: "other" })], "p1").reason, /never called read_playground on p1/);
+  assert.match(toolUse(holds, [call("create_playground")], "p1").reason, /built a new playground/);
+  const compare = byId("return-compare");
+  assert.equal(toolUse(compare, [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "ses", name: "Amazon SES" }] })], "p1").status, "pass");
+  assert.match(toolUse(compare, [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "sendgrid", name: "SendGrid" }] })], "p1").reason, /did not add/);
+});
+
+test("creation: a failed build, a repaired build, and a problem left untold", () => {
+  const broken = { playground_id: "p1", url: "http://x/p/p1", problems: ["mailgun: the pricing page was not read (timeout). Fix: ..."] };
+  const fine = { playground_id: "p1", url: "http://x/p/p1", problems: ["resend: cannot be ranked at the current values because the page does not state: x. ... it is a fact about the page"] };
+  assert.equal(creation([call("create_playground", {}, "The config is not valid.", true)], "").status, "fail");
+  assert.equal(creation([call("create_playground", {}, "invalid", true), call("create_playground", {}, fine)], "").status, "pass");
+  assert.equal(creation([call("create_playground", {}, broken), call("revise_playground", {}, fine)], "").status, "pass");
+  const left = creation([call("create_playground", {}, broken)], "Here is your page.");
+  assert.equal(left.status, "fail");
+  assert.match(left.reason, /not told: mailgun/);
+  assert.equal(creation([call("create_playground", {}, broken)], "Mailgun's page could not be read, so its row is empty.").status, "pass");
+  assert.equal(creation([], "").status, "na");
+  // An id that an earlier run left on the server: the sample is void, and the cause is the harness, not the agent.
+  const collided = creation([call("create_playground", { id: "p1" }, 'A playground with id "p1" already exists at http://x/p/p1. To change it, call revise_playground.', true), call("revise_playground", {}, fine)], "");
+  assert.deepEqual([collided.id, collided.status], ["agent_run", "fail"]);
+  assert.match(collided.reason, /left by an earlier run/);
+  // Every build call timed out at the client: its own cause, and the id the agent asked for is still checked.
+  const timedOut = [call("create_playground", { id: "p9" }, "The operation timed out.", true), call("revise_playground", { playground_id: "p9" }, "The operation timed out.", true)];
+  assert.deepEqual([creation(timedOut, "").id, creation(timedOut, "").status, lastBuild(timedOut).attempted, lastBuild(timedOut).last], ["build_timeout", "fail", "p9", null]);
+  assert.equal(creation([call("create_playground", {}, { playground_id: "p1", stopped: "Reading stopped early: 429" })], "").id, "agent_run");
+});
+
+test("hand-back: the agent must read the playground and name the saved choice", () => {
+  assert.equal(readBack([call("read_playground", { playground_id: "p1" })], "p1").status, "pass");
+  assert.equal(readBack([call("read_playground", {})], "p1").status, "fail");
+  assert.equal(namesChoice("You settled on postmark at 45,000 emails.", "Postmark").status, "pass");
+  assert.equal(namesChoice("You settled on the cheapest one.", "Postmark").status, "fail");
+});
+
+test("hand-back comparison: the file must change and hold every settled output exactly", () => {
+  const before = 'const primary = "bg-blue-600 px-2 py-1 rounded-sm";\nexport const SPRING = { stiffness: 120, damping: 4, mass: 1 };';
+  const outputs = { className: "bg-blue-600 px-4 py-2 rounded-lg shadow-sm", spring: { stiffness: 260, damping: 22.5, mass: 1 } };
+  const good = 'const primary = "bg-blue-600 px-4 py-2 rounded-lg shadow-sm";\nexport const SPRING = { stiffness: 260, damping: 22.5, mass: 1 };';
+  assert.equal(fileMatches(before, good, outputs).status, "pass");
+  assert.match(fileMatches(before, before, outputs).reason, /did not change/);
+  assert.match(fileMatches(before, null, outputs).reason, /gone/);
+  // A class string with one class changed is not the settled string.
+  assert.match(fileMatches(before, good.replace("rounded-lg", "rounded-md"), outputs).reason, /lacks the settled className/);
+  // 22.5 must be there as a number: 22 or 225 do not count, 22.50 does.
+  assert.match(fileMatches(before, good.replace("22.5", "22"), outputs).reason, /lacks the settled spring.damping/);
+  assert.match(fileMatches(before, good.replace("22.5", "225"), outputs).reason, /spring.damping/);
+  assert.equal(fileMatches(before, good.replace("22.5", "22.50"), outputs).status, "pass");
+  assert.match(fileMatches(before, good, {}).reason, /no outputs/);
+});
+
+test("no-playground cases: the direct answer or the direct edit", () => {
+  assert.equal(directAnswer(byId("none-fact"), "Return 429 Too Many Requests.", null, null).status, "pass");
+  assert.equal(directAnswer(byId("none-fact"), "Return 503.", null, null).status, "fail");
+  const exact = byId("none-exact");
+  assert.equal(directAnswer(exact, "", "rounded-sm", "rounded-[8px]").status, "pass");
+  assert.equal(directAnswer(exact, "", "rounded-sm", "rounded-lg").status, "pass");
+  assert.match(directAnswer(exact, "", "rounded-sm", "rounded-md").reason, /not to what was asked/);
+  assert.match(directAnswer(exact, "", "rounded-sm", "rounded-sm").reason, /did not change/);
+});
+
+test("verdict: one failing check fails the case, and the first one is reported", () => {
+  assert.equal(verdict([{ id: "a", status: "pass", reason: "" }, { id: "b", status: "na", reason: "" }]).result, "pass");
+  const v = verdict([{ id: "a", status: "pass", reason: "" }, { id: "b", status: "fail", reason: "x" }, { id: "c", status: "fail", reason: "y" }]);
+  assert.deepEqual([v.result, v.firstFail?.id], ["fail", "b"]);
+});
