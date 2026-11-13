@@ -1,6 +1,7 @@
 // Acts as the person in a headless browser: opens a playground, moves controls, selects a vendor, saves a decision, takes screenshots.
-// Usage: node scripts/person.ts <playground url> <steps json> [screenshot prefix]
+// Usage: [OWNER_KEY_FILE=<file>] node scripts/person.ts <playground url> <steps json> [screenshot prefix]
 // Steps: {"set": {"<metric id>": [values...]}, "require": ["<feature id>"], "select": "<vendor name>", "tolerance": 25, "save": true}
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 
 const [url, stepsJson = "{}", shot = "person"] = process.argv.slice(2);
@@ -9,6 +10,11 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/
 const page = await browser.newPage({ viewport: { width: steps.width ?? 1440, height: 1100 } });
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(String(e)));
+// OWNER_KEY_FILE: become the owner first, through the owner link (/enter#key=...), as a person would. Without it the visit is anonymous.
+if (process.env.OWNER_KEY_FILE) {
+  await page.goto(`${new URL(url).origin}/enter#key=${readFileSync(process.env.OWNER_KEY_FILE, "utf8").trim()}`);
+  await page.waitForURL((u) => u.pathname === "/" && !u.hash, { timeout: 20000 });
+}
 await page.goto(url, { waitUntil: "networkidle" });
 await page.waitForSelector("h1");
 await page.screenshot({ path: `run/shots/${shot}-1-opened.png`, fullPage: true });
@@ -30,5 +36,5 @@ if (steps.save) {
 }
 await page.waitForTimeout(500);
 await page.screenshot({ path: `run/shots/${shot}-2-done.png`, fullPage: true });
-console.log(JSON.stringify({ answer: await page.locator(".answer").first().innerText().catch(() => null), verdict: await page.locator(".verdict").first().innerText().catch(() => null), rule: await page.locator(".verdict + p").first().innerText().catch(() => null), badges: await page.locator("li.vendor:has(.badge.saved) .name").allInnerTexts(), selected: await page.locator("li.vendor.chosen .name").allInnerTexts(), errors }, null, 1));
+console.log(JSON.stringify({ url: page.url(), notice: await page.locator("p", { hasText: "without the owner key" }).count(), disabledButtons: await page.locator("button:disabled").allInnerTexts(), saveButtons: await page.getByRole("button", { name: /Save decision|Replace saved decision|Update saved decision/ }).count(), answer: await page.locator(".answer").first().innerText().catch(() => null), verdict: await page.locator(".verdict").first().innerText().catch(() => null), rule: await page.locator(".verdict + p").first().innerText().catch(() => null), badges: await page.locator("li.vendor:has(.badge.saved) .name").allInnerTexts(), selected: await page.locator("li.vendor.chosen .name").allInnerTexts(), errors }, null, 1));
 await browser.close();

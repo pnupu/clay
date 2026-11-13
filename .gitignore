@@ -51,3 +51,5 @@ run/agent/
 run/fixture-requests.jsonl
 run/dev-fixture.log
 run/fixture.log
+run/prod-*
+run/demo-*.json
