@@ -66,3 +66,11 @@ test("crossover is found at the exact unit where the cheapest vendor changes", (
   const c = crossovers({ a: cheapThenDear, b: flat }, { usage: { mau: 1 }, required: [] }, "mau", 1000, 5_000_000);
   assert.deepEqual(c, [{ at: 15_001, from: "a", to: "b" }]);
 });
+
+test("request pacing: the eleventh request in a minute waits until the first is a minute old", async () => {
+  const { waitFor } = await import("./contextdev.ts");
+  const starts = Array.from({ length: 10 }, (_, i) => 1000 + i * 100); // ten requests within one second
+  assert.equal(waitFor(starts.slice(0, 9), 2000, 10), 0);
+  assert.equal(waitFor(starts, 2000, 10), 59_000); // the first started at 1,000 and frees its slot at 61,000
+  assert.equal(waitFor(starts, 61_000, 10), 0);
+});

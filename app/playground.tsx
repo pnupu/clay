@@ -306,7 +306,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
                   {Object.values(sources).some((s) => s.monitor) ? "Stop webhook monitors" : "Start webhook monitors"}
                 </button>
               ) : (
-                <p className="small muted">Webhook monitors are off: Context.dev needs a public URL to deliver to, and this app runs on localhost. Use Re-check. The demo source is watched every 3 seconds.</p>
+                <p className="small muted">Webhook monitors are off: Context.dev needs a public URL to deliver to, and this app runs on localhost. Use Re-check.{sources.demo?.demo ? " The demo source is watched every 3 seconds." : ""}</p>
               )}
             </section>
 

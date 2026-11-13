@@ -10,6 +10,16 @@ import { load, type Playground } from "./store";
 
 const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the saved tolerance (dollars per month, set by the person, default 0) more than the cheapest fully priced vendor.";
 
+/**
+ * Server instructions. Many MCP clients load tool descriptions only on demand and show the agent just the tool names,
+ * so this short text is what decides whether the agent thinks of the playground at all.
+ */
+export const INSTRUCTIONS = `Decision Playground builds a web page on which a person explores a "which vendor or plan" decision, on prices read live from the vendors' public pricing pages.
+
+When the person asks which service, vendor or plan to choose for a usage-priced product (an API, a SaaS product, a cloud service) and has not fixed what they need, call create_playground first, before you answer from memory or search the web. Prices from memory are out of date. This server reads the current pricing pages and keeps a source quote for every number, and the page lets the person try their own numbers instead of answering your questions. Give them the URL, together with your advice on what a price cannot show (for example reliability or support).
+
+When the person comes back ("what did I decide", "does it still hold", "did prices change"), call read_playground, and recheck_playground for today's prices. When they want to vary or compare something the page lacks, call revise_playground.`;
+
 export const TOOLS = {
   create_playground: `Build a live decision playground for the person: a web page where they compare the vendors of one usage-priced product by moving controls, on prices read from the vendors' public pricing pages right now.
 
@@ -21,7 +31,7 @@ You design the space; the web supplies the facts. A good playground has:
 - Features (checkboxes): the hard requirements the person mentioned, or the one or two that usually decide this choice, and only ones that pricing pages state per plan.
 - No facts. Never put prices, plan names, limits or included quantities in the config. They are extracted from each pricing page, each with a source quote and a check that the number is on the page.
 
-The call reads every pricing page and takes 10 to 60 seconds. The result has the URL to give to the person and, per vendor, what was read: plans, which metrics have prices, numbers that were quarantined (extracted but not found in the page text), and a problems list that says how to fix each problem. If problems shows a broken first build (a page not read, the wrong page, a metric that no page prices), repair it with revise_playground before you hand over the URL. A vendor that "cannot be ranked" because its page does not state a price is a true finding, not a build error.
+The call reads every pricing page and takes 10 to 60 seconds, or up to 2 minutes when requests must wait for the rate limit of the web reader. The result has the URL to give to the person and, per vendor, what was read: plans, which metrics have prices, numbers that were quarantined (extracted but not found in the page text), and a problems list that says how to fix each problem. If problems shows a broken first build (a page not read, the wrong page, a metric that no page prices), repair it with revise_playground before you hand over the URL. For a page that was not read or shows no plans, try once more: give the exact pricing_url, or give only domain so that search finds the page. If the vendor still cannot be priced, remove it and tell the person, so the page has no row they cannot use. A vendor that "cannot be ranked" only at some values, because its page does not state one price, is a true finding and stays.
 
 Then give the person the URL and tell them to explore and to save a decision on the page. Later, read_playground tells you what they tried and settled on.`,
 
@@ -45,7 +55,7 @@ ${HOLDS_RULE} The result gives the verdict with the costs behind it. When the de
 
 Give only what changes. An entry in add_vendors, add_metrics or add_features whose id already exists replaces that entry; this is how you fix a pricing_url, rewrite a describe, or change min, max and initial. The same rules as create_playground apply: no facts in the config.
 
-Cost: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, the features, product or notes changes what is extracted, so every page is read again (10 to 60 seconds). A change of only the question or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed; the result says when it was cleared. The result has the same per-vendor summary and problems list as create_playground.`,
+Cost: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, the features, product or notes changes what is extracted, so every page is read again (10 seconds to 2 minutes). A change of only the question or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed; the result says when it was cleared. The result has the problems list of create_playground, with the per-vendor detail for the pages that were read again. After one failed repair of a vendor, remove it with remove_vendor_ids and tell the person; do not keep trying pages.`,
 };
 
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 1) }] });
@@ -53,19 +63,21 @@ const fail = (message: string) => ({ ...text(message), isError: true });
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function buildServer(origin: string): McpServer {
-  const server = new McpServer({ name: "decision-playground", version: "0.1.0" });
+  const server = new McpServer({ name: "decision-playground", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
   const list = () => Object.values(load().playgrounds).map((p) => ({ playground_id: p.domain.id, question: p.domain.question, url: url(p.domain.id), decision_saved: !!p.decision }));
   /** The playground, or an error that names the ids that exist. */
   const find = (id: string): Playground | string => load().playgrounds[id] ?? `Playground "${id}" does not exist. Existing playground ids: ${list().map((p) => p.playground_id).join(", ")}. Use one of them, or create_playground to build a new one.`;
-  const built = (id: string, extra: object, stop: string | null) => {
-    const p = load().playgrounds[id];
+  /** `detail`: the vendors to describe in full. The others get one line, so a revise does not repeat what the agent already has. */
+  const built = (id: string, extra: object, stop: string | null, detail?: string[]) => {
+    const report = collectionReport(load().playgrounds[id]);
     return text({
       playground_id: id,
       url: url(id),
       ...extra,
       ...(stop ? { stopped: `Reading stopped early: ${stop}. Do not retry now; tell the person.` } : {}),
-      ...collectionReport(p),
+      ...report,
+      vendors: report.vendors.map((v) => (!detail || detail.includes(v.vendor) ? v : { vendor: v.vendor, pricing_page: v.pricing_page, plans_read: v.plans.length, unchanged: true })),
       next: "If problems lists a build error, fix it with revise_playground. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
       note: WEB_TEXT_NOTE,
     });
@@ -123,8 +135,9 @@ export function buildServer(origin: string): McpServer {
         sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
         changes: changed,
         saved_decision: decisionReport(p) ?? "none: the person has not saved a decision yet",
-        ranking_under_saved_assumptions: p.decision ? rankingReport(p, p.decision) : "no saved decision",
-        ranking_at_current_values: rankingReport(p, controlsNow(p)),
+        ...(p.decision ? { ranking_under_saved_assumptions: rankingReport(p, p.decision) } : {}),
+        // The controls may have moved since the decision was saved. When they have not, one ranking says it all.
+        ...(p.decision && JSON.stringify(controlsNow(p)) === JSON.stringify({ usage: p.decision.usage, required: p.decision.required }) ? {} : { ranking_at_current_values: rankingReport(p, controlsNow(p)) }),
         note: WEB_TEXT_NOTE,
       });
     },
@@ -167,7 +180,7 @@ export function buildServer(origin: string): McpServer {
       if (!parsed.ok) return fail(`The revised playground would not be valid. Nothing was changed. Fix these and call revise_playground again:\n- ${parsed.errors.join("\n- ")}`);
       try {
         const r = await revisePlayground(parsed.domain, origin);
-        return built(a.playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person: "Ask the person to reload the page to see the revised playground." }, r.error);
+        return built(a.playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person: "Ask the person to reload the page to see the revised playground." }, r.error, r.recollected);
       } catch (e) {
         return fail(`The playground could not be revised: ${message(e)}`);
       }

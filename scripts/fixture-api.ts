@@ -1,0 +1,50 @@
+// A local stand-in for the Context.dev scrape endpoint, for checks that must not spend real requests.
+// It serves one fictional pricing page per vendor URL. POST /control sets the page text and a queue of base prices:
+// each structured extraction takes the next price from the queue (the last one repeats), so two extractions can disagree.
+// Usage: node scripts/fixture-api.ts <port>, then start the app with
+//   CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture pnpm dev
+import { createServer } from "node:http";
+
+const port = Number(process.argv[2] ?? 0);
+let text = "Fixture Mail pricing. Pro plan: $20 per month. 50,000 emails included, then $1 per 1,000 emails.";
+let prices = [20];
+
+const body = (req: import("node:http").IncomingMessage) =>
+  new Promise<Record<string, unknown>>((resolve) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => resolve(raw ? JSON.parse(raw) : {}));
+  });
+
+createServer(async (req, res) => {
+  const b = await body(req);
+  const send = (data: unknown) => res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(data));
+  if (req.url === "/control") {
+    text = String(b.text ?? text);
+    prices = (b.prices as number[] | undefined) ?? prices;
+    return send({ text, prices });
+  }
+  if (req.url !== "/web/scrape") return res.writeHead(404).end("{}");
+  const wantsJson = (b.formats as { json?: boolean } | undefined)?.json === true;
+  const price = wantsJson ? (prices.length > 1 ? prices.shift()! : prices[0]) : null;
+  send({
+    url: b.url,
+    request_id: "fixture",
+    cache_metadata: { status: "miss", age_ms: 0 },
+    key_metadata: { credits_consumed: 0 },
+    markdown: { requested: true, success: true, data: text },
+    json: wantsJson
+      ? {
+          requested: true,
+          success: true,
+          data: {
+            vendor: "Fixture Mail",
+            currency: "USD",
+            plans: [{ name: "Pro", base_price: price, custom_pricing: false, price_quote: null, meters: { emails: { status: "priced", included: 50000, overage_allowed: true, tiers: [{ up_to: null, price: 1, per_units: 1000 }], quote: "50,000 emails included, then $1 per 1,000 emails" } }, features: {} }],
+          },
+        }
+      : { requested: false, success: null, data: null },
+  });
+}).listen(port, "127.0.0.1", function (this: import("node:net").Server) {
+  console.log(`fixture API on http://127.0.0.1:${(this.address() as import("node:net").AddressInfo).port}`);
+});

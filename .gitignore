@@ -47,3 +47,7 @@ run/dev.pid
 run/port
 run/shots/
 run/requests.jsonl
+run/agent/
+run/fixture-requests.jsonl
+run/dev-fixture.log
+run/fixture.log

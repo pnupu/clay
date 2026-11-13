@@ -11,3 +11,9 @@ export function stateResponse(pg: string, error: string | null = null, status = 
 }
 
 export const failure = (e: unknown) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: e instanceof NotFound ? 404 : 502 });
+
+/** A web page open in the person's browser must not be able to create playgrounds or drive the agent tools: browsers send Origin on such requests, agents and scripts do not. */
+export const crossOrigin = (req: Request) => {
+  const origin = req.headers.get("origin");
+  return origin != null && origin !== new URL(req.url).origin;
+};

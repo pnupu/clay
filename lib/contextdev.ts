@@ -3,7 +3,30 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const BASE = "https://api.context.dev/v1";
+// CONTEXT_DEV_BASE_URL points the client at the local fixture API (scripts/fixture-api.ts) for checks that must not spend requests.
+const FIXTURE = process.env.CONTEXT_DEV_BASE_URL;
+const BASE = FIXTURE ?? "https://api.context.dev/v1";
+
+// New free Context.dev accounts allow 10 requests per minute (docs: openapi.json, rate-limit headers). A playground of five
+// vendors plus one repair needs more than that, so requests wait for a free slot here instead of failing with 429.
+const PER_MINUTE = Number(process.env.CONTEXT_DEV_REQUESTS_PER_MINUTE ?? 10);
+/** Milliseconds until the next request may start, given the start times of earlier requests (oldest first). */
+export function waitFor(starts: number[], now: number, perMinute: number): number {
+  const recent = starts.filter((t) => now - t < 60_000);
+  return recent.length < perMinute ? 0 : recent[recent.length - perMinute] + 60_000 - now;
+}
+const starts: number[] = [];
+let gate: Promise<void> = Promise.resolve();
+/** In-process only, like the store queue. */
+function slot(): Promise<void> {
+  gate = gate.then(async () => {
+    const wait = PER_MINUTE > 0 ? waitFor(starts, Date.now(), PER_MINUTE) : 0;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait + 100));
+    starts.push(Date.now());
+    if (starts.length > 200) starts.splice(0, 100);
+  });
+  return gate;
+}
 
 export class ContextDevError extends Error {
   status: number;
@@ -34,6 +57,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
     } catch {}
     if (used >= cap) throw new ContextDevError(429, "RATE_LIMITED", `Local request cap reached: ${used} of ${cap} Context.dev requests are used (CONTEXT_DEV_REQUEST_CAP). No request was sent.`);
   }
+  await slot();
   const t0 = Date.now();
   const res = await fetch(BASE + path, {
     method,
@@ -47,7 +71,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   try {
     // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
     mkdirSync("run", { recursive: true });
-    appendFileSync("run/requests.jsonl", JSON.stringify({ at: new Date().toISOString(), via: "app", method, path, status: res.status, ms, credits, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
+    appendFileSync(FIXTURE ? "run/fixture-requests.jsonl" : "run/requests.jsonl", JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res.status, ms, credits, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
   } catch {}
   if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
   return { ...(data as T), _ms: ms };
@@ -56,7 +80,9 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
 /** Find a page with Search (POST /web/search). Returns the top result on the vendor's own domain, or null. */
 export async function searchTopUrl(query: string, domain: string) {
   const r = await cd<{ results: { url: string; title: string }[] }>("POST", "/web/search", { query, numResults: 3, includeDomains: [domain] });
-  return { url: r.results?.[0]?.url ?? null, ms: r._ms };
+  // A result whose address says "pricing" beats a higher-ranked page of the same site (a free-trial or product page).
+  const hit = r.results?.find((x) => /pricing/i.test(x.url)) ?? r.results?.[0];
+  return { url: hit?.url ?? null, ms: r._ms };
 }
 
 type Output<T> = { requested: boolean; success: boolean | null; data: T | null; error_code?: string; message?: string; isTruncated?: true };
