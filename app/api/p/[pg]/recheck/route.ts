@@ -1,4 +1,4 @@
-import { failure, stateResponse, type Ctx } from "@/app/api/respond";
+import { failure, refused, stateResponse, type Ctx } from "@/app/api/respond";
 import { originOf, recheck } from "@/lib/pipeline";
 import { load } from "@/lib/store";
 
@@ -6,6 +6,8 @@ export const maxDuration = 120;
 
 /** "Re-check now": one source ({id}) or all. Same function the webhook and the agent tool call. */
 export async function POST(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   const { id, trigger } = (await req.json().catch(() => ({}))) as { id?: string; trigger?: "manual" | "auto" };
   const p = load().playgrounds[pg];

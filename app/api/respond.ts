@@ -11,3 +11,26 @@ export function stateResponse(pg: string, error: string | null = null, status = 
 }
 
 export const failure = (e: unknown) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: e instanceof NotFound ? 404 : 502 });
+
+/**
+ * The guard of every state-changing route. The app has no auth and binds to 127.0.0.1, so the remaining risk is a web page
+ * open in the person's browser that posts to this app: it could spend Context.dev requests or overwrite the saved decision
+ * that the agent later reads as the person's choice. Browsers send Origin on such requests; agents, scripts and the
+ * Context.dev webhook do not. A request with an Origin must come from the page of this app itself, and the app must be
+ * addressed by localhost, by an IP address or by the PUBLIC_BASE_URL host, so a foreign name that is made to resolve to
+ * this machine is refused too. Returns the refusal, or null when the request may go on.
+ * (A Next.js proxy file would do this in one place, but in dev mode it sends the first page into a reload loop when an
+ * API request arrives before the first page load, which is what an agent does.)
+ */
+export function refused(req: Request): Response | null {
+  const origin = req.headers.get("origin");
+  if (origin == null) return null;
+  const host = req.headers.get("host") ?? "";
+  let sameSite = false;
+  try {
+    const name = new URL(`http://${host}`).hostname;
+    const own = name === "localhost" || /^(\d{1,3}\.){3}\d{1,3}$/.test(name) || name.startsWith("[") || (!!process.env.PUBLIC_BASE_URL && name === new URL(process.env.PUBLIC_BASE_URL).hostname);
+    sameSite = new URL(origin).host === host && own;
+  } catch {}
+  return sameSite ? null : Response.json({ error: "Cross-origin requests are not allowed" }, { status: 403 });
+}

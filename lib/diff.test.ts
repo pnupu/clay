@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { agreed, diffModels, standing, verdict, type Decision } from "./diff.ts";
+import { confirmed, diffModels, standing, verdict, type Decision } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
 
 const model = (base: number | null, price: number | null, quote = "q"): PricingModel => ({
@@ -72,11 +72,18 @@ test("tolerance: the decision holds while the choice is within the tolerance of 
   assert.equal(standing({ ...decision, tolerance: 1e9 }, { a: model(25, null), b }).holds, false);
 });
 
-test("agreement: a change counts only when two fresh extractions report the same new value", () => {
-  const before = model(25, 0.02);
-  const first = diffModels(before, model(35, 0.05)); // base price and tier price both differ
-  const second = diffModels(before, model(35, 0.02)); // the second read confirms only the base price
-  assert.deepEqual(agreed(first, second), [{ path: "Pro / base price", before: 25, after: 35 }]);
-  assert.deepEqual(agreed(first, diffModels(before, model(45, 0.02))), []); // same path, different new value
-  assert.deepEqual(agreed(first, []), []); // the second read sees no change at all
+test("agreement: a fact changes only when two fresh extractions state the same thing", () => {
+  const old = model(25, 0.02);
+  // Both reads say the base price is 35. They differ on the tier price, so that meter keeps its old state.
+  const partly = confirmed(old, model(35, 0.05), model(35, 0.03));
+  assert.deepEqual(diffModels(old, partly.model), [{ path: "Pro / base price", before: 25, after: 35 }]);
+  assert.deepEqual(partly.kept, ["Pro/meter/mau"]);
+  // Full agreement: every fact of the reads is taken.
+  assert.deepEqual(diffModels(model(35, 0.03), confirmed(old, model(35, 0.03), model(35, 0.03)).model), []);
+  // Same fact, two different new values: nothing changes.
+  assert.deepEqual(diffModels(old, confirmed(old, model(35, 0.02), model(45, 0.02)).model), []);
+  // A plan that only one read lost stays; a plan that both reads lost is gone.
+  const none = { vendor: "V", currency: "USD", plans: [] };
+  assert.deepEqual(diffModels(old, confirmed(old, none, model(25, 0.02)).model), []);
+  assert.deepEqual(confirmed(old, none, none).model.plans, []);
 });

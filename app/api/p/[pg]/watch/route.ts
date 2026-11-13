@@ -1,11 +1,13 @@
-import { stateResponse, type Ctx } from "@/app/api/respond";
+import { refused, stateResponse, type Ctx } from "@/app/api/respond";
 import { createMonitor, deleteMonitor } from "@/lib/contextdev";
 import { load, update } from "@/lib/store";
 
 const INSTRUCTIONS = "Report changes to prices, plan names, included quantities, usage tiers, limits and feature availability. Ignore navigation, testimonials, counters, dates and marketing copy.";
 
 /** Start watching: one Context.dev page monitor per source, with a signed webhook back to this deployment. Needs a public URL. */
-export async function POST(_req: Request, { params }: Ctx) {
+export async function POST(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   const base = process.env.PUBLIC_BASE_URL;
   if (!base) return Response.json({ error: "PUBLIC_BASE_URL is not set. Context.dev can only deliver webhooks to a public URL." }, { status: 409 });
@@ -20,7 +22,9 @@ export async function POST(_req: Request, { params }: Ctx) {
 }
 
 /** Stop watching: delete the monitors this app created. */
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   for (const src of Object.values(load().playgrounds[pg]?.sources ?? {})) {
     if (!src.monitor) continue;

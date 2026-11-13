@@ -1,10 +1,12 @@
-import { failure, stateResponse, type Ctx } from "@/app/api/respond";
+import { failure, refused, stateResponse, type Ctx } from "@/app/api/respond";
 import { collectAll, originOf } from "@/lib/pipeline";
 
 export const maxDuration = 120;
 
 /** Collect one vendor ({id}) or all of them, in parallel. */
 export async function POST(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   const { id } = (await req.json().catch(() => ({}))) as { id?: string };
   try {

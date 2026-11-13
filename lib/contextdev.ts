@@ -51,21 +51,25 @@ type Json = Record<string, unknown>;
 export async function cd<T = Json>(method: string, path: string, body?: unknown): Promise<T & { _ms: number }> {
   const key = process.env.CONTEXT_DEV_API_KEY;
   if (!key) throw new ContextDevError(0, "NO_KEY", "CONTEXT_DEV_API_KEY is not set");
-  await slot();
   // Optional hard cap on the number of logged requests (CONTEXT_DEV_REQUEST_CAP), so an agent in a loop cannot spend the budget.
-  // Checked after the wait, with no await before the request counts as pending, so parallel requests cannot pass it together.
-  const cap = Number(process.env.CONTEXT_DEV_REQUEST_CAP ?? 0);
-  if (cap > 0) {
+  // Checked before the wait, so a refused call returns at once, and again after it with nothing awaited before the request
+  // counts as pending, so parallel requests cannot pass it together.
+  const overCap = () => {
+    const cap = Number(process.env.CONTEXT_DEV_REQUEST_CAP ?? 0);
+    if (!(cap > 0)) return;
     let used = pending;
     try {
       used += readFileSync(LOG, "utf8").split("\n").filter(Boolean).length;
     } catch {}
     if (used >= cap) throw new ContextDevError(429, "RATE_LIMITED", `Local request cap reached: ${used} of ${cap} Context.dev requests are used (CONTEXT_DEV_REQUEST_CAP). No request was sent.`);
-  }
+  };
+  overCap();
+  await slot();
+  overCap();
   const t0 = Date.now();
   pending++;
-  let res: Response;
-  let data: Json;
+  let res: Response | null = null;
+  let data: Json = {};
   try {
     res = await fetch(BASE + path, {
       method,
@@ -74,18 +78,16 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
       signal: AbortSignal.timeout(120_000),
     });
     data = (await res.json().catch(() => ({}))) as Json;
-  } catch (e) {
+  } finally {
+    // Every request that was sent is logged, also one that failed or timed out (status 0): it may have been billed, and it counts toward the cap.
+    try {
+      // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
+      mkdirSync("run", { recursive: true });
+      appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res?.status ?? 0, ms: Date.now() - t0, credits: (data.key_metadata as Json | undefined)?.credits_consumed ?? null, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
+    } catch {}
     pending--;
-    throw e;
   }
   const ms = Date.now() - t0;
-  const credits = (data.key_metadata as Json | undefined)?.credits_consumed ?? null;
-  try {
-    // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
-    mkdirSync("run", { recursive: true });
-    appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res.status, ms, credits, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
-  } catch {}
-  pending--;
   if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
   return { ...(data as T), _ms: ms };
 }

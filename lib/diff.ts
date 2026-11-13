@@ -37,11 +37,50 @@ export function diffModels(before: PricingModel | null, after: PricingModel | nu
 }
 
 /**
- * A change on a real source is recorded only when two fresh extractions agree on it: extraction is not deterministic,
- * and a single read can report a value that is not on the page. Returns the changes both reads report with the same new value.
+ * The agreement rule. Extraction is not deterministic, and a single read can report a value that is not on the page, so a
+ * fact of a real source changes only when two fresh extractions state the same thing. The result is the old model with
+ * exactly those facts replaced. A plan price, a meter or a feature on which the two reads differ keeps its old state.
+ * `kept` lists the parts taken from the old model, as "<plan>/base", "<plan>/meter/<id>" or "<plan>/feature/<id>".
  */
-export function agreed(first: FieldChange[], second: FieldChange[]): FieldChange[] {
-  return first.filter((c) => second.some((d) => d.path === c.path && d.after === c.after));
+export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): { model: PricingModel; kept: string[] } {
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+  const kept: string[] = [];
+  const plan = (m: PricingModel, name: string) => m.plans?.find((p) => p.name === name);
+  /** One list of a plan (meters or features): the entries both reads state alike, else the old entry. */
+  function entries<T extends { quote: string | null }>(kind: string, name: string, id: (x: T) => string, was: T[], x: T[], y: T[]): T[] {
+    const ids = [...new Set([...y, ...x, ...was].map(id))];
+    return ids.flatMap((k) => {
+      const [o, p, q] = [was, x, y].map((list) => list.find((e) => id(e) === k));
+      if (!p && !q) return []; // both reads say it is gone
+      if (p && q && same({ ...p, quote: null }, { ...q, quote: null })) return [q];
+      kept.push(`${name}/${kind}/${k}`);
+      return o ? [o] : [];
+    });
+  }
+  const names = [...new Set([...(b.plans ?? []), ...(a.plans ?? []), ...(old.plans ?? [])].map((p) => p.name))];
+  const plans = names.flatMap((name) => {
+    const [o, p, q] = [plan(old, name), plan(a, name), plan(b, name)];
+    if (!p && !q) return [];
+    if (!p || !q) {
+      // Only one read has this plan: it stays as it was, or stays absent.
+      kept.push(`${name}/base`);
+      return o ? [o] : [];
+    }
+    const price = same([p.base_price, p.custom_pricing], [q.base_price, q.custom_pricing]);
+    if (!price) kept.push(`${name}/base`);
+    const base = price ? q : (o ?? { base_price: null, custom_pricing: null, price_quote: null });
+    return [
+      {
+        name,
+        base_price: base.base_price,
+        custom_pricing: base.custom_pricing,
+        price_quote: base.price_quote,
+        meters: entries("meter", name, (m) => m.metric, o?.meters ?? [], p.meters ?? [], q.meters ?? []),
+        features: entries("feature", name, (f) => f.feature, o?.features ?? [], p.features ?? [], q.features ?? []),
+      },
+    ];
+  });
+  return { model: { vendor: b.vendor, currency: b.currency, plans }, kept };
 }
 
 /** `tolerance`: the decision is still fine while the chosen vendor costs at most this much more per month than the cheapest. */

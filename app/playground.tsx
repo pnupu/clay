@@ -127,21 +127,27 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
   // It is sent after the person pauses, so no network call sits between a move and its result.
   const seen = useRef<Record<string, { min: number; max: number }>>({});
   const reported = useRef<string | null>(null);
+  /** The person changed something since the last report, also when the controls are back at the reported values. */
+  const moved = useRef(false);
   useEffect(() => {
     for (const [k, v] of Object.entries(usage)) seen.current[k] = { min: Math.min(seen.current[k]?.min ?? v, v), max: Math.max(seen.current[k]?.max ?? v, v) };
     // Nothing is sent until the person changes something: opening the page is not exploring.
-    const now = JSON.stringify([usage, required, chosen]);
+    // The reported selection is the vendor the person clicked, and only while the screen still shows it as selected.
+    const selected = chosen === pick ? chosen : null;
+    const now = JSON.stringify([usage, required, selected]);
     reported.current ??= now;
-    if (reported.current === now) return;
+    if (reported.current !== now) moved.current = true;
+    if (!moved.current) return;
     const t = setTimeout(() => {
       const metrics = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, { ...seen.current[k], final: v }]));
       seen.current = {};
       reported.current = now;
-      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metrics, required, selected: chosen }) }).catch(() => {});
+      moved.current = false;
+      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metrics, required, selected }) }).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
     // `chosen` is the vendor the person clicked. The cheapest vendor that is shown as selected by default is not their choice.
-  }, [usage, required, chosen, api]);
+  }, [usage, required, chosen, pick, api]);
 
   const decision = state?.decision ?? null;
   /** The controls differ from the saved decision, so saving again means something. */

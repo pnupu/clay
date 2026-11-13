@@ -1,9 +1,11 @@
-import type { Ctx } from "@/app/api/respond";
+import { refused, type Ctx } from "@/app/api/respond";
 import { mergeExploration } from "@/lib/explore";
 import { update } from "@/lib/store";
 
 /** The browser reports what the person tried since its last report. It is merged into the exploration summary that the agent reads. */
 export async function POST(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   const report = await req.json().catch(() => null);
   const status = await update((s) => {

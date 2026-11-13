@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
 import { ContextDevError, scrape, searchTopUrl } from "./contextdev";
-import { agreed, diffModels, verdict } from "./diff";
+import { confirmed, diffModels, verdict } from "./diff";
 import { load, newPlayground, update, type ChangeEvent, type Playground, type Snapshot, type Source } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -187,9 +187,10 @@ export async function revisePlayground(domain: Domain, origin: string): Promise<
     const decisionCleared = !!d && !(domain.vendors.some((v) => v.id === d.chosen) && [...Object.keys(d.usage), ...d.required].every((k) => controls.has(k)));
     if (decisionCleared) p.decision = null;
     if (p.exploration) {
-      // A value outside a narrowed range cannot be shown by the control: that control starts again from its initial value.
-      const inRange = (k: string, x: number) => domain.metrics.some((m) => m.id === k && x >= m.min && x <= m.max);
-      p.exploration.metrics = Object.fromEntries(Object.entries(p.exploration.metrics).filter(([k, x]) => inRange(k, x.final)));
+      // When this revision changes a range and the settled value falls outside it, that control starts again from its initial value.
+      // A value the person typed beyond an unchanged range stays: the number field allows it.
+      const stays = (k: string, x: number) => domain.metrics.some((m) => m.id === k && ((x >= m.min && x <= m.max) || p.domain.metrics.some((w) => w.id === k && w.min === m.min && w.max === m.max)));
+      p.exploration.metrics = Object.fromEntries(Object.entries(p.exploration.metrics).filter(([k, x]) => stays(k, x.final)));
       if (!domain.vendors.some((v) => v.id === p.exploration!.selected)) p.exploration.selected = null;
       p.exploration.features = Object.fromEntries(Object.entries(p.exploration.features).filter(([k]) => controls.has(k)));
     }
@@ -226,27 +227,19 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   try {
     if (hash(await readText(src, origin)) !== src.snapshot.textHash) {
       const first = await readModel(before.domain, src, origin);
-      let changes = diffModels(src.snapshot.model, first.model);
-      snapshot = first;
-      if (changes.length && first.extractor === "context.dev") {
-        // Extraction is not deterministic. A change on a real source counts only when a second fresh extraction reports it too.
+      let next = first;
+      if (first.extractor === "context.dev" && diffModels(src.snapshot.model, first.model).length) {
+        // Extraction is not deterministic. A fact of a real source changes only when a second fresh extraction states the same thing.
+        // Nothing of the first read is stored before the second one is back: when it fails, the facts stay as they were.
         const second = await readModel(before.domain, src, origin);
-        const again = diffModels(src.snapshot.model, second.model);
-        const both = agreed(changes, again);
-        // Only a read whose every difference is confirmed may become the stored facts.
-        const clean = again.length === both.length ? second : changes.length === both.length ? first : null;
-        if (both.length === 0) {
-          // Nothing confirmed: keep the facts as they were and remember the new page text, so the same text is not extracted again.
-          snapshot = { ...src.snapshot, textHash: second.textHash };
-        } else if (clean) {
-          snapshot = clean;
-          unconfirmed = changes.length + again.length - 2 * both.length;
-        } else {
-          // Each read has a difference the other lacks. Store nothing and keep the old page hash, so the next re-check reads again.
-          snapshot = src.snapshot;
-        }
-        changes = clean ? both : [];
+        const { model, kept } = confirmed(src.snapshot.model, first.model, second.model);
+        const old = src.snapshot.evidence;
+        next = { ...second, model, evidence: { ...second.evidence, ...Object.fromEntries(kept.filter((k) => k in old).map((k) => [k, old[k]])) } };
+        const paths = new Set([...diffModels(src.snapshot.model, first.model), ...diffModels(src.snapshot.model, second.model)].map((c) => c.path));
+        unconfirmed = [...paths].filter((p) => !diffModels(src.snapshot!.model, model).some((c) => c.path === p)).length;
       }
+      const changes = diffModels(src.snapshot.model, next.model);
+      snapshot = next;
       if (changes.length) {
         const models = (s: typeof before, own: PricingModel) => Object.fromEntries(Object.entries(s.sources).map(([k, x]) => [k, k === id ? own : (x.snapshot?.model ?? null)]));
         event = {

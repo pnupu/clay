@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p ${PORT:-43117}",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1 -p ${PORT:-43117}",
     "lint": "eslint",
     "test": "node --test lib/*.test.ts",
     "typecheck": "tsc --noEmit"

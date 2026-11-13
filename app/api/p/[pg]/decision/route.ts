@@ -1,10 +1,12 @@
-import { stateResponse, type Ctx } from "@/app/api/respond";
+import { refused, stateResponse, type Ctx } from "@/app/api/respond";
 import { load, update } from "@/lib/store";
 
 const bad = (error: string) => Response.json({ error }, { status: 400 });
 
 /** Save the settled state: assumptions, the chosen vendor and the tolerance of the "holds" rule. */
 export async function POST(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   const p = load().playgrounds[pg];
   if (!p) return stateResponse(pg);
@@ -26,7 +28,9 @@ export async function POST(req: Request, { params }: Ctx) {
   return stateResponse(pg);
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(req: Request, { params }: Ctx) {
+  const no = refused(req);
+  if (no) return no;
   const { pg } = await params;
   if (load().playgrounds[pg]) await update((s) => void (s.playgrounds[pg].decision = null));
   return stateResponse(pg);

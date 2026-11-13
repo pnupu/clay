@@ -1,6 +1,7 @@
 import { parseConfig } from "@/lib/config";
 import { createPlayground, originOf } from "@/lib/pipeline";
 import { load } from "@/lib/store";
+import { refused } from "@/app/api/respond";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -9,6 +10,8 @@ export const GET = () => Response.json(Object.values(load().playgrounds).map((p)
 
 /** Create a playground from a config (the HTTP form of the agent's create_playground tool). The config is validated in lib/config.ts. */
 export async function POST(req: Request) {
+  const no = refused(req);
+  if (no) return no;
   const parsed = parseConfig(await req.json().catch(() => null));
   if (!parsed.ok) return Response.json({ error: "Invalid config", problems: parsed.errors }, { status: 400 });
   const r = await createPlayground(parsed.domain, originOf(req));
