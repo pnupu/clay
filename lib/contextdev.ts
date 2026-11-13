@@ -2,6 +2,7 @@
 // Node builtins and the store only, so scripts can import it without a bundler.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { BrandData } from "./kit.ts";
 import { dailyCap, spend, update } from "./store.ts";
 
 // CONTEXT_DEV_BASE_URL points the client at the local fixture API (scripts/fixture-api.ts) for checks that must not spend requests.
@@ -132,6 +133,18 @@ export function scrape(url: string, json?: { schema: unknown; instructions: stri
     ...(json ? { jsonParams: json } : {}),
     maxAgeMs: 0,
   });
+}
+
+/**
+ * Brand facts of one site (POST /brand/retrieve, type by_domain; 10 credits; checked against docs.context.dev/openapi.json on 2026-11-14).
+ * Only colours, logos and the title are kept. Names and the title are text from the web: cut short, and treated as data.
+ */
+export async function brand(domain: string): Promise<BrandData> {
+  const r = await cd<{ brand?: { title?: unknown; colors?: { hex?: unknown; name?: unknown }[]; logos?: { url?: unknown; mode?: unknown; type?: unknown }[] } }>("POST", "/brand/retrieve", { type: "by_domain", domain });
+  const cut = (x: unknown, n: number) => (typeof x === "string" ? x.replace(/\s+/g, " ").trim().slice(0, n) : "");
+  const colors = (r.brand?.colors ?? []).flatMap((c) => (typeof c?.hex === "string" && /^#[0-9a-f]{6}$/i.test(c.hex) ? [{ hex: c.hex.toLowerCase(), name: cut(c.name, 40) }] : []));
+  const logos = (r.brand?.logos ?? []).flatMap((l) => (typeof l?.url === "string" && /^https:\/\/[^\s"'<>]{4,500}$/.test(l.url) ? [{ url: l.url, mode: cut(l.mode, 30), type: cut(l.type, 10) }] : []));
+  return { domain, title: cut(r.brand?.title, 80), colors: colors.filter((c, i) => colors.findIndex((x) => x.hex === c.hex) === i).slice(0, 12), logos: logos.slice(0, 6), fetchedAt: new Date().toISOString(), source: "context.dev brand" };
 }
 
 export type Monitor = { id: string; status: string; webhook: { url: string; secret?: string; events: string[] } | null; initial_run_id: string | null };

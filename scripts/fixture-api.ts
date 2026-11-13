@@ -25,6 +25,8 @@ createServer(async (req, res) => {
     prices = (b.prices as typeof prices | undefined) ?? prices;
     return send({ text, prices });
   }
+  // A fictional brand, so a preview playground with data.brand can be built without a real request.
+  if (req.url === "/brand/retrieve") return send({ status: "ok", key_metadata: { credits_consumed: 0 }, brand: { domain: b.domain, title: "Fixture Brand", colors: [{ hex: "#5e6ad2", name: "Iris" }, { hex: "#0f1011", name: "Ink" }, { hex: "#f7f8f8", name: "Paper" }], logos: [] } });
   if (req.url !== "/web/scrape") return res.writeHead(404).end("{}");
   const wantsJson = (b.formats as { json?: boolean } | undefined)?.json === true;
   const read = wantsJson ? (prices.length > 1 ? prices.shift()! : prices[0]) : null;

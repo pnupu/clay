@@ -1,13 +1,13 @@
 // The trust boundary for playgrounds created at runtime. A config comes from an agent or an HTTP caller: it is untrusted data.
 // Everything is checked here (sizes, types, id formats, https only), and nothing else in the app accepts a Domain from outside.
 import { z } from "zod";
-import type { Domain } from "./domain";
+import type { Domain } from "./domain.ts";
 
 export const LIMITS = { vendors: [2, 6], metrics: [1, 5], features: [0, 6] } as const;
 
 const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 const controlId = z.string().regex(/^[a-z][a-z0-9_]{1,29}$/, "use 2 to 30 characters: lowercase letters, digits and underscores, starting with a letter");
-const hostname = z.string().trim().toLowerCase().max(100).regex(/^(?=.{4,100}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/, "use a public host name such as resend.com, with no scheme, path or port");
+export const hostname = z.string().trim().toLowerCase().max(100).regex(/^(?=.{4,100}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/, "use a public host name such as resend.com, with no scheme, path or port");
 const amount = z.number().finite().min(0).max(1e12);
 
 export const metric = z.strictObject({

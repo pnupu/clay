@@ -2,10 +2,13 @@
 // Built per request (stateless Streamable HTTP), with the app's origin for the playground URLs.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { configShape, feature, LIMITS, metric, parseConfig, toConfig, vendor } from "./config";
+import { LIMITS } from "./config";
 import { DOMAIN } from "./domain";
-import { createPlayground, recheck, revisePlayground } from "./pipeline";
-import { collectionReport, decisionReport, eventReport, rankingReport, controlsNow, readReport, WEB_TEXT_NOTE } from "./report";
+import { initialValues, renderOutputs } from "./kit";
+import { createPlayground, createPreview, recheck, revisePlayground, revisePreview } from "./pipeline";
+import { KIT_REFERENCE } from "./reference";
+import { BRAND_NOTE, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
+import { mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, type Playground } from "./store";
 
 const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the saved tolerance (dollars per month, set by the person, default 0) more than the cheapest fully priced vendor.";
@@ -14,48 +17,63 @@ const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully 
  * Server instructions. Many MCP clients load tool descriptions only on demand and show the agent just the tool names,
  * so this short text is what decides whether the agent thinks of the playground at all.
  */
-export const INSTRUCTIONS = `Clay builds a web page on which a person explores a "which vendor or plan" decision, on prices read live from the vendors' public pricing pages.
+export const INSTRUCTIONS = `Clay builds a playground: a web page on which a person finds out what they want by trying concrete things, alone and at full speed. You build it from prebuilt parts, the person explores it, the settled result comes back to you as a precise instruction, and you carry it out.
 
-When the person asks which service, vendor or plan to choose for a usage-priced product (an API, a SaaS product, a cloud service) and has not fixed what they need, call create_playground first, before you answer from memory or search the web. Prices from memory are out of date. This server reads the current pricing pages and keeps a source quote for every number, and the page lets the person try their own numbers instead of answering your questions. Give them the URL, together with your advice on what a price cannot show (for example reliability or support).
+Build a playground instead of guessing or asking a list of questions when the person cannot yet say exactly what they want. Two kinds:
 
-When the person comes back ("what did I decide", "does it still hold", "did prices change"), call read_playground, and recheck_playground for today's prices. When they want to vary or compare something the page lacks, call revise_playground.`;
+1. A preview playground, for anything the person must see or feel to judge: a component that "looks off", an animation that "feels dead" or "too slow", spacing, colour, timing. Do not guess new values and edit their code. Read their real file, call kit_reference once (format and two worked examples), then create_playground with view.type "preview": their real code in the preview, a few controls from the kit, and outputs that render the final code. When they name a brand or a site, add data.brand: Clay reads the brand's colours live.
+
+2. A price playground, for "which service, vendor or plan" of a usage-priced product (an API, a SaaS product, a cloud service). Call create_playground with view.type "price_ranking" before you answer from memory or search the web: prices from memory are out of date, and Clay reads the current pricing pages with a source quote for every number.
+
+Give the person the URL. When they come back ("done", "I settled it", "what did I decide", "does it still hold"), call read_playground and carry out the settled result: write the outputs into their code, or report the decision. recheck_playground re-reads prices today. revise_playground repairs a playground or adds what the person now wants to try.`;
 
 export const TOOLS = {
-  create_playground: `Build a live decision playground for the person: a web page where they compare the vendors of one usage-priced product by moving controls, on prices read from the vendors' public pricing pages right now.
+  create_playground: `Build a playground for the person: a web page where they explore one question by moving controls, at full speed, with no agent in the loop. You give them the URL; read_playground later returns what they settled on, and you carry it out.
 
-Use it when the person faces a "which vendor or plan" decision and cannot yet say exactly what they need. People find out what they want by trying concrete values; the page lets them do that at full speed, with no agent in the loop. Do not ask the person a list of questions first: build from what they said, and let them correct it on the page.
+Use it when the person cannot yet say exactly what they want. People find out by trying concrete values. Do not ask a list of questions first, and do not guess and edit: build from what they said and from their real files, and let them settle it by hand.
 
-You design the space; the web supplies the facts. A good playground has:
-- Vendors: the ${LIMITS.vendors[0] + 1} to 5 options really worth comparing for this person's question, including any they named. Each needs a public pricing page with numbers on it. Give pricing_url when you know the page; else give domain and search finds the page.
-- Metrics (sliders): the 1 to 3 usage dimensions that drive the cost for THIS person, the things these vendors bill by. Set initial to the person's own number when they gave one. Set min and max around what they said (where they are now, the growth or doubt they mentioned), not around the whole market: a slider that runs to a hundred times their volume hides the range they care about. Write describe in the words pricing pages use, with synonyms; the extraction finds the prices with that text.
-- Features (checkboxes): the hard requirements the person mentioned, or the one or two that usually decide this choice, and only ones that pricing pages state per plan.
-- No facts. Never put prices, plan names, limits or included quantities in the config. They are extracted from each pricing page, each with a source quote and a check that the number is on the page.
+One spec describes the playground. Choose the view:
 
-The call reads every pricing page and takes 10 to 60 seconds, or up to 2 minutes when requests must wait for the rate limit of the web reader. The result has the URL to give to the person and, per vendor, what was read: plans, which metrics have prices, numbers that were quarantined (extracted but not found in the page text), and a problems list that says how to fix each problem. If problems shows a broken first build (a page not read, the wrong page, a metric that no page prices), repair it with revise_playground before you hand over the URL. For a page that was not read or shows no plans, try once more: give the exact pricing_url, or give only domain so that search finds the page. If the vendor still cannot be priced, remove it and tell the person, so the page has no row they cannot use. A vendor that "cannot be ranked" only at some values, because its page does not state one price, is a true finding and stays.
+view.type "preview": the person must see or feel the real thing (a component's look, colours, spacing, an animation's spring or timing). Call kit_reference before your first one. The rules:
+- Real code. Copy the person's actual markup, classes or motion code from their file into view.html, view.css and view.js, so that every control maps to a line in their file. A sketch of the thing is not the thing.
+- Controls come only from the kit: slider, toggle, select, color. Choose the 3 to 6 dimensions behind THIS person's complaint. initial is the value in their code now, so the page opens on what they have. Ranges sit around that value. Each control has one meaning.
+- Bind controls with {{control_id}} in view.html and view.css (updated in place on every move), or read clay.values.<id> in view.js.
+- Brand: when the person names a brand or a site, add data.brand {"domain"}. Clay reads its colours live; a color control with palette "brand" offers them. Never write brand colours from memory.
+- Outputs are templates of the final code: the class string, the config object. At hand-back you paste them.
+- The spec is validated before anything is built; each error says how to fix it. The preview code runs only in a browser, so the result says "unverified" until the person opens the page. read_playground then reports that it ran, or the error to repair.
 
-Then give the person the URL and tell them to explore and to save a decision on the page. Later, read_playground tells you what they tried and settled on.`,
+view.type "price_ranking": a "which vendor or plan" decision for a usage-priced product. You design the space in data.price_pages; the web supplies the facts:
+- Vendors: the ${LIMITS.vendors[0] + 1} to 5 options really worth comparing, including any the person named. Each needs a public pricing page with numbers on it. Give pricing_url when you know the page; else give domain and search finds it.
+- Metrics (sliders): the 1 to 3 usage dimensions that drive the cost for THIS person. initial is their own number when they gave one; min and max sit around what they said, not around the whole market. Write describe in the words pricing pages use, with synonyms; the extraction finds the prices with that text.
+- Features (checkboxes): the hard requirements the person mentioned, and only ones that pricing pages state per plan.
+- No facts. Never put prices, plan names or limits in the spec. They are read from each pricing page, each with a source quote and a check that the number is on the page.
+The call reads every pricing page: 10 to 60 seconds, up to 2 minutes when requests wait for the rate limit. The result lists per vendor what was read and a problems list that says how to fix each problem. Repair a broken first build with revise_playground before you hand over the URL: for a page that was not read, try once with the exact pricing_url (or only the domain); if the vendor still cannot be priced, remove it and tell the person. A vendor that "cannot be ranked" only at some values is a true finding and stays.
 
-  read_playground: `Read what the person did in a playground and where the decision stands. It reads stored data and does not contact the web.
+Then give the person the URL: for a preview, "move the controls until it is right, then press Settle"; for prices, "explore, select a vendor and save the decision". When they say they are done, call read_playground.`,
 
-Returns: the control values now; the cost ranking under those values, with the vendors that cannot be ranked and why; the saved decision (the chosen vendor, the assumptions it was saved under, the tolerance, and whether it holds on the data as last read); the exploration summary; and the source change events.
+  read_playground: `Read what the person did in a playground. It reads stored data and does not contact the web. Call it when the person says they are done, and before you act on a result. With no playground_id it lists the playgrounds.
 
-The exploration summary gives, per control, the range of values the person tried and the value they settled on. Use it: "tried 20,000 to 300,000, settled on 120,000" tells you their real range and how sure they are, which a single number does not. Controls they never moved were not examined by them.
+Preview playground: returns settled (the values, and the outputs as code-ready text), the exploration summary, and the preview status. When settled is present, carry it out: write settled.outputs into the person's file exactly as given, then say what you changed. When it is "none", the person has not pressed Settle: ask them to, and do not treat the current values as a decision. When preview.status is "failed", the error text is the browser's: repair the code with revise_playground and ask the person to reload.
 
-${HOLDS_RULE}
+Price playground: returns the control values now, the cost ranking, the saved decision (vendor, assumptions, tolerance, whether it holds on the data as last read), the exploration summary and the source change events. ${HOLDS_RULE} For "does it still hold today", call recheck_playground too.
 
-Use this for "what did I decide" and before you act on a decision. When the person asks whether the decision still holds today, call recheck_playground too, because this tool only knows the prices as last read. Call it with no playground_id to list the playgrounds.`,
+The exploration summary gives, per control, the range the person tried and the value they settled on. Use it: "tried 4 to 16, settled on 10" tells you their real range and how sure they are. A control they never moved was not examined by them: leave its value in their code as it is.`,
 
-  recheck_playground: `Re-read every pricing page of a playground now, and report what changed since the last read and whether the saved decision still holds.
+  recheck_playground: `Re-read every pricing page of a price playground now, and report what changed since the last read and whether the saved decision still holds. A preview playground has nothing to re-check.
 
 Use it when the person asks if a decision is still valid, or wants current prices before they act. It takes 5 to 60 seconds and spends web requests, so do not call it on every turn. A change on a real page is reported only when two fresh extractions agree on it, so a reported change is one you can state to the person.
 
 ${HOLDS_RULE} The result gives the verdict with the costs behind it. When the decision no longer holds, say what changed, the new cheapest vendor and the gap, and send the person back to the playground URL to look again; do not pick for them.`,
 
-  revise_playground: `Change an existing playground in place, at the same URL. Use it (1) to repair a first build from the problems list of create_playground, and (2) when the person finds that the playground lacks something they now want to vary or compare: another vendor, another usage dimension, a requirement, a wider range.
+  revise_playground: `Change an existing playground in place, at the same URL. Use it (1) to repair a first build: a problem from the create result, or a preview error from read_playground; and (2) when the person wants to try something the playground lacks: another control, a wider range, another vendor.
 
-Give only what changes. An entry in add_vendors, add_metrics or add_features whose id already exists replaces that entry; this is how you fix a pricing_url, rewrite a describe, or change min, max and initial. The same rules as create_playground apply: no facts in the config.
+Give playground_id and only the parts that change. Each part you give replaces that whole part: title, notes, controls (the full list), view (the full view), outputs (the full list), and inside data each source (data.price_pages whole, data.brand, data.inline). Parts you leave out stay. The result is validated like a new spec. When you no longer have the spec, read_playground with include_spec returns it.
 
-Cost: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, the features, product or notes changes what is extracted, so every page is read again (10 seconds to 2 minutes). A change of only the question or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed; the result says when it was cleared. The result has the problems list of create_playground, with the per-vendor detail for the pages that were read again. After one failed repair of a vendor, remove it with remove_vendor_ids and tell the person; do not keep trying pages.`,
+Preview playground: the settled result is cleared and the preview is unverified again; what the person tried is kept for the controls you did not change. Ask the person to reload the page.
+
+Price playground: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, features, product or notes changes what is extracted, so every page is read again (10 seconds to 2 minutes). A change of only the title or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed. After one failed repair of a vendor, remove it and tell the person; do not keep trying pages.`,
+
+  kit_reference: `Return the reference for preview playgrounds: the four control types, how the preview binds to them ({{control_id}} in html and css, clay.values in JavaScript), what the sandbox allows, how outputs work, and two complete worked specs (a Tailwind button with brand colours; spring physics tuned by feel). Read-only, instant, no web request. Call it once before your first create_playground with view.type "preview".`,
 };
 
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 1) }] });
@@ -65,7 +83,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function buildServer(origin: string): McpServer {
   const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
-  const list = async () => Object.values((await load()).playgrounds).map((p) => ({ playground_id: p.domain.id, question: p.domain.question, url: url(p.domain.id), decision_saved: !!p.decision }));
+  const list = async () => Object.values((await load()).playgrounds).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
   /** The playground, or an error that names the ids that exist. */
   const find = async (id: string): Promise<Playground | string> => (await load()).playgrounds[id] ?? `Playground "${id}" does not exist. Existing playground ids: ${(await list()).map((p) => p.playground_id).join(", ")}. Use one of them, or create_playground to build a new one.`;
   /** `detail`: the vendors to describe in full. The others get one line, so a revise does not repeat what the agent already has. */
@@ -78,22 +96,45 @@ export function buildServer(origin: string): McpServer {
       ...(stop ? { stopped: `Reading stopped early: ${stop}. Do not retry now; tell the person.` } : {}),
       ...report,
       vendors: report.vendors.map((v) => (!detail || detail.includes(v.vendor) ? v : { vendor: v.vendor, pricing_page: v.pricing_page, plans_read: v.plans.length, unchanged: true })),
+      kind: "price",
       next: "If problems lists a build error, fix it with revise_playground. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
       note: WEB_TEXT_NOTE,
     });
   };
 
-  server.registerTool("create_playground", { title: "Create a decision playground", description: TOOLS.create_playground, inputSchema: configShape }, async (args) => {
-    const parsed = parseConfig(args);
-    if (!parsed.ok) return fail(`The config is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
+  /** The result of building or revising a preview playground. */
+  const preview = async (id: string, extra: object, warnings: string[]) => {
+    const k = (await load()).playgrounds[id].kit!;
+    return text({
+      playground_id: id,
+      url: url(id),
+      kind: "preview",
+      ...extra,
+      preview: previewStatus(k),
+      outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
+      data: dataReport(k),
+      problems: k.brandError ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain, or give the colours as a palette list and tell the person they are not checked.`] : [],
+      warnings,
+      next: "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
+      ...(k.kit.brand ? { note: BRAND_NOTE } : {}),
+    });
+  };
+
+  server.registerTool("create_playground", { title: "Create a playground", description: TOOLS.create_playground, inputSchema: specShape }, async (args) => {
+    const parsed = parseSpec(args);
+    if (!parsed.ok) return fail(`The spec is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
+    const id = parsed.domain.id;
+    const exists = `A playground with id "${id}" already exists at ${url(id)}. To change it, call revise_playground. To build a separate one, call create_playground with another id.`;
     try {
+      if (parsed.kind === "preview") return (await createPreview(parsed.domain, parsed.kit)).created ? preview(id, {}, parsed.warnings) : fail(exists);
       const r = await createPlayground(parsed.domain, origin);
-      if (!r.created) return fail(`A playground with id "${parsed.domain.id}" already exists at ${url(parsed.domain.id)}. To change it, call revise_playground. To build a separate one, call create_playground with another id.`);
-      return built(parsed.domain.id, {}, r.error);
+      return r.created ? built(id, {}, r.error) : fail(exists);
     } catch (e) {
       return fail(`The playground could not be built: ${message(e)}`);
     }
   });
+
+  server.registerTool("kit_reference", { title: "Kit reference for preview playgrounds", description: TOOLS.kit_reference, inputSchema: {}, annotations: { readOnlyHint: true } }, async () => text(KIT_REFERENCE));
 
   server.registerTool(
     "read_playground",
@@ -102,17 +143,18 @@ export function buildServer(origin: string): McpServer {
       description: TOOLS.read_playground,
       inputSchema: {
         playground_id: z.string().max(40).optional().describe("Id of the playground: the last part of its URL. Leave it out to list the playgrounds."),
-        since: z.string().max(40).optional().describe("Only return change events after this time, as an ISO 8601 date-time such as 2026-11-13T18:00:00Z. Leave it out for all stored events."),
+        since: z.string().max(40).optional().describe("Price playground: only return change events after this time, as an ISO 8601 date-time such as 2026-11-13T18:00:00Z. Leave it out for all stored events."),
+        include_spec: z.boolean().optional().describe("true adds the playground's current spec, for a revise_playground when you no longer have it."),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ playground_id, since }) => {
+    async ({ playground_id, since, include_spec }) => {
       if (!playground_id) return text({ playgrounds: await list() });
       const p = await find(playground_id);
       if (typeof p === "string") return fail(p);
       const t = since == null ? null : Date.parse(since);
       if (t != null && Number.isNaN(t)) return fail(`since "${since}" is not a date-time. Use ISO 8601, for example 2026-11-13T18:00:00Z, or leave it out.`);
-      return text(readReport(p, url(playground_id), t));
+      return text({ ...(p.kit ? previewReport(p, url(playground_id)) : readReport(p, url(playground_id), t)), ...(include_spec ? { spec: toSpec(p) } : {}) });
     },
   );
 
@@ -122,6 +164,7 @@ export function buildServer(origin: string): McpServer {
     async ({ playground_id }) => {
       const before = await find(playground_id);
       if (typeof before === "string") return fail(before);
+      if (before.kit) return fail(`"${playground_id}" is a preview playground: it has no pricing pages to re-check. Call read_playground for its settled result.`);
       const ids = before.domain.vendors.map((v) => v.id);
       const results = await Promise.allSettled(ids.map((id) => recheck(playground_id, id, "manual", origin)));
       const p = (await load()).playgrounds[playground_id];
@@ -150,37 +193,31 @@ export function buildServer(origin: string): McpServer {
       description: TOOLS.revise_playground,
       inputSchema: {
         playground_id: z.string().max(40).describe("Id of the playground: the last part of its URL."),
-        question: configShape.question.optional(),
-        product: configShape.product.optional(),
-        notes: configShape.notes,
-        add_vendors: z.array(vendor).max(LIMITS.vendors[1]).optional().describe("Vendors to add. An entry with an existing id replaces that vendor, for example to set its pricing_url."),
-        remove_vendor_ids: z.array(z.string().max(40)).max(10).optional(),
-        add_metrics: z.array(metric).max(LIMITS.metrics[1]).optional().describe("Metrics to add. An entry with an existing id replaces that metric, for example to change its range or describe."),
-        remove_metric_ids: z.array(z.string().max(40)).max(10).optional(),
-        add_features: z.array(feature).max(LIMITS.features[1]).optional().describe("Features to add. An entry with an existing id replaces that feature."),
-        remove_feature_ids: z.array(z.string().max(40)).max(10).optional(),
+        title: specShape.title.optional(),
+        notes: specShape.notes,
+        data: specShape.data,
+        controls: specShape.controls.describe("The full new list of controls of a preview playground. It replaces the current list."),
+        view: specShape.view.optional().describe("The full new view. It replaces the current view; the view type cannot change."),
+        outputs: specShape.outputs.describe("The full new list of outputs of a preview playground. It replaces the current list."),
       },
     },
-    async (a) => {
-      const p = await find(a.playground_id);
+    async ({ playground_id, ...change }) => {
+      const p = await find(playground_id);
       if (typeof p === "string") return fail(p);
-      if (a.playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
-      const merge = <T extends { id: string }>(what: string, now: T[], add: T[] = [], remove: string[] = []): T[] | string => {
-        const missing = remove.find((id) => !now.some((x) => x.id === id));
-        if (missing) return `${what} "${missing}" does not exist. Existing ids: ${now.map((x) => x.id).join(", ")}.`;
-        return [...now.filter((x) => !remove.includes(x.id) && !add.some((y) => y.id === x.id)), ...add];
-      };
-      const c = toConfig(p.domain);
-      const vendors = merge("Vendor", c.vendors, a.add_vendors, a.remove_vendor_ids);
-      const metrics = merge("Metric", c.metrics, a.add_metrics, a.remove_metric_ids);
-      const features = merge("Feature", c.features ?? [], a.add_features, a.remove_feature_ids);
-      const bad = [vendors, metrics, features].find((x) => typeof x === "string");
-      if (bad) return fail(`Nothing was changed. ${bad}`);
-      const parsed = parseConfig({ ...c, question: a.question ?? c.question, product: a.product ?? c.product, notes: a.notes ?? c.notes, vendors, metrics, features });
+      if (playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
+      const was = toSpec(p);
+      if (change.view && change.view.type !== was.view.type) return fail(`Nothing was changed. "${playground_id}" has view.type "${was.view.type}", and the view type of a playground cannot change. Build a separate playground with create_playground.`);
+      const parsed = parseSpec(mergeSpec(was, change as Partial<Spec>));
       if (!parsed.ok) return fail(`The revised playground would not be valid. Nothing was changed. Fix these and call revise_playground again:\n- ${parsed.errors.join("\n- ")}`);
+      const tell_person = "Ask the person to reload the page to see the revised playground.";
       try {
+        if (parsed.kind === "preview") {
+          const settled_result_cleared = !!p.kit?.settled;
+          await revisePreview(parsed.domain, parsed.kit);
+          return preview(playground_id, { settled_result_cleared, tell_person }, parsed.warnings);
+        }
         const r = await revisePlayground(parsed.domain, origin);
-        return built(a.playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person: "Ask the person to reload the page to see the revised playground." }, r.error, r.recollected);
+        return built(playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person }, r.error, r.recollected);
       } catch (e) {
         return fail(`The playground could not be revised: ${message(e)}`);
       }

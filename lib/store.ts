@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
+import type { KitState } from "./kit.ts";
 
 export type Snapshot = {
   url: string;
@@ -62,6 +63,8 @@ export type Playground = {
   decision: Decision | null;
   events: ChangeEvent[];
   exploration: Exploration | null;
+  /** A preview playground (lib/kit.ts): controls, a sandboxed preview and outputs. Its `domain` holds only the id and the title. */
+  kit?: KitState;
 };
 
 export type Store = {

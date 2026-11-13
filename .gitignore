@@ -56,3 +56,6 @@ run/demo-*.json
 
 # Hackathon submission drafts and video work (not part of the product)
 /submission/
+
+# kit runs: transcripts, screenshots, store copies
+/run/kit-*

@@ -2,8 +2,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
-import { ContextDevError, scrape, searchTopUrl } from "./contextdev";
+import { brand, ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
+import type { Kit, KitState } from "./kit";
 import { load, newPlayground, publicBase, update, type ChangeEvent, type Playground, type Snapshot, type Source } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -162,6 +163,48 @@ export async function createPlayground(domain: Domain, origin: string): Promise<
     return true;
   });
   return created ? { created, error: await collectAll(domain.id, origin) } : { created, error: null };
+}
+
+// ---- Preview playgrounds (lib/kit.ts). The only web read is the brand of data.brand, once, at creation or when its domain changes.
+
+async function readBrand(kit: Kit, was?: KitState): Promise<Pick<KitState, "brandData" | "brandError">> {
+  if (!kit.brand) return { brandData: null, brandError: null };
+  if (was?.brandData?.domain === kit.brand.domain) return { brandData: was.brandData, brandError: null };
+  try {
+    return { brandData: await brand(kit.brand.domain), brandError: null };
+  } catch (e) {
+    return { brandData: null, brandError: message(e) };
+  }
+}
+
+/** Create a preview playground from a validated kit. The preview stays "unverified" until the page has run it once. */
+export async function createPreview(domain: Domain, kit: Kit): Promise<{ created: boolean }> {
+  if ((await load()).playgrounds[domain.id]) return { created: false };
+  const read = await readBrand(kit);
+  return {
+    created: await update((s) => {
+      if (s.playgrounds[domain.id]) return false;
+      s.playgrounds[domain.id] = { ...newPlayground(domain), kit: { kit, ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } };
+      return true;
+    }),
+  };
+}
+
+/**
+ * Replace the kit of a preview playground. The settled result is cleared (it belongs to the old kit), the preview is
+ * unverified again, and the exploration is kept for the controls whose definition did not change.
+ */
+export async function revisePreview(domain: Domain, kit: Kit): Promise<void> {
+  const was = (await playground(domain.id)).kit;
+  const read = await readBrand(kit, was);
+  await update((s) => {
+    const p = s.playgrounds[domain.id];
+    if (!p?.kit) throw new NotFound(`Playground "${domain.id}" does not exist.`);
+    const same = (id: string) => JSON.stringify(p.kit!.kit.controls.find((c) => c.id === id)) === JSON.stringify(kit.controls.find((c) => c.id === id));
+    const kept = Object.fromEntries(Object.entries(p.kit.exploration?.controls ?? {}).filter(([id]) => same(id)));
+    p.domain = domain;
+    p.kit = { kit, ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
+  });
 }
 
 /**
