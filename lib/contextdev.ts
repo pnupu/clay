@@ -6,8 +6,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 const BASE = "https://api.context.dev/v1";
 
 export class ContextDevError extends Error {
-  constructor(public status: number, public code: string | null, message: string) {
+  status: number;
+  code: string | null;
+  constructor(status: number, code: string | null, message: string) {
     super(message);
+    this.status = status;
+    this.code = code;
   }
   /** Rate limit or quota: callers must stop calling and report. */
   get stop() {
@@ -34,7 +38,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   try {
     // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
     mkdirSync("run", { recursive: true });
-    appendFileSync("run/requests.jsonl", JSON.stringify({ at: new Date().toISOString(), via: "app", method, path, status: res.status, ms, credits }) + "\n");
+    appendFileSync("run/requests.jsonl", JSON.stringify({ at: new Date().toISOString(), via: "app", method, path, status: res.status, ms, credits, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
   } catch {}
   if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
   return { ...(data as T), _ms: ms };
@@ -70,12 +74,14 @@ export function scrape(url: string, json?: { schema: unknown; instructions: stri
 export type Monitor = { id: string; status: string; webhook: { url: string; secret?: string; events: string[] } | null; initial_run_id: string | null };
 
 /** Page monitor with semantic detection and a signed webhook (POST /monitors). The secret is only returned to keys with monitors:write. */
-export function createMonitor(name: string, url: string, webhookUrl: string, instructions: string) {
+export function createMonitor(name: string, url: string, webhookUrl: string, instructions: string, minutes = Number(process.env.MONITOR_INTERVAL_MINUTES ?? 0)) {
   return cd<Monitor>("POST", "/monitors", {
     name,
     tags: ["decision-playground"],
     target: { type: "page", url, instructions },
     webhook: { url: webhookUrl, events: ["change.detected"], retry: {} },
+    // The API default is one run per day; the shortest interval the docs allow is 10 minutes. Not yet exercised against the API.
+    ...(minutes >= 10 ? { schedule: { type: "interval", frequency: Math.round(minutes), unit: "minutes" } } : {}),
   });
 }
 

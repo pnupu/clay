@@ -167,7 +167,8 @@ export async function recheck(id: string, trigger: ChangeEvent["trigger"], origi
     if (e instanceof ContextDevError && e.stop) throw e;
   } finally {
     await update((s) => {
-      Object.assign(s.sources[id], { snapshot, error, lastCheckedAt: new Date().toISOString() });
+      // The demo page lives on this app's origin, which changes with the port.
+      Object.assign(s.sources[id], { snapshot, error, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) s.events = [event, ...s.events].slice(0, 30);
     });
   }
