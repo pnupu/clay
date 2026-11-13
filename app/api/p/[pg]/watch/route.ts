@@ -22,7 +22,14 @@ export async function POST(req: Request, { params }: Ctx) {
       const m = await createMonitor(`Clay ${pg}: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS);
       unstored = m.id;
       if (!m.webhook?.secret) throw new Error("Monitor created without a webhook secret; the API key needs monitors:write.");
-      await update((s) => void (s.playgrounds[pg].sources[src.id].monitor = { id: m.id, secret: m.webhook!.secret!, webhookUrl }));
+      // Another request may have stored a monitor for this source meanwhile: its record stays, and this monitor is deleted.
+      const stored = await update((s) => {
+        const now = s.playgrounds[pg].sources[src.id];
+        if (now.monitor) return false;
+        now.monitor = { id: m.id, secret: m.webhook!.secret!, webhookUrl };
+        return true;
+      });
+      if (!stored) await deleteMonitor(m.id);
       unstored = null;
     }
     return await stateResponse(pg);
@@ -31,7 +38,7 @@ export async function POST(req: Request, { params }: Ctx) {
     // A monitor that could not be stored would run with nothing that can stop it: delete it. The answer carries the state,
     // so the page shows the monitors that were stored before the failure, and the message (for example the daily budget).
     if (unstored) await deleteMonitor(unstored).catch((x) => console.error("the unstored monitor could not be deleted", unstored, x));
-    return stateResponse(pg, message(e));
+    return stateResponse(pg, message(e)).catch(() => failure(e));
   }
 }
 
@@ -47,13 +54,20 @@ export async function DELETE(req: Request, { params }: Ctx) {
       try {
         await deleteMonitor(src.monitor.id);
       } catch (e) {
-        // A monitor that is already gone at Context.dev counts as deleted. Any other failure keeps the record, and the loop goes on.
+        // A monitor that is already gone at Context.dev counts as deleted. Any other failure keeps the record; the loop
+        // goes on, except after a rate-limit or quota error, where more calls would fail the same way.
         if (!(e instanceof ContextDevError && e.status === 404)) {
-          failed = message(e);
+          failed ??= message(e);
+          if (e instanceof ContextDevError && e.stop) break;
           continue;
         }
       }
-      await update((s) => void (s.playgrounds[pg]?.sources[src.id] && (s.playgrounds[pg].sources[src.id].monitor = null)));
+      // Only the record of the monitor that was deleted is cleared: a newer monitor of the same source keeps its record.
+      const id = src.monitor.id;
+      await update((s) => {
+        const now = s.playgrounds[pg]?.sources[src.id];
+        if (now?.monitor?.id === id) now.monitor = null;
+      });
     }
     return await stateResponse(pg, failed);
   } catch (e) {

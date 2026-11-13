@@ -17,7 +17,7 @@ test("access: bearer key or owner cookie, nothing else", () => {
   assert.equal(hasAccess({ authorization: `Bearer ${cookieValue(KEY)}` }, KEY, true), false);
 });
 
-test("access: no key is open only on a local machine; a short key matches nothing", () => {
+test("access: no key is open only on the development server; a short key matches nothing", () => {
   assert.equal(hasAccess({}, undefined, false), true);
   assert.equal(hasAccess({}, undefined, true), false);
   assert.equal(hasAccess({ authorization: "Bearer short" }, "short", false), false);
@@ -25,11 +25,12 @@ test("access: no key is open only on a local machine; a short key matches nothin
   assert.equal(isKey("", ""), false);
   assert.equal(isKey(undefined, KEY), false);
   // Only the development server runs without a key: a production build, Vercel or a public base URL needs one.
-  assert.equal(isHosted({}), false);
   assert.equal(isHosted({ NODE_ENV: "development", HOST: "some-machine" }), false);
+  assert.equal(isHosted({}), true);
   assert.equal(isHosted({ NODE_ENV: "production" }), true);
-  assert.equal(isHosted({ VERCEL: "1" }), true);
-  assert.equal(isHosted({ PUBLIC_BASE_URL: "https://clay.example" }), true);
+  assert.equal(isHosted({ NODE_ENV: "staging", HOST: "0.0.0.0" }), true);
+  assert.equal(isHosted({ NODE_ENV: "development", VERCEL: "1" }), true);
+  assert.equal(isHosted({ NODE_ENV: "development", PUBLIC_BASE_URL: "https://clay.example" }), true);
 });
 
 test("budget: counts per UTC day and stops at the cap", () => {

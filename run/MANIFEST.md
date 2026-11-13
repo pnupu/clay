@@ -125,3 +125,14 @@
   9. The watch route answered an error without the state and logged nothing: fixed, it answers the state with the message and logs.
   10. The 9 s state reload: reverted to 15 s; the 30 s highlight covers two reloads. Declined: a reload on tab focus.
 - Checks after round 2: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, webhook test (7 PASS).
+- Code review of 8fcab2e..5d67a81 (/code-review, high, round 3, the last): 8 findings. Answers, fixes in the next commit:
+  1. The Secure flag of the owner cookie followed a header that a proxy can leave at "http": fixed. A public base URL decides; the request's scheme is used only without one. Checks: production answers `Secure`; a dev server on http://127.0.0.1 answers without it.
+  2. `isHosted` was open for any NODE_ENV other than "production": fixed, only NODE_ENV "development" runs without a key (unit test, with the assertions for other environments restored).
+  3. The watch POST could answer a bare 500 when the store read failed in the error path: fixed, it falls back to the JSON error.
+  4. A stale DELETE could clear the record of a newer monitor: fixed, only the record of the deleted monitor is cleared.
+  5. The DELETE loop went on after a rate-limit or quota error and kept only the last message: fixed.
+  6. Two concurrent POSTs could orphan a monitor: fixed, an existing record stays and the second monitor is deleted.
+  7. A raw key with a literal %XX no longer matched in the owner link: fixed, the raw text is tried first, then the decoded one.
+  8. Declined: the store document is serialized twice per write; the watch route has its own `message` helper. Fixed: the two stale comments.
+  This commit has had no review of its own: three rounds is the limit.
+- Checks after round 3: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, webhook test (7 PASS), local guard checks with and without a key.

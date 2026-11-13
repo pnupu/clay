@@ -19,7 +19,7 @@ export const failure = (e: unknown) => Response.json({ error: e instanceof Error
 /**
  * The guard of every route that changes state or spends Context.dev requests. Returns the refusal, or null when the request may go on.
  * 1. The owner key (lib/access.ts): a bearer header from an agent, or the cookie that /enter sets in a browser. Without a
- *    configured key the app is open on a local machine and closed on a deployment.
+ *    configured key only the development server is open; every other way to run the app is closed.
  * 2. Browsers send Origin on such requests; agents and scripts do not. A request with an Origin must come from the page of
  *    this app itself, and the app must be addressed by localhost, by an IP address or by its public host name, so a foreign
  *    name that is made to resolve to this machine is refused too.
