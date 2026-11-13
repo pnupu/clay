@@ -2,6 +2,7 @@
 // On Vercel (BLOB_STORE_ID is set by the connected private Blob store) it is one private blob: reads bypass the CDN cache,
 // and every write is conditional on the ETag that was read, so a concurrent writer never loses an update.
 // The webhook secrets in `monitor.secret` live only in this server-side document.
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
@@ -103,7 +104,7 @@ function parse(text: string | null): Store {
 }
 
 /** The stored text and its version (the blob's ETag; null for the local file or when nothing is stored yet). */
-async function read(): Promise<{ text: string | null; etag: string | null }> {
+async function read(): Promise<{ text: string | null; etag: string | null; header?: string }> {
   if (!onBlob()) {
     try {
       return { text: readFileSync(FILE, "utf8"), etag: null };
@@ -114,8 +115,11 @@ async function read(): Promise<{ text: string | null; etag: string | null }> {
   const { get } = await import("@vercel/blob");
   const r = await get(BLOB, { access: "private", useCache: false });
   if (!r || r.statusCode !== 200) return { text: null, etag: null };
-  // A compressed response carries the weak form of the ETag (W/"..."); the conditional write needs the strong form.
-  return { text: await new Response(r.stream).text(), etag: r.blob.etag.replace(/^W\//, "") };
+  // The version is computed, not taken from the response: a blob's ETag is the MD5 of its bytes (checked against the Blob
+  // API on 2026-11-13), and the ETag header of a read can be a weak or re-encoded form that a conditional write never matches.
+  // A stale read gives a stale MD5, so the conditional write fails and the update runs again: it cannot overwrite silently.
+  const bytes = Buffer.from(await new Response(r.stream).arrayBuffer());
+  return { text: bytes.toString("utf8"), etag: `"${createHash("md5").update(bytes).digest("hex")}"`, header: r.blob.etag };
 }
 
 export const load = async (): Promise<Store> => parse((await read()).text);
@@ -138,7 +142,7 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
     }
     const { put, BlobPreconditionFailedError } = await import("@vercel/blob");
     for (let attempt = 0; ; attempt++) {
-      const { text, etag } = await read();
+      const { text, etag, header } = await read();
       const s = parse(text);
       const out = await fn(s);
       try {
@@ -146,8 +150,10 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
         await put(BLOB, JSON.stringify(s), { access: "private", contentType: "application/json", addRandomSuffix: false, ...(etag ? { ifMatch: etag } : { allowOverwrite: false }) });
         return out;
       } catch (e) {
-        const lost = e instanceof BlobPreconditionFailedError || (!etag && /already exists/i.test(String((e as Error)?.message)));
-        if (!lost || attempt >= 12) throw e;
+        // Another writer won: the ETag no longer matches, two conditional writes collided, or the blob was created meanwhile.
+        const lost = e instanceof BlobPreconditionFailedError || /precondition|conditional request|already exists/i.test(String((e as Error)?.message));
+        if (!lost) throw e;
+        if (attempt >= 12) throw new Error(`The store could not be written: 13 conditional writes failed in a row (computed version ${etag}, read header ${header}).`);
         await new Promise((r) => setTimeout(r, 40 + Math.random() * 60 * (attempt + 1)));
       }
     }
