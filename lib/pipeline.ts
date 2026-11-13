@@ -4,14 +4,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
 import { ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
-import { load, newPlayground, update, type ChangeEvent, type Playground, type Snapshot, type Source } from "./store";
+import { load, newPlayground, publicBase, update, type ChangeEvent, type Playground, type Snapshot, type Source } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
 const hash = (text: string) => createHash("sha256").update(text.replace(/\s+/g, " ").trim()).digest("hex");
 
-/** Context.dev cannot reach localhost. Without PUBLIC_BASE_URL the demo page is read by the app itself. */
-const demoIsLocal = () => !process.env.PUBLIC_BASE_URL;
-const demoUrl = (origin: string) => (process.env.PUBLIC_BASE_URL ?? origin) + DEMO_PATH;
+/** Context.dev cannot reach localhost. Without a public base URL the demo page is read by the app itself; on a deployment Context.dev reads it like any other source. */
+const demoIsLocal = () => !publicBase();
+const demoUrl = (origin: string) => (publicBase() ?? origin) + DEMO_PATH;
 
 // ---- Evidence: is each extracted fact visible in the page text of the same capture?
 
@@ -113,15 +113,15 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Thrown when a playground or vendor id is not known. */
 export class NotFound extends Error {}
-const playground = (pg: string): Playground => {
-  const p = load().playgrounds[pg];
+const playground = async (pg: string): Promise<Playground> => {
+  const p = (await load()).playgrounds[pg];
   if (!p) throw new NotFound(`Playground "${pg}" does not exist.`);
   return p;
 };
 
 /** Collect one vendor of one playground: find its pricing page (the config's URL, else Search), then extract it. */
 export async function collect(pg: string, id: string, origin: string): Promise<void> {
-  const p = playground(pg);
+  const p = await playground(pg);
   const v = p.domain.vendors.find((x) => x.id === id);
   if (!v) throw new NotFound(`Playground "${pg}" has no vendor "${id}".`);
   const prev = p.sources[id];
@@ -149,7 +149,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
 
 /** Collect every vendor of a playground in parallel. Returns the stop error (rate limit or quota) when one occurred. */
 export async function collectAll(pg: string, origin: string, ids?: string[]): Promise<string | null> {
-  const results = await Promise.allSettled((ids ?? playground(pg).domain.vendors.map((v) => v.id)).map((id) => collect(pg, id, origin)));
+  const results = await Promise.allSettled((ids ?? (await playground(pg)).domain.vendors.map((v) => v.id)).map((id) => collect(pg, id, origin)));
   const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
   return failed ? message(failed.reason) : null;
 }
@@ -210,11 +210,14 @@ export function recheck(pg: string, id: string, trigger: ChangeEvent["trigger"],
   inFlight.set(key, run.catch(() => {}));
   return run;
 }
-/** Per playground and source: the tail of its re-check chain. In-process only, like the store queue. */
+// Per playground and source: the tail of its re-check chain, so re-checks of one source in this instance run in turn.
+// lean: there is no lock across function instances. Two instances that re-check the same source at the same time both read
+// the page (double spend of requests), and the conditional write in recheckOnce keeps only one of the two results, so a
+// change gives one event. Add a lease in the store if concurrent triggers become common.
 const inFlight = new Map<string, Promise<unknown>>();
 
 async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
-  const before = playground(pg);
+  const before = await playground(pg);
   const src = before.sources[id];
   if (!src?.url || !src.snapshot) {
     await collect(pg, id, origin);
@@ -271,6 +274,9 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
     await update((s) => {
       const p = s.playgrounds[pg];
       if (!p?.sources[id]) return; // revised or removed while the page was read
+      // Conditional write: another re-check stored a newer read of this source while this one ran. Its result stands.
+      const cur = p.sources[id].snapshot;
+      if (cur?.textHash !== src.snapshot!.textHash || cur?.fetchedAt !== src.snapshot!.fetchedAt) return void (event = null);
       // The demo page lives on this app's origin, which changes with the port.
       Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
@@ -279,4 +285,5 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   return event;
 }
 
-export const originOf = (req: Request) => new URL(req.url).origin;
+/** The origin for URLs the app emits: the public base URL of a deployment, else the origin of the request (localhost). */
+export const originOf = (req: Request) => publicBase() ?? new URL(req.url).origin;

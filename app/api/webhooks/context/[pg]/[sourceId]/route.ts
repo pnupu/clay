@@ -3,7 +3,7 @@ import { verifyWebhook } from "@/lib/contextdev";
 import { originOf, recheck } from "@/lib/pipeline";
 import { load, update } from "@/lib/store";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /**
  * Context.dev monitor webhook (https://docs.context.dev/webhooks). The route ids only select the playground, the source and its secret;
@@ -12,7 +12,7 @@ export const maxDuration = 120;
 export async function POST(req: Request, { params }: { params: Promise<{ pg: string; sourceId: string }> }) {
   const { pg, sourceId } = await params;
   const raw = Buffer.from(await req.arrayBuffer()); // raw bytes first: verify before parsing
-  const src = load().playgrounds[pg]?.sources[sourceId];
+  const src = (await load()).playgrounds[pg]?.sources[sourceId];
   if (!src?.monitor || !verifyWebhook(raw, req.headers.get("x-context-signature") ?? "", src.monitor.secret)) return new Response("Invalid webhook signature", { status: 401 });
 
   let event: { id?: unknown; event?: unknown; data?: { change?: { monitor_id?: unknown } } };

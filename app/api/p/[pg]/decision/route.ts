@@ -8,7 +8,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const no = refused(req);
   if (no) return no;
   const { pg } = await params;
-  const p = load().playgrounds[pg];
+  const p = (await load()).playgrounds[pg];
   if (!p) return stateResponse(pg);
   const b = (await req.json().catch(() => null)) as { usage?: unknown; required?: unknown; chosen?: unknown; tolerance?: unknown } | null;
   const tolerance = b?.tolerance ?? 0;
@@ -24,7 +24,7 @@ export async function POST(req: Request, { params }: Ctx) {
     usage[m.id] = n;
   }
   const required = p.domain.features.map((f) => f.id).filter((id) => (b.required as unknown[]).includes(id));
-  await update((s) => void (s.playgrounds[pg].decision = { usage, required, chosen: b.chosen as string, tolerance, savedAt: new Date().toISOString() }));
+  await update((s) => void (s.playgrounds[pg] && (s.playgrounds[pg].decision = { usage, required, chosen: b.chosen as string, tolerance, savedAt: new Date().toISOString() })));
   return stateResponse(pg);
 }
 
@@ -32,6 +32,6 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const no = refused(req);
   if (no) return no;
   const { pg } = await params;
-  if (load().playgrounds[pg]) await update((s) => void (s.playgrounds[pg].decision = null));
+  await update((s) => void (s.playgrounds[pg] && (s.playgrounds[pg].decision = null)));
   return stateResponse(pg);
 }

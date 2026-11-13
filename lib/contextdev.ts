@@ -1,7 +1,8 @@
 // Thin Context.dev client. Shapes verified against https://docs.context.dev/openapi.json on 2026-11-13.
-// Self-contained (node builtins only) so scripts can import it without a bundler.
+// Node builtins and the store only, so scripts can import it without a bundler.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { spend, update } from "./store.ts";
 
 // CONTEXT_DEV_BASE_URL points the client at the local fixture API (scripts/fixture-api.ts) for checks that must not spend requests.
 const FIXTURE = process.env.CONTEXT_DEV_BASE_URL;
@@ -20,7 +21,8 @@ const LOG = FIXTURE ? "run/fixture-requests.jsonl" : "run/requests.jsonl";
 let pending = 0;
 const starts: number[] = [];
 let gate: Promise<void> = Promise.resolve();
-/** In-process only, like the store queue. */
+// lean: the pacing is per function instance. Two instances together can exceed the per-minute limit; Context.dev then
+// answers 429 and the call stops with that message. Move the start times into the store if that happens in practice.
 function slot(): Promise<void> {
   gate = gate.then(async () => {
     const wait = PER_MINUTE > 0 ? waitFor(starts, Date.now(), PER_MINUTE) : 0;
@@ -64,6 +66,14 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
     if (used >= cap) throw new ContextDevError(429, "RATE_LIMITED", `Local request cap reached: ${used} of ${cap} Context.dev requests are used (CONTEXT_DEV_REQUEST_CAP). No request was sent.`);
   };
   overCap();
+  // Daily budget of a deployment (CONTEXT_DEV_DAILY_CAP, default 300 requests per UTC day, 0 turns it off), counted in the store.
+  const daily = Number(process.env.CONTEXT_DEV_DAILY_CAP ?? 300);
+  const day = new Date().toISOString().slice(0, 10);
+  if (daily > 0 && !(await update((s) => {
+    const b = spend(s.budget, day, daily);
+    if (b) s.budget = b;
+    return !!b;
+  }))) throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were sent today (CONTEXT_DEV_DAILY_CAP). No request was sent. The budget resets at 00:00 UTC.`);
   await slot();
   overCap();
   const t0 = Date.now();

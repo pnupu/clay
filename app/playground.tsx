@@ -87,20 +87,23 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     });
   }, [api]);
 
-  // Watch loop. The demo source on localhost is re-checked every 3 s by the app itself (no Context.dev call).
-  // Everything else changes only through a webhook or the button, so the loop just reloads the state.
-  const demoLocal = state?.sources.demo?.snapshot?.extractor === "local-demo-parser";
+  // Nothing is re-checked on a timer: sources change through a webhook, a button, the agent, or a publish of the demo page.
+  // The clock ticks for the "ago" labels, and the stored state is reloaded every 15 s while the tab is visible, so a
+  // webhook result or a revision by the agent appears.
   useEffect(() => {
+    let n = 0;
     const t = setInterval(async () => {
       setNow(Date.now());
-      if (busyRef.current || tickRef.current) return;
+      if (++n % 5 || document.hidden || busyRef.current || tickRef.current) return;
       tickRef.current = true;
-      const s = await (demoLocal ? call(`${api}/recheck`, "POST", { id: "demo", trigger: "auto" }) : call(`${api}/state`)).catch(() => null).finally(() => (tickRef.current = false));
+      const s = await call(`${api}/state`).catch(() => null).finally(() => (tickRef.current = false));
       if (s?.sources && !busyRef.current) setState(s);
     }, 3000);
     return () => clearInterval(t);
-  }, [demoLocal, api]);
+  }, [api]);
 
+  /** This browser holds the owner key. Without it the page is read-only: the controls work, nothing is saved or re-read. */
+  const owner = state?.owner ?? false;
   const sources = useMemo(() => state?.sources ?? {}, [state]);
   const models = useMemo(() => Object.fromEntries(Object.entries(sources).map(([id, s]) => [id, s.snapshot?.model ?? null])) as Record<string, PricingModel | null>, [sources]);
   const collected = Object.values(sources).filter((s) => s.snapshot);
@@ -138,7 +141,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     const now = JSON.stringify([usage, required, chosen]);
     reported.current ??= now;
     if (reported.current !== now) moved.current = true;
-    if (!moved.current) return;
+    if (!moved.current || !owner) return;
     const t = setTimeout(() => {
       const metrics = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, { ...seen.current[k], final: v }]));
       seen.current = {};
@@ -148,7 +151,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     }, 1200);
     return () => clearTimeout(t);
     // `chosen` is the vendor the person clicked. The cheapest vendor that is shown as selected by default is not their choice.
-  }, [usage, required, chosen, pick, api]);
+  }, [usage, required, chosen, pick, api, owner]);
 
   const decision = state?.decision ?? null;
   /** The controls differ from the saved decision, so saving again means something. */
@@ -171,11 +174,12 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
           {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (
             <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
           )}
-          {!collectedAll && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
-          {collected.length > 0 && <button disabled={!!busy} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
+          {!collectedAll && <button className="primary" disabled={!!busy || !owner} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
+          {collected.length > 0 && <button disabled={!!busy || !owner} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
+      {!owner && <p className="small muted">You are viewing this playground without the owner key. Move the controls freely: that runs in your browser. Saving a decision, re-checking sources and editing the demo page need the owner key.</p>}
 
       {collected.length === 0 ? (
         <section className="card empty">
@@ -261,9 +265,9 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
               {!decision || !standing ? (
                 <p className="small">Settle the controls, select a vendor, then save. The app keeps the decision live: when a source changes, it recomputes under the saved assumptions.</p>
               ) : (
-                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={() => run("Clearing", `${api}/decision`, "DELETE")} />
+                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={owner ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
-              {pick && unsaved && (
+              {pick && unsaved && owner && (
                 <div className="save">
                   {decision && <p className="small">{decision.chosen !== pick ? <>Selected now: <b>{sources[pick]?.name}</b>. It is not saved.</> : "The controls differ from the saved decision."}</p>}
                   <label className="small tolerance">
@@ -281,7 +285,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
               <ul className="events">
                 {state.events.map((e) => (
                   <li key={e.id} className={now - Date.parse(e.at) < 15000 ? "new" : undefined}>
-                    <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "watch loop" : "re-check"}</p>
+                    <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "demo page published" : "re-check"}</p>
                     {e.changes.slice(0, 6).map((c) => (
                       <p className="change" key={c.path}>{h.humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
                     ))}
@@ -315,20 +319,20 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
                       </p>
                       {s.error && <p className="small bad">{s.error}</p>}
                     </div>
-                    <button className="small-btn" disabled={!!busy} onClick={() => run(`Re-checking ${s.name}`, `${api}/recheck`, "POST", { id: s.id })}>Re-check</button>
+                    <button className="small-btn" disabled={!!busy || !owner} onClick={() => run(`Re-checking ${s.name}`, `${api}/recheck`, "POST", { id: s.id })}>Re-check</button>
                   </li>
                 ))}
               </ul>
               {state.publicBaseUrl ? (
-                <button disabled={!!busy} onClick={() => run("Updating monitors", `${api}/watch`, Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
+                <button disabled={!!busy || !owner} onClick={() => run("Updating monitors", `${api}/watch`, Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
                   {Object.values(sources).some((s) => s.monitor) ? "Stop webhook monitors" : "Start webhook monitors"}
                 </button>
               ) : (
-                <p className="small muted">Webhook monitors are off: Context.dev needs a public URL to deliver to, and this app runs on localhost. Use Re-check.{sources.demo?.demo ? " The demo source is watched every 3 seconds." : ""}</p>
+                <p className="small muted">Webhook monitors are off: Context.dev needs a public URL to deliver to, and this app runs on localhost. Use Re-check.{sources.demo?.demo ? " The demo source is re-checked when its page is published." : ""}</p>
               )}
             </section>
 
-            {sources.demo?.demo && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
+            {sources.demo?.demo && owner && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
           </aside>
         </div>
       )}
@@ -407,7 +411,7 @@ function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingMo
   );
 }
 
-function Standing({ decision, standing: st, sources, now, onLoad, onClear }: { decision: NonNullable<PublicState["decision"]>; standing: ReturnType<typeof judge>; sources: Record<string, Src>; now: number; onLoad: () => void; onClear: () => void }) {
+function Standing({ decision, standing: st, sources, now, onLoad, onClear }: { decision: NonNullable<PublicState["decision"]>; standing: ReturnType<typeof judge>; sources: Record<string, Src>; now: number; onLoad: () => void; onClear: (() => void) | null }) {
   const { label } = useContext(Dom);
   const name = sources[decision.chosen]?.name ?? decision.chosen;
   const top = st.cheapest ? sources[st.cheapest]?.name : null;
@@ -432,7 +436,7 @@ function Standing({ decision, standing: st, sources, now, onLoad, onClear }: { d
       </p>
       <div className="row">
         <button className="small-btn" onClick={onLoad}>Load into controls</button>
-        <button className="small-btn" onClick={onClear}>Clear</button>
+        {onClear && <button className="small-btn" onClick={onClear}>Clear</button>}
       </div>
     </>
   );
@@ -449,7 +453,7 @@ function DemoEditor({ page, busy, onPublish }: { page: PricingModel | null; busy
   return (
     <section className="card demo">
       <h2>Demo source <span className="badge">Demo</span></h2>
-      <p className="small">Northwind Auth is a fictional vendor. Its <a href="/demo-vendor/pricing" target="_blank" rel="noreferrer">pricing page</a> is served by this app, so you can change a price and watch the standing decision react. It goes through the same re-check, diff and verdict as the real sources.</p>
+      <p className="small">Northwind Auth is a fictional vendor. Its <a href="/demo-vendor/pricing" target="_blank" rel="noreferrer">pricing page</a> is served by this app, so you can change a price and watch the standing decision react. Publishing re-checks the source at once, through the same read, diff and verdict as the real sources; on a public deployment Context.dev reads the page, which takes 10 to 40 seconds.</p>
       {field("base", "Base price, $ per month", 1)}
       {field("mauIncluded", "Users included", 1000)}
       {field("mauPrice", "Price per extra user, $", 0.001)}

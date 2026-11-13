@@ -8,10 +8,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * MCP endpoint (Streamable HTTP, stateless): the person's own agent connects here. Each request gets a fresh server and
- * transport, so there is no session to keep, and the answer is plain JSON. There is no auth: the app binds to 127.0.0.1, and requests from other web origins are refused.
+ * transport, so there is no session to keep, and the answer is plain JSON. Every method needs the owner key as "Authorization: Bearer <key>" (see refused()).
  */
 async function handle(req: Request) {
-  const no = req.method === "GET" ? null : refused(req);
+  const no = refused(req);
   if (no) return no;
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await buildServer(originOf(req)).connect(transport);

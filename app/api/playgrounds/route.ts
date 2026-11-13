@@ -3,10 +3,10 @@ import { createPlayground, originOf } from "@/lib/pipeline";
 import { load } from "@/lib/store";
 import { refused } from "@/app/api/respond";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-export const GET = () => Response.json(Object.values(load().playgrounds).map((p) => ({ id: p.domain.id, question: p.domain.question, createdAt: p.createdAt, vendors: p.domain.vendors.map((v) => v.name) })));
+export const GET = async () => Response.json(Object.values((await load()).playgrounds).map((p) => ({ id: p.domain.id, question: p.domain.question, createdAt: p.createdAt, vendors: p.domain.vendors.map((v) => v.name) })));
 
 /** Create a playground from a config (the HTTP form of the agent's create_playground tool). The config is validated in lib/config.ts. */
 export async function POST(req: Request) {

@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Northwind Auth pricing (demo page)" };
 
 /** A mock vendor pricing page. It is fictional and exists so a price change can be made live during a demo. */
-export default function DemoPricing() {
-  const model = load().demoPage ?? DEMO_DEFAULT;
+export default async function DemoPricing() {
+  const model = (await load()).demoPage ?? DEMO_DEFAULT;
   return (
     <main className="demo-page">
       <p className="demo-banner">Demo page. Northwind Auth is not a real vendor. This page is served by the Clay app.</p>

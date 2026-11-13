@@ -4,8 +4,8 @@ import { load } from "@/lib/store";
 export const dynamic = "force-dynamic";
 
 /** Every playground of this app. The first one is the built-in example; an agent creates the others through the MCP server. */
-export default function Home() {
-  const playgrounds = Object.values(load().playgrounds).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export default async function Home() {
+  const playgrounds = Object.values((await load()).playgrounds).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <main className="shell home">
       <p className="eyebrow">Clay · data read from the web by Context.dev</p>

@@ -1,6 +1,6 @@
 import { refused, stateResponse, type Ctx } from "@/app/api/respond";
 import { createMonitor, deleteMonitor } from "@/lib/contextdev";
-import { load, update } from "@/lib/store";
+import { load, publicBase, update } from "@/lib/store";
 
 const INSTRUCTIONS = "Report changes to prices, plan names, included quantities, usage tiers, limits and feature availability. Ignore navigation, testimonials, counters, dates and marketing copy.";
 
@@ -9,9 +9,9 @@ export async function POST(req: Request, { params }: Ctx) {
   const no = refused(req);
   if (no) return no;
   const { pg } = await params;
-  const base = process.env.PUBLIC_BASE_URL;
-  if (!base) return Response.json({ error: "PUBLIC_BASE_URL is not set. Context.dev can only deliver webhooks to a public URL." }, { status: 409 });
-  for (const src of Object.values(load().playgrounds[pg]?.sources ?? {})) {
+  const base = publicBase();
+  if (!base) return Response.json({ error: "This app has no public URL. Context.dev can only deliver webhooks to a public URL." }, { status: 409 });
+  for (const src of Object.values((await load()).playgrounds[pg]?.sources ?? {})) {
     if (src.monitor || !src.url) continue;
     const webhookUrl = `${base}/api/webhooks/context/${pg}/${src.id}`;
     const m = await createMonitor(`Clay ${pg}: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS);
@@ -26,7 +26,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const no = refused(req);
   if (no) return no;
   const { pg } = await params;
-  for (const src of Object.values(load().playgrounds[pg]?.sources ?? {})) {
+  for (const src of Object.values((await load()).playgrounds[pg]?.sources ?? {})) {
     if (!src.monitor) continue;
     await deleteMonitor(src.monitor.id);
     await update((s) => void (s.playgrounds[pg].sources[src.id].monitor = null));

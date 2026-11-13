@@ -65,12 +65,12 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function buildServer(origin: string): McpServer {
   const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
-  const list = () => Object.values(load().playgrounds).map((p) => ({ playground_id: p.domain.id, question: p.domain.question, url: url(p.domain.id), decision_saved: !!p.decision }));
+  const list = async () => Object.values((await load()).playgrounds).map((p) => ({ playground_id: p.domain.id, question: p.domain.question, url: url(p.domain.id), decision_saved: !!p.decision }));
   /** The playground, or an error that names the ids that exist. */
-  const find = (id: string): Playground | string => load().playgrounds[id] ?? `Playground "${id}" does not exist. Existing playground ids: ${list().map((p) => p.playground_id).join(", ")}. Use one of them, or create_playground to build a new one.`;
+  const find = async (id: string): Promise<Playground | string> => (await load()).playgrounds[id] ?? `Playground "${id}" does not exist. Existing playground ids: ${(await list()).map((p) => p.playground_id).join(", ")}. Use one of them, or create_playground to build a new one.`;
   /** `detail`: the vendors to describe in full. The others get one line, so a revise does not repeat what the agent already has. */
-  const built = (id: string, extra: object, stop: string | null, detail?: string[]) => {
-    const report = collectionReport(load().playgrounds[id]);
+  const built = async (id: string, extra: object, stop: string | null, detail?: string[]) => {
+    const report = collectionReport((await load()).playgrounds[id]);
     return text({
       playground_id: id,
       url: url(id),
@@ -107,8 +107,8 @@ export function buildServer(origin: string): McpServer {
       annotations: { readOnlyHint: true },
     },
     async ({ playground_id, since }) => {
-      if (!playground_id) return text({ playgrounds: list() });
-      const p = find(playground_id);
+      if (!playground_id) return text({ playgrounds: await list() });
+      const p = await find(playground_id);
       if (typeof p === "string") return fail(p);
       const t = since == null ? null : Date.parse(since);
       if (t != null && Number.isNaN(t)) return fail(`since "${since}" is not a date-time. Use ISO 8601, for example 2026-11-13T18:00:00Z, or leave it out.`);
@@ -120,11 +120,11 @@ export function buildServer(origin: string): McpServer {
     "recheck_playground",
     { title: "Re-check a playground now", description: TOOLS.recheck_playground, inputSchema: { playground_id: z.string().max(40).describe("Id of the playground: the last part of its URL.") } },
     async ({ playground_id }) => {
-      const before = find(playground_id);
+      const before = await find(playground_id);
       if (typeof before === "string") return fail(before);
       const ids = before.domain.vendors.map((v) => v.id);
       const results = await Promise.allSettled(ids.map((id) => recheck(playground_id, id, "manual", origin)));
-      const p = load().playgrounds[playground_id];
+      const p = (await load()).playgrounds[playground_id];
       const stop = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
       const changed = results.flatMap((r) => (r.status === "fulfilled" && r.value ? [eventReport(r.value)] : []));
       return text({
@@ -162,7 +162,7 @@ export function buildServer(origin: string): McpServer {
       },
     },
     async (a) => {
-      const p = find(a.playground_id);
+      const p = await find(a.playground_id);
       if (typeof p === "string") return fail(p);
       if (a.playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
       const merge = <T extends { id: string }>(what: string, now: T[], add: T[] = [], remove: string[] = []): T[] | string => {

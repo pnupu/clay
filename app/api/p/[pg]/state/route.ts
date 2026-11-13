@@ -1,4 +1,5 @@
-import { stateResponse, type Ctx } from "@/app/api/respond";
+import { isOwner, stateResponse, type Ctx } from "@/app/api/respond";
 
 export const dynamic = "force-dynamic";
-export const GET = async (_req: Request, { params }: Ctx) => stateResponse((await params).pg);
+/** Public: anyone with the link may read a playground. `owner` in the answer says whether this browser holds the owner key. */
+export const GET = async (req: Request, { params }: Ctx) => stateResponse((await params).pg, null, 200, isOwner(req));
