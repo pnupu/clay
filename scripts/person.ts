@@ -25,7 +25,7 @@ if (steps.select) await page.locator("li.vendor", { hasText: steps.select }).get
 if (steps.tolerance != null) await page.getByLabel("Tolerance in dollars per month").fill(String(steps.tolerance));
 await page.waitForTimeout(1800); // the exploration report is sent after a pause
 if (steps.save) {
-  await page.getByRole("button", { name: /Save decision|Replace saved decision/ }).click();
+  await page.getByRole("button", { name: /Save decision|Replace saved decision|Update saved decision/ }).click();
   await page.waitForSelector(".verdict");
 }
 await page.waitForTimeout(500);

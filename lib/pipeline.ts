@@ -126,6 +126,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
   if (!v) throw new NotFound(`Playground "${pg}" has no vendor "${id}".`);
   const prev = p.sources[id];
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
+  src.name = v.name;
   try {
     if (v.demo) Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
     else if (v.url) Object.assign(src, { url: v.url, foundVia: "playground config" });
@@ -176,13 +177,20 @@ export async function revisePlayground(domain: Domain, origin: string): Promise<
     const schemaChanged = sig(p.domain) !== sig(domain);
     const was = new Map(p.domain.vendors.map((v) => [v.id, v]));
     const moved = domain.vendors.filter((v) => !was.has(v.id) || was.get(v.id)!.url !== v.url || was.get(v.id)!.domain !== v.domain).map((v) => v.id);
-    for (const id of Object.keys(p.sources)) if (!domain.vendors.some((v) => v.id === id) || moved.includes(id)) delete p.sources[id];
+    const dropped = Object.keys(p.sources).filter((id) => !domain.vendors.some((v) => v.id === id) || moved.includes(id));
+    // A dropped source would leave its Context.dev monitor running with nothing that can stop it.
+    if (dropped.some((id) => p.sources[id].monitor)) throw new Error("A webhook monitor watches a vendor that this change removes or moves. Stop the webhook monitors on the playground page first.");
+    for (const id of dropped) delete p.sources[id];
+    for (const v of domain.vendors) if (p.sources[v.id]) p.sources[v.id].name = v.name;
     const controls = new Set([...domain.metrics, ...domain.features].map((x) => x.id));
     const d = p.decision;
     const decisionCleared = !!d && !(domain.vendors.some((v) => v.id === d.chosen) && [...Object.keys(d.usage), ...d.required].every((k) => controls.has(k)));
     if (decisionCleared) p.decision = null;
     if (p.exploration) {
-      p.exploration.metrics = Object.fromEntries(Object.entries(p.exploration.metrics).filter(([k]) => controls.has(k)));
+      // A value outside a narrowed range cannot be shown by the control: that control starts again from its initial value.
+      const inRange = (k: string, x: number) => domain.metrics.some((m) => m.id === k && x >= m.min && x <= m.max);
+      p.exploration.metrics = Object.fromEntries(Object.entries(p.exploration.metrics).filter(([k, x]) => inRange(k, x.final)));
+      if (!domain.vendors.some((v) => v.id === p.exploration!.selected)) p.exploration.selected = null;
       p.exploration.features = Object.fromEntries(Object.entries(p.exploration.features).filter(([k]) => controls.has(k)));
     }
     p.domain = domain;
@@ -225,10 +233,19 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
         const second = await readModel(before.domain, src, origin);
         const again = diffModels(src.snapshot.model, second.model);
         const both = agreed(changes, again);
-        unconfirmed = changes.length + again.length - 2 * both.length;
-        // Nothing confirmed: keep the facts as they were and remember the new page text, so the same text is not extracted again.
-        snapshot = both.length === 0 ? { ...src.snapshot, textHash: second.textHash } : again.length <= changes.length ? second : first;
-        changes = both;
+        // Only a read whose every difference is confirmed may become the stored facts.
+        const clean = again.length === both.length ? second : changes.length === both.length ? first : null;
+        if (both.length === 0) {
+          // Nothing confirmed: keep the facts as they were and remember the new page text, so the same text is not extracted again.
+          snapshot = { ...src.snapshot, textHash: second.textHash };
+        } else if (clean) {
+          snapshot = clean;
+          unconfirmed = changes.length + again.length - 2 * both.length;
+        } else {
+          // Each read has a difference the other lacks. Store nothing and keep the old page hash, so the next re-check reads again.
+          snapshot = src.snapshot;
+        }
+        changes = clean ? both : [];
       }
       if (changes.length) {
         const models = (s: typeof before, own: PricingModel) => Object.fromEntries(Object.entries(s.sources).map(([k, x]) => [k, k === id ? own : (x.snapshot?.model ?? null)]));

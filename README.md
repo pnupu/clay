@@ -51,7 +51,7 @@ The full descriptions are in `lib/mcp.ts`. They are the product's API for anothe
 
 The official TypeScript SDK (`@modelcontextprotocol/sdk` 1.32.2) has `WebStandardStreamableHTTPServerTransport`, which takes a web `Request` and returns a `Response`. That is exactly a Next.js route handler, so `app/api/mcp/route.ts` is 20 lines: a fresh server and transport per request, stateless, JSON responses. The tools call `lib/` directly in the same process, so there is no second server, no HTTP hop and no second copy of the validation. A stdio server would need its own process and would have to call the app over HTTP for every tool.
 
-There is no auth: the app binds to 127.0.0.1. Requests that carry a foreign `Origin` header (a web page in a browser) are refused on `/api/mcp` and on `POST /api/playgrounds`.
+There is no auth: the app binds to 127.0.0.1. `proxy.ts` refuses every state-changing `/api` request that carries a foreign `Origin` header, or that addresses the app by a name that is not its own. So a web page open in the person's browser cannot spend requests or overwrite the saved decision. Agents, scripts and the Context.dev webhook send no `Origin` and pass.
 
 ### Trust boundaries
 
@@ -66,12 +66,12 @@ There is no auth: the app binds to 127.0.0.1. Requests that carry a foreign `Ori
 3. Playground: the controls come from the config and the extracted data. Every move recomputes the cost per vendor, the ranking and the crossover points in the browser. After the person pauses, the browser reports the range tried and the final value per control; that summary is for the agent.
 4. Standing decision: the saved state is the assumptions, the chosen vendor and a tolerance. Rule: the decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the tolerance (dollars per month, default 0) more than the cheapest fully priced vendor. `standing()` in `lib/diff.ts` is the one implementation; the screen, the change verdict and the agent tools all use it.
 5. Change detection: a webhook from a Context.dev page monitor, the "Re-check" buttons, the agent's `recheck_playground` and the watch loop of the demo source all call the same `recheck()`. It reads the page text (1 credit) and compares its hash. Only when the text changed, it extracts again (5 credits) and diffs the facts.
-6. Confirmation: extraction is not deterministic. A change on a real source is recorded only when a second fresh extraction reports the same new value (`agreed()` in `lib/diff.ts`). When the two reads agree on nothing, the facts stay as they were. The demo source needs no confirmation.
+6. Confirmation: extraction is not deterministic. A change on a real source is recorded only when a second fresh extraction reports the same new value (`agreed()` in `lib/diff.ts`). Only a read whose every difference is confirmed becomes the stored facts. When the two reads agree on nothing, the facts stay as they were. When each read has a difference the other lacks, nothing is stored and the next re-check reads the page again. The demo source needs no confirmation.
 
 ## Layout
 
 - `lib/` has no Next.js or React imports: `domain.ts` (the Domain type, the seed, the extraction schema), `config.ts` (validation of runtime configs), `contextdev.ts` (API client, request pacing, webhook verification), `pipeline.ts` (create, revise, collect, evidence guard, re-check), `pricing.ts` and `diff.ts` (pure computation), `explore.ts` (exploration summary), `report.ts` (what the agent sees), `mcp.ts` (the MCP server and its tool descriptions), `store.ts` (JSON file store), `demo.ts` (demo vendor page content).
-- `app/page.tsx` lists the playgrounds. `app/p/[pg]/page.tsx` and `app/playground.tsx` are the one screen. `app/api/p/[pg]/*` are thin routes per playground. `app/api/mcp` is the MCP endpoint. `app/demo-vendor/pricing` is the demo vendor's pricing page.
+- `app/page.tsx` lists the playgrounds. `app/p/[pg]/page.tsx` and `app/playground.tsx` are the one screen. `app/api/p/[pg]/*` are thin routes per playground. `app/api/mcp` is the MCP endpoint. `proxy.ts` is the cross-origin guard for `/api`. `app/demo-vendor/pricing` is the demo vendor's pricing page.
 - `scripts/person.ts` acts as the person in a headless browser. `scripts/fixture-api.ts` is a local stand-in for the Context.dev scrape endpoint, for checks that must not spend requests. `scripts/webhook-test.ts` signs requests as the Context.dev docs specify. `scripts/transcript.py` prints a `claude -p` stream-json transcript in a readable form.
 
 ## Limits you should know

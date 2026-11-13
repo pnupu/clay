@@ -40,7 +40,8 @@ const round2 = (x: number) => {
   return Math.round(x / p) * p;
 };
 const clamp = (m: MetricDef, v: number) => Math.min(m.max, Math.max(m.min, v));
-const toValue = (m: MetricDef, pos: number) => clamp(m, round2(isLog(m) ? m.min * Math.pow(m.max / m.min, pos / 1000) : isCubic(m) ? m.max * Math.pow(pos / 1000, 3) : m.min + ((m.max - m.min) * pos) / 1000));
+// A small range keeps every whole number; a large one moves in steps of two significant digits (the number field takes exact values).
+const toValue = (m: MetricDef, pos: number) => clamp(m, (m.max <= 1000 ? Math.round : round2)(isLog(m) ? m.min * Math.pow(m.max / m.min, pos / 1000) : isCubic(m) ? m.max * Math.pow(pos / 1000, 3) : m.min + ((m.max - m.min) * pos) / 1000));
 const toPos = (m: MetricDef, v: number) => (isLog(m) ? (1000 * Math.log(clamp(m, v) / m.min)) / Math.log(m.max / m.min) : isCubic(m) ? 1000 * Math.cbrt(clamp(m, v) / m.max) : (1000 * (clamp(m, v) - m.min)) / (m.max - m.min));
 
 async function call(path: string, method = "GET", body?: unknown): Promise<PublicState & { error?: string | null }> {
@@ -80,7 +81,10 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
   }, []);
 
   useEffect(() => {
-    call(`${api}/state`).then(setState);
+    call(`${api}/state`).then((s) => {
+      setState(s);
+      if (s.decision) setTolerance(s.decision.tolerance ?? 0);
+    });
   }, [api]);
 
   // Watch loop. The demo source on localhost is re-checked every 3 s by the app itself (no Context.dev call).
@@ -122,19 +126,26 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
   // Exploration summary for the agent: per control, the range tried since the last report and the value now.
   // It is sent after the person pauses, so no network call sits between a move and its result.
   const seen = useRef<Record<string, { min: number; max: number }>>({});
-  const mounted = useRef(false);
+  const reported = useRef<string | null>(null);
   useEffect(() => {
     for (const [k, v] of Object.entries(usage)) seen.current[k] = { min: Math.min(seen.current[k]?.min ?? v, v), max: Math.max(seen.current[k]?.max ?? v, v) };
-    if (!mounted.current) return void (mounted.current = true);
+    // Nothing is sent until the person changes something: opening the page is not exploring.
+    const now = JSON.stringify([usage, required, chosen]);
+    reported.current ??= now;
+    if (reported.current === now) return;
     const t = setTimeout(() => {
       const metrics = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, { ...seen.current[k], final: v }]));
       seen.current = {};
-      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metrics, required, selected: pick }) }).catch(() => {});
+      reported.current = now;
+      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metrics, required, selected: chosen }) }).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
-  }, [usage, required, pick, api]);
+    // `chosen` is the vendor the person clicked. The cheapest vendor that is shown as selected by default is not their choice.
+  }, [usage, required, chosen, api]);
 
   const decision = state?.decision ?? null;
+  /** The controls differ from the saved decision, so saving again means something. */
+  const unsaved = !decision || decision.chosen !== pick || (decision.tolerance ?? 0) !== tolerance || decision.required.length !== required.length || required.some((f) => !decision.required.includes(f)) || domain.metrics.some((m) => m.id in decision.usage && decision.usage[m.id] !== usage[m.id]);
   const standing = useMemo(() => (decision ? judge(decision, models) : null), [models, decision]);
 
   if (!state) return <main className="shell"><p className="muted">Loading…</p></main>;
@@ -245,16 +256,16 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
               ) : (
                 <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={() => run("Clearing", `${api}/decision`, "DELETE")} />
               )}
-              {pick && (!decision || decision.chosen !== pick) && (
+              {pick && unsaved && (
                 <div className="save">
-                  {decision && <p className="small">Selected now: <b>{sources[pick]?.name}</b>. It is not saved.</p>}
+                  {decision && <p className="small">{decision.chosen !== pick ? <>Selected now: <b>{sources[pick]?.name}</b>. It is not saved.</> : "The controls differ from the saved decision."}</p>}
                   <label className="small tolerance">
                     Still fine if within $
                     <input type="number" min={0} step={10} value={tolerance} onChange={(e) => setTolerance(Math.max(0, Number(e.target.value) || 0))} aria-label="Tolerance in dollars per month" />
                     per month of the cheapest
                   </label>
                   <button className="primary" disabled={!!busy} onClick={() => run("Saving", `${api}/decision`, "POST", { usage, required, chosen: pick, tolerance })}>
-                    {decision ? "Replace saved decision with" : "Save decision:"} {sources[pick]?.name}
+                    {!decision ? "Save decision:" : decision.chosen === pick ? "Update saved decision:" : "Replace saved decision with"} {sources[pick]?.name}
                   </button>
                 </div>
               )}

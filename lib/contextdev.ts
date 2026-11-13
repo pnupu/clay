@@ -15,6 +15,9 @@ export function waitFor(starts: number[], now: number, perMinute: number): numbe
   const recent = starts.filter((t) => now - t < 60_000);
   return recent.length < perMinute ? 0 : recent[recent.length - perMinute] + 60_000 - now;
 }
+const LOG = FIXTURE ? "run/fixture-requests.jsonl" : "run/requests.jsonl";
+/** Requests sent and not yet written to LOG. */
+let pending = 0;
 const starts: number[] = [];
 let gate: Promise<void> = Promise.resolve();
 /** In-process only, like the store queue. */
@@ -48,31 +51,41 @@ type Json = Record<string, unknown>;
 export async function cd<T = Json>(method: string, path: string, body?: unknown): Promise<T & { _ms: number }> {
   const key = process.env.CONTEXT_DEV_API_KEY;
   if (!key) throw new ContextDevError(0, "NO_KEY", "CONTEXT_DEV_API_KEY is not set");
+  await slot();
   // Optional hard cap on the number of logged requests (CONTEXT_DEV_REQUEST_CAP), so an agent in a loop cannot spend the budget.
+  // Checked after the wait, with no await before the request counts as pending, so parallel requests cannot pass it together.
   const cap = Number(process.env.CONTEXT_DEV_REQUEST_CAP ?? 0);
   if (cap > 0) {
-    let used = 0;
+    let used = pending;
     try {
-      used = readFileSync("run/requests.jsonl", "utf8").split("\n").filter(Boolean).length;
+      used += readFileSync(LOG, "utf8").split("\n").filter(Boolean).length;
     } catch {}
     if (used >= cap) throw new ContextDevError(429, "RATE_LIMITED", `Local request cap reached: ${used} of ${cap} Context.dev requests are used (CONTEXT_DEV_REQUEST_CAP). No request was sent.`);
   }
-  await slot();
   const t0 = Date.now();
-  const res = await fetch(BASE + path, {
-    method,
-    headers: { Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(120_000),
-  });
+  pending++;
+  let res: Response;
+  let data: Json;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers: { Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(120_000),
+    });
+    data = (await res.json().catch(() => ({}))) as Json;
+  } catch (e) {
+    pending--;
+    throw e;
+  }
   const ms = Date.now() - t0;
-  const data = (await res.json().catch(() => ({}))) as Json;
   const credits = (data.key_metadata as Json | undefined)?.credits_consumed ?? null;
   try {
     // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
     mkdirSync("run", { recursive: true });
-    appendFileSync(FIXTURE ? "run/fixture-requests.jsonl" : "run/requests.jsonl", JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res.status, ms, credits, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
+    appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res.status, ms, credits, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
   } catch {}
+  pending--;
   if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
   return { ...(data as T), _ms: ms };
 }

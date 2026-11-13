@@ -78,7 +78,8 @@ export function load(): Store {
   try {
     raw = JSON.parse(readFileSync(FILE, "utf8"));
   } catch {}
-  const s: Store = { playgrounds: raw.playgrounds ?? {}, webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null };
+  // No prototype: an id such as "__proto__" or "constructor" from a URL must not look like a playground.
+  const s: Store = { playgrounds: Object.assign(Object.create(null), raw.playgrounds), webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null };
   // The auth-provider playground is the seed: it always exists and its domain comes from the code.
   // A store written before playgrounds existed has its sources at the top level; they belong to the seed.
   const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
