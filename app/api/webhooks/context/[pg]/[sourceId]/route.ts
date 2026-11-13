@@ -6,13 +6,13 @@ import { load, update } from "@/lib/store";
 export const maxDuration = 120;
 
 /**
- * Context.dev monitor webhook (https://docs.context.dev/webhooks). The route id only selects the source and its secret;
+ * Context.dev monitor webhook (https://docs.context.dev/webhooks). The route ids only select the playground, the source and its secret;
  * the signature over the raw body is the authentication. A verified change.detected event triggers the same re-check as the button.
  */
-export async function POST(req: Request, { params }: { params: Promise<{ sourceId: string }> }) {
-  const { sourceId } = await params;
+export async function POST(req: Request, { params }: { params: Promise<{ pg: string; sourceId: string }> }) {
+  const { pg, sourceId } = await params;
   const raw = Buffer.from(await req.arrayBuffer()); // raw bytes first: verify before parsing
-  const src = load().sources[sourceId];
+  const src = load().playgrounds[pg]?.sources[sourceId];
   if (!src?.monitor || !verifyWebhook(raw, req.headers.get("x-context-signature") ?? "", src.monitor.secret)) return new Response("Invalid webhook signature", { status: 401 });
 
   let event: { id?: unknown; event?: unknown; data?: { change?: { monitor_id?: unknown } } };
@@ -31,6 +31,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ sourceI
     return true;
   });
   // The docs ask for a 2xx within 15 seconds, and extraction can take longer, so the re-check runs after the response.
-  if (fresh) after(() => recheck(sourceId, "webhook", originOf(req)).catch((e) => console.error("webhook re-check failed", e)));
+  if (fresh) after(() => recheck(pg, sourceId, "webhook", originOf(req)).catch((e) => console.error("webhook re-check failed", e)));
   return new Response(null, { status: 204 });
 }

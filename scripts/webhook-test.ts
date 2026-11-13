@@ -1,19 +1,20 @@
 // Local check of the webhook route: signs requests exactly as https://docs.context.dev/webhooks describes and posts them to the running app.
 // It arms a test monitor record (fake id and secret) on one source in .data/store.json, and removes it at the end.
-// Usage: node scripts/webhook-test.ts <port> <sourceId>
+// Usage: node scripts/webhook-test.ts <port> <sourceId> [playgroundId]
 import { createHmac, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
-const [port, sourceId] = process.argv.slice(2);
+const [port, sourceId, pg = "auth-providers"] = process.argv.slice(2);
 const base = `http://127.0.0.1:${port}`;
 const FILE = ".data/store.json";
 const secret = "whsec_" + randomBytes(24).toString("hex");
 const monitorId = "mon_localtest";
 
 type Ev = { id: string; trigger: string; changes: unknown; verdict: unknown };
-type St = { sources: Record<string, { monitor: unknown; lastCheckedAt: string }>; webhookEventIds: string[]; events: Ev[] };
+type Pg = { sources: Record<string, { monitor: unknown; lastCheckedAt: string }>; events: Ev[] };
+type St = { playgrounds: Record<string, Pg>; webhookEventIds: string[] };
 const edit = (fn: (s: St) => void) => { const s = JSON.parse(readFileSync(FILE, "utf8")); fn(s); writeFileSync(FILE, JSON.stringify(s, null, 1)); };
-edit((s) => void (s.sources[sourceId].monitor = { id: monitorId, secret, webhookUrl: "(local test)" }));
+edit((s) => void (s.playgrounds[pg].sources[sourceId].monitor = { id: monitorId, secret, webhookUrl: "(local test)" }));
 
 const payload = (id: string, monitor = monitorId) => JSON.stringify({ event: "change.detected", id, created_at: new Date().toISOString(), data: { change: { mode: "web", id: "chg_localtest", monitor_id: monitor, run_id: "run_localtest", target_type: "page", change_detection_type: "semantic", title: "Local test", summary: "Local test", detected_at: new Date().toISOString(), url: "https://example.com", tags: [] } } });
 
@@ -21,12 +22,12 @@ async function send(name: string, expect: number, body: string, opts: { t?: numb
   const t = opts.t ?? Math.floor(Date.now() / 1000);
   const v1 = createHmac("sha256", opts.key ?? secret).update(`${t}.`).update(body).digest("hex");
   const id = JSON.parse(body).id;
-  const res = await fetch(`${base}/api/webhooks/context/${sourceId}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Context-Signature": `t=${t},v1=${v1}`, "X-Context-Id": opts.idHeader ?? id, "X-Context-Event": "change.detected" }, body });
+  const res = await fetch(`${base}/api/webhooks/context/${pg}/${sourceId}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Context-Signature": `t=${t},v1=${v1}`, "X-Context-Id": opts.idHeader ?? id, "X-Context-Event": "change.detected" }, body });
   console.log(`${res.status === expect ? "PASS" : "FAIL"}  ${name}: HTTP ${res.status} (expected ${expect})`);
   if (res.status !== expect) process.exitCode = 1;
 }
 
-const state = async (): Promise<St> => (await fetch(`${base}/api/state`)).json();
+const state = async (): Promise<Pg> => (await fetch(`${base}/api/p/${pg}/state`)).json();
 const before = await state();
 const evt = "evt_" + randomBytes(6).toString("hex");
 try {
@@ -45,5 +46,5 @@ try {
   console.log(`${ok ? "PASS" : "FAIL"}  exactly one re-check for the accepted event (the replay did not start a second one)`);
   if (!ok) process.exitCode = 1;
 } finally {
-  edit((s) => { s.sources[sourceId].monitor = null; s.webhookEventIds = s.webhookEventIds.filter((x: string) => x !== evt); });
+  edit((s) => { s.playgrounds[pg].sources[sourceId].monitor = null; s.webhookEventIds = s.webhookEventIds.filter((x: string) => x !== evt); });
 }

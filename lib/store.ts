@@ -2,8 +2,8 @@
 // function instances, so a deployment needs a real store behind these two functions (Vercel KV / Upstash Redis
 // or Postgres such as Neon). The webhook secrets in `monitor.secret` must then live in that server-side store too.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import type { PricingModel } from "./domain";
-import type { Decision, FieldChange, Verdict } from "./diff";
+import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
+import type { Decision, FieldChange, Verdict } from "./diff.ts";
 
 export type Snapshot = {
   url: string;
@@ -26,7 +26,7 @@ export type Source = {
   name: string;
   demo: boolean;
   url: string | null;
-  foundVia: "context.dev search" | "app route" | null;
+  foundVia: "context.dev search" | "app route" | "playground config" | null;
   snapshot: Snapshot | null;
   lastCheckedAt: string | null;
   error: string | null;
@@ -44,10 +44,26 @@ export type ChangeEvent = {
   verdict: Verdict | null;
 };
 
-export type Store = {
+/** What the person tried, per control. "Tried 100 to 300, settled on 200" tells the agent more than "200". */
+export type Exploration = {
+  metrics: Record<string, { start: number; min: number; max: number; final: number }>;
+  features: Record<string, { final: boolean; toggles: number }>;
+  /** The vendor selected in the ranking now (not the saved decision). */
+  selected: string | null;
+  updatedAt: string;
+};
+
+export type Playground = {
+  domain: Domain;
+  createdAt: string;
   sources: Record<string, Source>;
   decision: Decision | null;
   events: ChangeEvent[];
+  exploration: Exploration | null;
+};
+
+export type Store = {
+  playgrounds: Record<string, Playground>;
   /** Webhook event ids already handled (deduplication on X-Context-Id). */
   webhookEventIds: string[];
   /** The editable content of the demo vendor's pricing page. */
@@ -55,14 +71,19 @@ export type Store = {
 };
 
 const FILE = ".data/store.json";
-const empty = (): Store => ({ sources: {}, decision: null, events: [], webhookEventIds: [], demoPage: null });
+export const newPlayground = (domain: Domain): Playground => ({ domain, createdAt: new Date().toISOString(), sources: {}, decision: null, events: [], exploration: null });
 
 export function load(): Store {
+  let raw: Partial<Store> & Partial<Pick<Playground, "sources" | "decision" | "events">> = {};
   try {
-    return { ...empty(), ...JSON.parse(readFileSync(FILE, "utf8")) };
-  } catch {
-    return empty();
-  }
+    raw = JSON.parse(readFileSync(FILE, "utf8"));
+  } catch {}
+  const s: Store = { playgrounds: raw.playgrounds ?? {}, webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null };
+  // The auth-provider playground is the seed: it always exists and its domain comes from the code.
+  // A store written before playgrounds existed has its sources at the top level; they belong to the seed.
+  const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
+  seed.domain = DOMAIN;
+  return s;
 }
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -80,9 +101,10 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
   return run;
 }
 
-/** State for the browser: no webhook secrets. */
-export function publicState(s: Store) {
-  const sources = Object.fromEntries(Object.entries(s.sources).map(([id, src]) => [id, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
-  return { sources, decision: s.decision, events: s.events, demoPage: s.demoPage, publicBaseUrl: process.env.PUBLIC_BASE_URL ?? null };
+/** State of one playground for the browser: no webhook secrets. */
+export function publicState(s: Store, id: string) {
+  const p = s.playgrounds[id];
+  const sources = Object.fromEntries(Object.entries(p.sources).map(([k, src]) => [k, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
+  return { id, sources, decision: p.decision, events: p.events, demoPage: s.demoPage, publicBaseUrl: process.env.PUBLIC_BASE_URL ?? null };
 }
 export type PublicState = ReturnType<typeof publicState>;

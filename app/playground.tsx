@@ -1,21 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DOMAIN, type MetricDef, type PricingModel } from "@/lib/domain";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
 import { crossovers, rank, vendorCost, type Assumptions, type PlanCost, type VendorCost } from "@/lib/pricing";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { standing as judge } from "@/lib/diff";
-import type { PublicState } from "@/lib/store";
+import type { Exploration, PublicState } from "@/lib/store";
 
 type Src = PublicState["sources"][string];
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const num = (n: number) => n.toLocaleString("en-US");
-const label = (id: string) => DOMAIN.metrics.find((m) => m.id === id)?.label ?? DOMAIN.features.find((f) => f.id === id)?.label ?? id;
-/** Replace metric and feature ids in a computed message with their labels. */
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-const humanize = (s: string) => [...DOMAIN.metrics, ...DOMAIN.features].reduce((t, d) => t.replaceAll(d.id, lower(d.label)), s);
-const color = (id: string) => `var(--series-${DOMAIN.vendors.findIndex((v) => v.id === id) + 1})`;
+/** Names and colours that depend on the playground's domain. */
+const helpers = (d: Domain) => ({
+  label: (id: string) => d.metrics.find((m) => m.id === id)?.label ?? d.features.find((f) => f.id === id)?.label ?? id,
+  /** Replace metric and feature ids in a computed message with their labels. */
+  humanize: (s: string) => [...d.metrics, ...d.features].reduce((t, x) => t.replaceAll(x.id, lower(x.label)), s),
+  color: (id: string) => `var(--series-${d.vendors.findIndex((v) => v.id === id) + 1})`,
+});
+const Dom = createContext<ReturnType<typeof helpers>>(helpers({ id: "", question: "", product: "", metrics: [], features: [], vendors: [] }));
 
 function ago(iso: string | null | undefined, now: number) {
   if (!iso) return "never";
@@ -26,27 +31,32 @@ function ago(iso: string | null | undefined, now: number) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-// ---- Slider scales: wide ranges need a non-linear slider.
+// ---- Slider scales: a wide range needs a non-linear slider. Values always stay inside [min, max].
 const isLog = (m: MetricDef) => m.min > 0 && m.max / m.min > 50;
+const isCubic = (m: MetricDef) => m.min === 0 && m.max > 1000;
 const round2 = (x: number) => {
   if (x < 100) return Math.round(x);
   const p = Math.pow(10, Math.floor(Math.log10(x)) - 1);
   return Math.round(x / p) * p;
 };
-const toValue = (m: MetricDef, pos: number) => (isLog(m) ? round2(m.min * Math.pow(m.max / m.min, pos / 1000)) : m.max <= 1000 ? Math.round(m.min + ((m.max - m.min) * pos) / 1000) : round2(m.max * Math.pow(pos / 1000, 3)));
-const toPos = (m: MetricDef, v: number) => (isLog(m) ? (1000 * Math.log(Math.max(v, m.min) / m.min)) / Math.log(m.max / m.min) : m.max <= 1000 ? (1000 * (v - m.min)) / (m.max - m.min) : 1000 * Math.cbrt(v / m.max));
+const clamp = (m: MetricDef, v: number) => Math.min(m.max, Math.max(m.min, v));
+const toValue = (m: MetricDef, pos: number) => clamp(m, round2(isLog(m) ? m.min * Math.pow(m.max / m.min, pos / 1000) : isCubic(m) ? m.max * Math.pow(pos / 1000, 3) : m.min + ((m.max - m.min) * pos) / 1000));
+const toPos = (m: MetricDef, v: number) => (isLog(m) ? (1000 * Math.log(clamp(m, v) / m.min)) / Math.log(m.max / m.min) : isCubic(m) ? 1000 * Math.cbrt(clamp(m, v) / m.max) : (1000 * (clamp(m, v) - m.min)) / (m.max - m.min));
 
 async function call(path: string, method = "GET", body?: unknown): Promise<PublicState & { error?: string | null }> {
   const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   return r.json();
 }
 
-export default function Playground() {
+export default function Playground({ domain, explored }: { domain: Domain; explored: Exploration | null }) {
+  const api = `/api/p/${domain.id}`;
+  const h = useMemo(() => helpers(domain), [domain]);
   const [state, setState] = useState<PublicState | null>(null);
-  const [usage, setUsage] = useState<Record<string, number>>(() => Object.fromEntries(DOMAIN.metrics.map((m) => [m.id, m.initial])));
-  const [required, setRequired] = useState<string[]>([]);
-  const [axis, setAxis] = useState(DOMAIN.metrics[0].id);
-  const [chosen, setChosen] = useState<string | null>(null);
+  // The controls start where the person left them, so the agent and the person see the same values.
+  const [usage, setUsage] = useState<Record<string, number>>(() => Object.fromEntries(domain.metrics.map((m) => [m.id, explored?.metrics[m.id]?.final ?? m.initial])));
+  const [required, setRequired] = useState<string[]>(() => domain.features.filter((f) => explored?.features[f.id]?.final).map((f) => f.id));
+  const [axis, setAxis] = useState(domain.metrics[0].id);
+  const [chosen, setChosen] = useState<string | null>(explored?.selected ?? null);
   const [tolerance, setTolerance] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,8 +80,8 @@ export default function Playground() {
   }, []);
 
   useEffect(() => {
-    call("/api/state").then(setState);
-  }, []);
+    call(`${api}/state`).then(setState);
+  }, [api]);
 
   // Watch loop. The demo source on localhost is re-checked every 3 s by the app itself (no Context.dev call).
   // Everything else changes only through a webhook or the button, so the loop just reloads the state.
@@ -81,23 +91,23 @@ export default function Playground() {
       setNow(Date.now());
       if (busyRef.current || tickRef.current) return;
       tickRef.current = true;
-      const s = await (demoLocal ? call("/api/recheck", "POST", { id: "demo", trigger: "auto" }) : call("/api/state")).catch(() => null).finally(() => (tickRef.current = false));
+      const s = await (demoLocal ? call(`${api}/recheck`, "POST", { id: "demo", trigger: "auto" }) : call(`${api}/state`)).catch(() => null).finally(() => (tickRef.current = false));
       if (s?.sources && !busyRef.current) setState(s);
     }, 3000);
     return () => clearInterval(t);
-  }, [demoLocal]);
+  }, [demoLocal, api]);
 
   const sources = useMemo(() => state?.sources ?? {}, [state]);
   const models = useMemo(() => Object.fromEntries(Object.entries(sources).map(([id, s]) => [id, s.snapshot?.model ?? null])) as Record<string, PricingModel | null>, [sources]);
   const collected = Object.values(sources).filter((s) => s.snapshot);
 
   // Controls come from the data: only metrics and features that at least one extracted page mentions.
-  const metrics = DOMAIN.metrics.filter((m) => collected.some((s) => s.snapshot!.model.plans?.some((p) => p.meters?.some((x) => x.metric === m.id))));
-  const features = DOMAIN.features.filter((f) => collected.some((s) => s.snapshot!.model.plans?.some((p) => p.features?.some((x) => x.feature === f.id && x.status != null))));
+  const metrics = domain.metrics.filter((m) => collected.some((s) => s.snapshot!.model.plans?.some((p) => p.meters?.some((x) => x.metric === m.id))));
+  const features = domain.features.filter((f) => collected.some((s) => s.snapshot!.model.plans?.some((p) => p.features?.some((x) => x.feature === f.id && x.status != null))));
 
   const a: Assumptions = useMemo(() => ({ usage, required }), [usage, required]);
   const ranking = useMemo(() => rank(models, a), [models, a]);
-  const axisDef = DOMAIN.metrics.find((m) => m.id === axis) ?? DOMAIN.metrics[0];
+  const axisDef = domain.metrics.find((m) => m.id === axis) ?? domain.metrics[0];
   const cross = useMemo(() => crossovers(models, a, axisDef.id, axisDef.min, axisDef.max), [models, a, axisDef]);
   const nextCross = cross.find((c) => c.at > (usage[axisDef.id] ?? 0));
   const topCost = ranking.ranked[0]?.best?.cost ?? 0;
@@ -109,26 +119,42 @@ export default function Playground() {
   const oldestCheck = healthy.map((x) => x.lastCheckedAt ?? "").sort()[0];
   const pick = chosen && ranking.ranked.some((v) => v.id === chosen) ? chosen : ranking.cheapest;
 
+  // Exploration summary for the agent: per control, the range tried since the last report and the value now.
+  // It is sent after the person pauses, so no network call sits between a move and its result.
+  const seen = useRef<Record<string, { min: number; max: number }>>({});
+  const mounted = useRef(false);
+  useEffect(() => {
+    for (const [k, v] of Object.entries(usage)) seen.current[k] = { min: Math.min(seen.current[k]?.min ?? v, v), max: Math.max(seen.current[k]?.max ?? v, v) };
+    if (!mounted.current) return void (mounted.current = true);
+    const t = setTimeout(() => {
+      const metrics = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, { ...seen.current[k], final: v }]));
+      seen.current = {};
+      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metrics, required, selected: pick }) }).catch(() => {});
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [usage, required, pick, api]);
+
   const decision = state?.decision ?? null;
   const standing = useMemo(() => (decision ? judge(decision, models) : null), [models, decision]);
 
   if (!state) return <main className="shell"><p className="muted">Loading…</p></main>;
 
-  const collectedAll = DOMAIN.vendors.every((v) => sources[v.id]?.snapshot || sources[v.id]?.error);
+  const collectedAll = domain.vendors.every((v) => sources[v.id]?.snapshot || sources[v.id]?.error);
 
   return (
+    <Dom.Provider value={h}>
     <main className="shell">
       <header className="top">
         <div>
-          <p className="eyebrow">Live decision playground · data read from the web by Context.dev</p>
-          <h1>{DOMAIN.question}</h1>
+          <p className="eyebrow"><Link href="/">Live decision playground</Link> · data read from the web by Context.dev</p>
+          <h1>{domain.question}</h1>
         </div>
         <div className="actions">
           {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (
-            <span className="live"><i />{healthy.length} of {DOMAIN.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
+            <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
           )}
-          {!collectedAll && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", "/api/collect")}>Collect pricing pages</button>}
-          {collected.length > 0 && <button disabled={!!busy} onClick={() => run("Re-checking sources", "/api/recheck")}>Re-check all now</button>}
+          {!collectedAll && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
+          {collected.length > 0 && <button disabled={!!busy} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
@@ -156,7 +182,7 @@ export default function Playground() {
                 {f.label}
               </label>
             ))}
-            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop.</p>
+            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop. A short summary of what you tried is kept for your agent.</p>
           </section>
 
           <section className="results">
@@ -181,7 +207,7 @@ export default function Playground() {
                   <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} saved={decision?.chosen === v.id} effect={v.effect} />
                 ))}
               </ul>
-              {DOMAIN.vendors.filter((v) => sources[v.id]?.error && !sources[v.id]?.snapshot).map((v) => (
+              {domain.vendors.filter((v) => sources[v.id]?.error && !sources[v.id]?.snapshot).map((v) => (
                 <p className="alert" key={v.id}>{v.name}: {sources[v.id].error}</p>
               ))}
             </div>
@@ -217,7 +243,7 @@ export default function Playground() {
               {!decision || !standing ? (
                 <p className="small">Settle the controls, select a vendor, then save. The app keeps the decision live: when a source changes, it recomputes under the saved assumptions.</p>
               ) : (
-                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={() => run("Clearing", "/api/decision", "DELETE")} />
+                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={() => run("Clearing", `${api}/decision`, "DELETE")} />
               )}
               {pick && (!decision || decision.chosen !== pick) && (
                 <div className="save">
@@ -227,7 +253,7 @@ export default function Playground() {
                     <input type="number" min={0} step={10} value={tolerance} onChange={(e) => setTolerance(Math.max(0, Number(e.target.value) || 0))} aria-label="Tolerance in dollars per month" />
                     per month of the cheapest
                   </label>
-                  <button className="primary" disabled={!!busy} onClick={() => run("Saving", "/api/decision", "POST", { usage, required, chosen: pick, tolerance })}>
+                  <button className="primary" disabled={!!busy} onClick={() => run("Saving", `${api}/decision`, "POST", { usage, required, chosen: pick, tolerance })}>
                     {decision ? "Replace saved decision with" : "Save decision:"} {sources[pick]?.name}
                   </button>
                 </div>
@@ -239,7 +265,7 @@ export default function Playground() {
                   <li key={e.id} className={now - Date.parse(e.at) < 15000 ? "new" : undefined}>
                     <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "watch loop" : "re-check"}</p>
                     {e.changes.slice(0, 6).map((c) => (
-                      <p className="change" key={c.path}>{humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
+                      <p className="change" key={c.path}>{h.humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
                     ))}
                     {e.changes.length > 6 && <p className="small muted">and {e.changes.length - 6} more facts</p>}
                     {e.unconfirmed ? <p className="small muted">Confirmed by a second read. {e.unconfirmed} more {e.unconfirmed === 1 ? "difference" : "differences"} appeared in only one of the two reads and {e.unconfirmed === 1 ? "is" : "are"} not reported.</p> : null}
@@ -261,7 +287,7 @@ export default function Playground() {
               <ul className="sources">
                 {Object.values(sources).map((s) => (
                   <li key={s.id}>
-                    <span className="dot" style={{ background: color(s.id) }} />
+                    <span className="dot" style={{ background: h.color(s.id) }} />
                     <div>
                       <a href={s.url ?? "#"} target="_blank" rel="noreferrer">{s.name}</a>
                       {s.demo && <span className="badge">Demo</span>}
@@ -271,12 +297,12 @@ export default function Playground() {
                       </p>
                       {s.error && <p className="small bad">{s.error}</p>}
                     </div>
-                    <button className="small-btn" disabled={!!busy} onClick={() => run(`Re-checking ${s.name}`, "/api/recheck", "POST", { id: s.id })}>Re-check</button>
+                    <button className="small-btn" disabled={!!busy} onClick={() => run(`Re-checking ${s.name}`, `${api}/recheck`, "POST", { id: s.id })}>Re-check</button>
                   </li>
                 ))}
               </ul>
               {state.publicBaseUrl ? (
-                <button disabled={!!busy} onClick={() => run("Updating monitors", "/api/watch", Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
+                <button disabled={!!busy} onClick={() => run("Updating monitors", `${api}/watch`, Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
                   {Object.values(sources).some((s) => s.monitor) ? "Stop webhook monitors" : "Start webhook monitors"}
                 </button>
               ) : (
@@ -284,15 +310,17 @@ export default function Playground() {
               )}
             </section>
 
-            {sources.demo && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
+            {sources.demo?.demo && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
           </aside>
         </div>
       )}
     </main>
+    </Dom.Provider>
   );
 }
 
 function VendorRow({ v, src, now, place, chosen, saved, onChoose, effect }: { v: VendorCost; src: Src; now: number; place?: number; chosen?: boolean; saved?: boolean; onChoose?: () => void; effect?: string }) {
+  const { label, humanize, color } = useContext(Dom);
   const p = v.best;
   const snap = src?.snapshot;
   return (
@@ -329,6 +357,7 @@ function VendorRow({ v, src, now, place, chosen, saved, onChoose, effect }: { v:
 
 /** One row per cost part, each with the page quote, a link to the source and whether the quote was found in the page text. */
 function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingModel | null; evidence: Record<string, boolean>; url: string; age: string }) {
+  const { label } = useContext(Dom);
   const plan = model?.plans?.find((x) => x.name === p.plan);
   const quoteOf = (key: string) => {
     const [kind, id] = key.split("/");
@@ -361,6 +390,7 @@ function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingMo
 }
 
 function Standing({ decision, standing: st, sources, now, onLoad, onClear }: { decision: NonNullable<PublicState["decision"]>; standing: ReturnType<typeof judge>; sources: Record<string, Src>; now: number; onLoad: () => void; onClear: () => void }) {
+  const { label } = useContext(Dom);
   const name = sources[decision.chosen]?.name ?? decision.chosen;
   const top = st.cheapest ? sources[st.cheapest]?.name : null;
   const isCheapest = st.cheapest === decision.chosen;
@@ -413,6 +443,7 @@ function DemoEditor({ page, busy, onPublish }: { page: PricingModel | null; busy
 
 // ---- Cost curves along one metric, with crossovers. Form: lines over a continuous axis (change of a magnitude along a control).
 function Chart({ models, a, axis, cross, names }: { models: Record<string, PricingModel | null>; a: Assumptions; axis: MetricDef; cross: { at: number }[]; names: Record<string, string> }) {
+  const { color } = useContext(Dom);
   const W = 640, H = 250, L = 56, R = 12, T = 10, B = 28;
   const v = a.usage[axis.id] ?? axis.initial;
   const log = isLog(axis);

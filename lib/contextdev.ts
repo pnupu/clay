@@ -1,6 +1,6 @@
 // Thin Context.dev client. Shapes verified against https://docs.context.dev/openapi.json on 2026-11-13.
 // Self-contained (node builtins only) so scripts can import it without a bundler.
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const BASE = "https://api.context.dev/v1";
@@ -25,6 +25,15 @@ type Json = Record<string, unknown>;
 export async function cd<T = Json>(method: string, path: string, body?: unknown): Promise<T & { _ms: number }> {
   const key = process.env.CONTEXT_DEV_API_KEY;
   if (!key) throw new ContextDevError(0, "NO_KEY", "CONTEXT_DEV_API_KEY is not set");
+  // Optional hard cap on the number of logged requests (CONTEXT_DEV_REQUEST_CAP), so an agent in a loop cannot spend the budget.
+  const cap = Number(process.env.CONTEXT_DEV_REQUEST_CAP ?? 0);
+  if (cap > 0) {
+    let used = 0;
+    try {
+      used = readFileSync("run/requests.jsonl", "utf8").split("\n").filter(Boolean).length;
+    } catch {}
+    if (used >= cap) throw new ContextDevError(429, "RATE_LIMITED", `Local request cap reached: ${used} of ${cap} Context.dev requests are used (CONTEXT_DEV_REQUEST_CAP). No request was sent.`);
+  }
   const t0 = Date.now();
   const res = await fetch(BASE + path, {
     method,

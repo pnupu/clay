@@ -1,10 +1,10 @@
 // Collect and re-check. Live sources and the demo source share every step except how the page is read.
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { DOMAIN, EXTRACTION_INSTRUCTIONS, extractionSchema, normalise, type PricingModel, type RawModel } from "./domain";
+import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
 import { ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { agreed, diffModels, verdict } from "./diff";
-import { load, update, type ChangeEvent, type Snapshot, type Source } from "./store";
+import { load, newPlayground, update, type ChangeEvent, type Playground, type Snapshot, type Source } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
 const hash = (text: string) => createHash("sha256").update(text.replace(/\s+/g, " ").trim()).digest("hex");
@@ -77,7 +77,7 @@ async function readText(src: Source, origin: string): Promise<string> {
 }
 
 /** Full read: structured extraction plus the page text of the same capture. */
-async function readModel(src: Source, origin: string): Promise<Snapshot> {
+async function readModel(d: Domain, src: Source, origin: string): Promise<Snapshot> {
   if (src.demo && demoIsLocal()) {
     // Demo source on localhost: the page embeds its pricing as JSON (as JSON-LD does on real sites) and the app parses it.
     const t0 = Date.now();
@@ -88,14 +88,14 @@ async function readModel(src: Source, origin: string): Promise<Snapshot> {
     const text = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<[^>]+>/g, " ");
     return { url: demoUrl(origin), fetchedAt: new Date().toISOString(), extractor: "local-demo-parser", textHash: hash(html), ...verify(model, text), truncated: false, latencyMs: Date.now() - t0, requestId: null };
   }
-  const r = await scrape(src.url!, { schema: extractionSchema(DOMAIN), instructions: EXTRACTION_INSTRUCTIONS });
+  const r = await scrape(src.url!, { schema: extractionSchema(d), instructions: extractionInstructions(d) });
   // HTTP 200 does not mean every output succeeded: check each one.
   if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`);
   const text = r.markdown.success && r.markdown.data ? r.markdown.data : "";
   const model = normalise(r.json.data as RawModel);
   try {
     mkdirSync(".data/pages", { recursive: true });
-    writeFileSync(`.data/pages/${src.id}.md`, text);
+    writeFileSync(`.data/pages/${d.id}--${src.id}.md`, text);
   } catch {}
   return {
     url: r.url,
@@ -111,44 +111,104 @@ async function readModel(src: Source, origin: string): Promise<Snapshot> {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** First collection of one vendor: find its pricing page with Search, then extract it. */
-export async function collect(id: string, origin: string): Promise<void> {
-  const v = DOMAIN.vendors.find((x) => x.id === id);
-  if (!v) throw new Error(`Unknown vendor ${id}`);
-  const prev = load().sources[id];
+/** Thrown when a playground or vendor id is not known. */
+export class NotFound extends Error {}
+const playground = (pg: string): Playground => {
+  const p = load().playgrounds[pg];
+  if (!p) throw new NotFound(`Playground "${pg}" does not exist.`);
+  return p;
+};
+
+/** Collect one vendor of one playground: find its pricing page (the config's URL, else Search), then extract it. */
+export async function collect(pg: string, id: string, origin: string): Promise<void> {
+  const p = playground(pg);
+  const v = p.domain.vendors.find((x) => x.id === id);
+  if (!v) throw new NotFound(`Playground "${pg}" has no vendor "${id}".`);
+  const prev = p.sources[id];
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
   try {
     if (v.demo) Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
-    else if (!src.url) Object.assign(src, { url: (await searchTopUrl(DOMAIN.searchQuery(v), v.domain)).url, foundVia: "context.dev search" });
+    else if (v.url) Object.assign(src, { url: v.url, foundVia: "playground config" });
+    else if (!src.url) Object.assign(src, { url: (await searchTopUrl(`${v.name} pricing`, v.domain)).url, foundVia: "context.dev search" });
     if (!src.url) throw new Error(`Search found no page on ${v.domain}`);
-    src.snapshot = await readModel(src, origin);
+    src.snapshot = await readModel(p.domain, src, origin);
     src.error = null;
   } catch (e) {
     src.error = message(e);
     if (e instanceof ContextDevError && e.stop) throw e;
   } finally {
     src.lastCheckedAt = new Date().toISOString();
-    await update((s) => void (s.sources[id] = { ...src, monitor: s.sources[id]?.monitor ?? src.monitor }));
+    await update((s) => {
+      const now = s.playgrounds[pg];
+      // The playground may have been revised while the page was read: only store a vendor that is still part of it.
+      if (now?.domain.vendors.some((x) => x.id === id)) now.sources[id] = { ...src, monitor: now.sources[id]?.monitor ?? src.monitor };
+    });
   }
+}
+
+/** Collect every vendor of a playground in parallel. Returns the stop error (rate limit or quota) when one occurred. */
+export async function collectAll(pg: string, origin: string, ids?: string[]): Promise<string | null> {
+  const results = await Promise.allSettled((ids ?? playground(pg).domain.vendors.map((v) => v.id)).map((id) => collect(pg, id, origin)));
+  const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+  return failed ? message(failed.reason) : null;
+}
+
+/** Create a playground from a validated Domain and collect its sources. */
+export async function createPlayground(domain: Domain, origin: string): Promise<{ created: boolean; error: string | null }> {
+  const created = await update((s) => {
+    if (s.playgrounds[domain.id]) return false;
+    s.playgrounds[domain.id] = newPlayground(domain);
+    return true;
+  });
+  return created ? { created, error: await collectAll(domain.id, origin) } : { created, error: null };
+}
+
+/**
+ * Replace the domain of a playground. Vendors that are gone lose their source. When the metrics, features or extraction
+ * guidance changed, every page is extracted again; else only new vendors and vendors with a new page are collected.
+ * The saved decision is kept only while its vendor and every control it names still exist.
+ */
+export async function revisePlayground(domain: Domain, origin: string): Promise<{ recollected: string[]; decisionCleared: boolean; error: string | null }> {
+  const sig = (d: Domain) => JSON.stringify([d.product, d.notes ?? "", d.metrics.map((m) => [m.id, m.describe]), d.features.map((f) => [f.id, f.describe])]);
+  const plan = await update((s) => {
+    const p = s.playgrounds[domain.id];
+    if (!p) throw new NotFound(`Playground "${domain.id}" does not exist.`);
+    const schemaChanged = sig(p.domain) !== sig(domain);
+    const was = new Map(p.domain.vendors.map((v) => [v.id, v]));
+    const moved = domain.vendors.filter((v) => !was.has(v.id) || was.get(v.id)!.url !== v.url || was.get(v.id)!.domain !== v.domain).map((v) => v.id);
+    for (const id of Object.keys(p.sources)) if (!domain.vendors.some((v) => v.id === id) || moved.includes(id)) delete p.sources[id];
+    const controls = new Set([...domain.metrics, ...domain.features].map((x) => x.id));
+    const d = p.decision;
+    const decisionCleared = !!d && !(domain.vendors.some((v) => v.id === d.chosen) && [...Object.keys(d.usage), ...d.required].every((k) => controls.has(k)));
+    if (decisionCleared) p.decision = null;
+    if (p.exploration) {
+      p.exploration.metrics = Object.fromEntries(Object.entries(p.exploration.metrics).filter(([k]) => controls.has(k)));
+      p.exploration.features = Object.fromEntries(Object.entries(p.exploration.features).filter(([k]) => controls.has(k)));
+    }
+    p.domain = domain;
+    return { recollected: schemaChanged ? domain.vendors.map((v) => v.id) : moved, decisionCleared };
+  });
+  return { ...plan, error: plan.recollected.length ? await collectAll(domain.id, origin, plan.recollected) : null };
 }
 
 /**
  * Re-check one source. Step 1 reads the page text and compares its hash (1 credit). Only when the text changed,
  * step 2 extracts again (5 credits), diffs the facts and judges the saved decision. Webhook, button and timer all end here.
  */
-export function recheck(id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
-  const run = (inFlight.get(id) ?? Promise.resolve()).then(() => recheckOnce(id, trigger, origin));
-  inFlight.set(id, run.catch(() => {}));
+export function recheck(pg: string, id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
+  const key = `${pg}/${id}`;
+  const run = (inFlight.get(key) ?? Promise.resolve()).then(() => recheckOnce(pg, id, trigger, origin));
+  inFlight.set(key, run.catch(() => {}));
   return run;
 }
-/** Per source: the tail of its re-check chain. In-process only, like the store queue. */
+/** Per playground and source: the tail of its re-check chain. In-process only, like the store queue. */
 const inFlight = new Map<string, Promise<unknown>>();
 
-async function recheckOnce(id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
-  const before = load();
+async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
+  const before = playground(pg);
   const src = before.sources[id];
   if (!src?.url || !src.snapshot) {
-    await collect(id, origin);
+    await collect(pg, id, origin);
     return null;
   }
   let event: ChangeEvent | null = null;
@@ -157,12 +217,12 @@ async function recheckOnce(id: string, trigger: ChangeEvent["trigger"], origin: 
   let unconfirmed = 0;
   try {
     if (hash(await readText(src, origin)) !== src.snapshot.textHash) {
-      const first = await readModel(src, origin);
+      const first = await readModel(before.domain, src, origin);
       let changes = diffModels(src.snapshot.model, first.model);
       snapshot = first;
       if (changes.length && first.extractor === "context.dev") {
         // Extraction is not deterministic. A change on a real source counts only when a second fresh extraction reports it too.
-        const second = await readModel(src, origin);
+        const second = await readModel(before.domain, src, origin);
         const again = diffModels(src.snapshot.model, second.model);
         const both = agreed(changes, again);
         unconfirmed = changes.length + again.length - 2 * both.length;
@@ -188,9 +248,11 @@ async function recheckOnce(id: string, trigger: ChangeEvent["trigger"], origin: 
     if (e instanceof ContextDevError && e.stop) throw e;
   } finally {
     await update((s) => {
+      const p = s.playgrounds[pg];
+      if (!p?.sources[id]) return; // revised or removed while the page was read
       // The demo page lives on this app's origin, which changes with the port.
-      Object.assign(s.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
-      if (event) s.events = [event, ...s.events].slice(0, 30);
+      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      if (event) p.events = [event, ...p.events].slice(0, 30);
     });
   }
   return event;

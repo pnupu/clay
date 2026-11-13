@@ -18,6 +18,7 @@
   --series-3: #1baf7a;
   --series-4: #eda100;
   --series-5: #e87ba4;
+  --series-6: #7a5cc4;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -172,3 +173,8 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
 .save { margin-top: 10px; display: grid; gap: 8px; }
 .save p { margin: 0; }
 .tolerance input { width: 72px; margin: 0 6px 0 2px; font: inherit; padding: 2px 6px; border: 1px solid var(--line, #ccc); border-radius: 6px; background: transparent; color: inherit; }
+.home { max-width: 760px; }
+.playgrounds { list-style: none; padding: 0; display: grid; gap: 10px; }
+.playgrounds a { font-size: 17px; font-weight: 600; }
+.playgrounds p { margin: 4px 0 0; }
+.eyebrow a { color: inherit; }

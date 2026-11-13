@@ -1,14 +1,18 @@
-// The decision domain. Everything domain-specific lives in this file: swap DOMAIN to change the use case.
-// The extraction schema, the playground controls and the demo page are all generated from it.
+// The decision domain. A Domain is plain data: the seed below is one, and an agent creates more at runtime (lib/config.ts validates them).
+// The extraction schema, the extraction instructions and the playground controls are all generated from it.
 
 export type MetricDef = { id: string; label: string; unit: string; describe: string; min: number; max: number; initial: number };
 export type FeatureDef = { id: string; label: string; describe: string };
-export type VendorDef = { id: string; name: string; domain: string; demo?: boolean };
+/** `url`: the pricing page, when the creator of the playground knows it. Without it, Search finds the page on `domain`. */
+export type VendorDef = { id: string; name: string; domain: string; url?: string; demo?: boolean };
 
 export type Domain = {
   id: string;
   question: string;
-  searchQuery: (vendor: VendorDef) => string;
+  /** What is being priced, in a few words. Part of the extraction instructions. */
+  product: string;
+  /** Optional extra guidance for the extraction, for example how to tell two similar metrics apart. */
+  notes?: string;
   metrics: MetricDef[];
   features: FeatureDef[];
   vendors: VendorDef[];
@@ -17,7 +21,8 @@ export type Domain = {
 export const DOMAIN: Domain = {
   id: "auth-providers",
   question: "Which auth provider should a B2B SaaS use?",
-  searchQuery: (v) => `${v.name} pricing`,
+  product: "authentication product for a business-to-business SaaS customer",
+  notes: "An SSO price per user or per MAU belongs to sso_users, never to sso_connections.",
   metrics: [
     {
       id: "mau",
@@ -164,13 +169,13 @@ export function extractionSchema(d: Domain) {
   };
 }
 
-export const EXTRACTION_INSTRUCTIONS =
-  "Extract the pricing of this vendor's authentication product for a business-to-business SaaS customer. " +
+export const extractionInstructions = (d: Domain) =>
+  `Extract the pricing of this vendor's ${d.product}. ` +
   "Use only facts stated on this page. Never estimate, infer or calculate a number: when the page does not state it, return null. " +
   "Keep prices and quantities exactly as written (monthly billing prices, not annual-discount prices). " +
   "If the page has no named plans, describe it as one plan named after the pricing model (for example 'Pay as you go'). " +
   "If a plan is described as usage-based, pay-as-you-go or free with no fixed fee, its base_price is 0. " +
-  "An SSO price per user or per MAU belongs to sso_users, never to sso_connections. " +
+  (d.notes ? d.notes.trim() + " " : "") +
   "Quotes must be copied verbatim from one place on the page.";
 
 /** Shape returned by the schema above: meters and features keyed by id. normalise() turns it into PricingModel. */
