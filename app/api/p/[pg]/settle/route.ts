@@ -4,7 +4,7 @@ import { update } from "@/lib/store";
 
 /** The person settles a preview playground: the values, the outputs rendered from them on the server, and the time are stored for the agent. */
 export async function POST(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const body = (await req.json().catch(() => null)) as { values?: unknown } | null;

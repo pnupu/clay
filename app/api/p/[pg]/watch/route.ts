@@ -8,7 +8,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Start watching: one Context.dev page monitor per source, with a signed webhook back to this deployment. Needs a public URL. */
 export async function POST(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const base = publicBase();
@@ -44,7 +44,7 @@ export async function POST(req: Request, { params }: Ctx) {
 
 /** Stop watching: delete the monitors this app created. Deleting is not counted against the daily budget. */
 export async function DELETE(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   let failed: string | null = null;

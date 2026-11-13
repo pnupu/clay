@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { BrandData } from "./kit.ts";
 import { dailyCap, spend, update } from "./store.ts";
+import { currentUserId, userCapMessage, userDailyCap } from "./accounts.ts";
 
 // CONTEXT_DEV_BASE_URL points the client at the local fixture API (scripts/fixture-api.ts) for checks that must not spend requests.
 const FIXTURE = process.env.CONTEXT_DEV_BASE_URL;
@@ -73,11 +74,20 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   // Move it to its own blob if playgrounds grow large or many requests run at once.
   const daily = dailyCap(process.env.CONTEXT_DEV_DAILY_CAP);
   const day = new Date().toISOString().slice(0, 10);
-  if (daily > 0 && method !== "DELETE" && !(await update((s) => {
-    const b = spend(s.budget, day, daily);
-    if (b) s.budget = b;
-    return !!b;
-  }))) throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were sent today (CONTEXT_DEV_DAILY_CAP). No request was sent. The budget resets at 00:00 UTC.`);
+  // A signed-in person (their page or their agent) also has their own daily cap (CLAY_USER_DAILY_REQUESTS, lib/accounts.ts).
+  const user = currentUserId();
+  const personal = user ? userDailyCap() : 0;
+  const refusal = (daily > 0 || personal > 0) && method !== "DELETE" ? await update((s) => {
+    const b = daily > 0 ? spend(s.budget, day, daily) : s.budget;
+    if (!b && daily > 0) return "global";
+    const u = user && personal > 0 ? spend(s.users[user]?.usage ?? null, day, personal) : null;
+    if (user && personal > 0 && !u) return "user";
+    s.budget = b;
+    if (user && u) s.users[user] = { ...(s.users[user] ?? { keyHash: null, keyCreatedAt: null }), usage: u };
+    return null;
+  }) : null;
+  if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were sent today (CONTEXT_DEV_DAILY_CAP). No request was sent. The budget resets at 00:00 UTC.`);
+  if (refusal === "user") throw new ContextDevError(429, "USER_DAILY_CAP", userCapMessage(personal));
   await slot();
   overCap();
   const t0 = Date.now();

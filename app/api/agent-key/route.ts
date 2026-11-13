@@ -1,0 +1,31 @@
+import { refused } from "@/app/api/respond";
+import { currentActor, hashKey, newAgentKey } from "@/lib/accounts";
+import { update } from "@/lib/store";
+
+export const dynamic = "force-dynamic";
+
+/** Only a person signed in through Clerk in a browser manages their agent key; an agent key cannot replace itself. */
+async function signedIn(req: Request): Promise<string | Response> {
+  const no = await refused(req);
+  if (no) return no;
+  const a = currentActor();
+  return a?.kind === "user" && a.via === "session" ? a.userId : Response.json({ error: "Sign in to manage your agent key." }, { status: 401 });
+}
+
+/** Create a new agent key, which replaces the old one. The key is in this answer only; Clay stores its SHA-256 hash. */
+export async function POST(req: Request) {
+  const userId = await signedIn(req);
+  if (userId instanceof Response) return userId;
+  const key = newAgentKey();
+  const createdAt = new Date().toISOString();
+  await update((s) => void (s.users[userId] = { usage: s.users[userId]?.usage ?? null, keyHash: hashKey(key), keyCreatedAt: createdAt }));
+  return Response.json({ key, createdAt }, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** Revoke the agent key: an agent that still uses it is refused from now on. */
+export async function DELETE(req: Request) {
+  const userId = await signedIn(req);
+  if (userId instanceof Response) return userId;
+  await update((s) => void (s.users[userId] && (s.users[userId] = { ...s.users[userId], keyHash: null, keyCreatedAt: null })));
+  return new Response(null, { status: 204 });
+}

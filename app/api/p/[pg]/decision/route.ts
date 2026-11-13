@@ -5,7 +5,7 @@ const bad = (error: string) => Response.json({ error }, { status: 400 });
 
 /** Save the settled state: assumptions, the chosen vendor and the tolerance of the "holds" rule. */
 export async function POST(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const p = (await load()).playgrounds[pg];
@@ -29,7 +29,7 @@ export async function POST(req: Request, { params }: Ctx) {
 }
 
 export async function DELETE(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   await update((s) => void (s.playgrounds[pg] && (s.playgrounds[pg].decision = null)));

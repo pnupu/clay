@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * transport, so there is no session to keep, and the answer is plain JSON. Every method needs the owner key as "Authorization: Bearer <key>" (see refused()).
  */
 async function handle(req: Request) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await buildServer(originOf(req)).connect(transport);

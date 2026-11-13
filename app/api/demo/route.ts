@@ -11,7 +11,7 @@ export const maxDuration = 300;
  * request (no watch loop), and the answer is the state after it: on a deployment Context.dev reads the page, as for a real source.
  */
 export async function POST(req: Request) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const model = (await req.json()) as PricingModel;
   if (!Array.isArray(model?.plans)) return Response.json({ error: "plans are needed" }, { status: 400 });

@@ -10,6 +10,7 @@ import { KIT_REFERENCE } from "./reference";
 import { BRAND_NOTE, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
 import { mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, type Playground } from "./store";
+import { canRead, canWrite, currentActor, playgroundCapMessage } from "./accounts";
 
 const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the saved tolerance (dollars per month, set by the person, default 0) more than the cheapest fully priced vendor.";
 
@@ -83,9 +84,19 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function buildServer(origin: string): McpServer {
   const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
-  const list = async () => Object.values((await load()).playgrounds).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
+  // Ownership: the caller sees their own playgrounds (the admin sees all) and may read the examples (lib/accounts.ts).
+  const list = async () => Object.values((await load()).playgrounds).filter((p) => canWrite(currentActor(), p)).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
   /** The playground, or an error that names the ids that exist. */
-  const find = async (id: string): Promise<Playground | string> => (await load()).playgrounds[id] ?? `Playground "${id}" does not exist. Existing playground ids: ${(await list()).map((p) => p.playground_id).join(", ")}. Use one of them, or create_playground to build a new one.`;
+  const find = async (id: string, write = false): Promise<Playground | string> => {
+    const p = (await load()).playgrounds[id];
+    if (p && (write ? canWrite : canRead)(currentActor(), p)) return p;
+    if (p && canRead(currentActor(), p)) return `Playground "${id}" is an example and cannot be changed. Build your own with create_playground.`;
+    return missing(id);
+  };
+  const missing = async (id: string) => {
+    const ids = (await list()).map((p) => p.playground_id);
+    return `Playground "${id}" does not exist. ${ids.length ? `Existing playground ids: ${ids.join(", ")}. Use one of them, or` : "You have no playgrounds yet. Use"} create_playground to build a new one.`;
+  };
   /** `detail`: the vendors to describe in full. The others get one line, so a revise does not repeat what the agent already has. */
   const built = async (id: string, extra: object, stop: string | null, detail?: string[]) => {
     const report = collectionReport((await load()).playgrounds[id]);
@@ -125,10 +136,14 @@ export function buildServer(origin: string): McpServer {
     if (!parsed.ok) return fail(`The spec is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
     const id = parsed.domain.id;
     const exists = `A playground with id "${id}" already exists at ${url(id)}. To change it, call revise_playground. To build a separate one, call create_playground with another id.`;
+    const capped = playgroundCapMessage((await load()).playgrounds);
+    if (capped) return fail(capped);
+    const taken = async () => !canWrite(currentActor(), (await load()).playgrounds[id] ?? {});
+    const takenMessage = `The id "${id}" is taken. Call create_playground again with another id.`;
     try {
-      if (parsed.kind === "preview") return (await createPreview(parsed.domain, parsed.kit)).created ? preview(id, {}, parsed.warnings) : fail(exists);
+      if (parsed.kind === "preview") return (await createPreview(parsed.domain, parsed.kit)).created ? preview(id, {}, parsed.warnings) : fail((await taken()) ? takenMessage : exists);
       const r = await createPlayground(parsed.domain, origin);
-      return r.created ? built(id, {}, r.error) : fail(exists);
+      return r.created ? built(id, {}, r.error) : fail((await taken()) ? takenMessage : exists);
     } catch (e) {
       return fail(`The playground could not be built: ${message(e)}`);
     }
@@ -162,7 +177,7 @@ export function buildServer(origin: string): McpServer {
     "recheck_playground",
     { title: "Re-check a playground now", description: TOOLS.recheck_playground, inputSchema: { playground_id: z.string().max(40).describe("Id of the playground: the last part of its URL.") } },
     async ({ playground_id }) => {
-      const before = await find(playground_id);
+      const before = await find(playground_id, true);
       if (typeof before === "string") return fail(before);
       if (before.kit) return fail(`"${playground_id}" is a preview playground: it has no pricing pages to re-check. Call read_playground for its settled result.`);
       const ids = before.domain.vendors.map((v) => v.id);
@@ -202,7 +217,7 @@ export function buildServer(origin: string): McpServer {
       },
     },
     async ({ playground_id, ...change }) => {
-      const p = await find(playground_id);
+      const p = await find(playground_id, true);
       if (typeof p === "string") return fail(p);
       if (playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
       const was = toSpec(p);

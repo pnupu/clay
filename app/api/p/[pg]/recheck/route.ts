@@ -6,7 +6,7 @@ export const maxDuration = 300;
 
 /** "Re-check now": one source ({id}) or all. Same function the webhook and the agent tool call. */
 export async function POST(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const { id, trigger } = (await req.json().catch(() => ({}))) as { id?: string; trigger?: "manual" | "auto" };

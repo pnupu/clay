@@ -1,19 +1,45 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import Kit from "@/app/kit";
 import Playground from "@/app/playground";
+import { viewer } from "@/app/api/respond";
+import { canRead, canWrite, isExample } from "@/lib/accounts";
 import { load } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
+/** The playground if this viewer may open it: an example, their own, or any for the admin. */
+async function find(pg: string) {
+  const p = (await load()).playgrounds[pg];
+  const me = await viewer();
+  return { p: p && canRead(me, p, pg) ? p : null, exists: !!p, me };
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ pg: string }> }) {
-  return { title: (await load()).playgrounds[(await params).pg]?.domain.question ?? "Playground not found" };
+  return { title: (await find((await params).pg)).p?.domain.question ?? "Private playground" };
 }
 
 export default async function Page({ params }: { params: Promise<{ pg: string }> }) {
-  const p = (await load()).playgrounds[(await params).pg];
-  if (!p) notFound();
-  // A preview playground has its own screen. The key remounts it when the agent revises the kit.
-  if (p.kit) return <Kit key={JSON.stringify(p.kit.kit)} id={p.domain.id} title={p.domain.question} state={p.kit} />;
-  // The key remounts the screen when the agent revises the playground, so the controls match the new domain.
-  return <Playground key={JSON.stringify(p.domain)} domain={p.domain} explored={p.exploration} />;
+  const { pg } = await params;
+  const { p, exists, me } = await find(pg);
+  if (!exists) notFound();
+  // A private playground: the same answer whoever owns it, and nothing of its content.
+  if (!p)
+    return (
+      <main className="shell narrow">
+        <h1>This playground is private</h1>
+        <p>Only the person whose agent built it can open it. {me.kind === "visitor" ? "If that is you, sign in." : "You are signed in with another account."}</p>
+        <p className="row wrap">
+          {me.kind === "visitor" && <Link className="button primary" href={`/sign-in?redirect_url=/p/${encodeURIComponent(pg)}`}>Sign in</Link>}
+          <Link className="button" href="/#examples">Try an example instead</Link>
+        </p>
+      </main>
+    );
+  return (
+    <>
+      {isExample(p, pg) && !canWrite(me, p) && <p className="example-note">This is an example. Move every control as you like: it all runs in your browser and nothing is saved. <Link href="/connect">Connect your agent</Link> to have one built for your own decision.</p>}
+      {/* A preview playground has its own screen. The key remounts the screen when the agent revises the playground. */}
+      {p.kit ? <Kit key={JSON.stringify(p.kit.kit)} id={p.domain.id} title={p.domain.question} state={p.kit} /> : <Playground key={JSON.stringify(p.domain)} domain={p.domain} explored={p.exploration} />}
+    </>
+  );
 }

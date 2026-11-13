@@ -26,9 +26,33 @@ This binds to 127.0.0.1 on port 43117. Use `PORT=<port> pnpm dev` for another po
 
 Open http://127.0.0.1:43117/ for the list of playgrounds. The built-in example is "Which auth provider should a B2B SaaS use?" at `/p/auth-providers`: the public pricing pages of Clerk, WorkOS, Supabase Auth and Stytch, plus one clearly labelled demo vendor (Northwind Auth) whose pricing page this app serves, so a presenter can change a price live.
 
+## Accounts
+
+- Visitor (not signed in): opens the home page and the example playgrounds, and uses them fully: every control, every result. Nothing is saved, re-checked, created or spent.
+- Person (signed in through Clerk; open sign-up with an email address): owns the playgrounds their agent creates. Only they and the admin can open, save, re-check, revise and delete them. A playground that is not an example is private: another person or a visitor sees "This playground is private" and nothing of its content.
+- Admin (the owner key, `CLAY_ACCESS_KEY`): everything, as before. Marks a playground as an example (`POST /api/p/<id>/example` with `{"example": true}` or `false`, or the button under "All playgrounds" on the home page), starts webhook monitors and edits the demo page. Playgrounds without an owner (all created before accounts) are the admin's. The seed `auth-providers` is an example unless the admin unmarks it.
+- Clay stores only the Clerk user id per person, the SHA-256 hash of their agent key and their request count of the day (`users` in the store). No email address or name.
+
+Connect your agent: after sign-in, `/connect` creates a personal agent key (`clay_` and 32 random bytes). It is shown once and stored as a hash; a new key replaces the old one, and "Revoke key" removes it. The MCP endpoint takes it as `Authorization: Bearer <agent key>` and acts as that person: `create_playground` makes the playground theirs, and `read_playground` lists only theirs (examples can be read by id).
+
+```bash
+# Claude Code
+claude mcp add --transport http clay https://<host>/api/mcp --header "Authorization: Bearer <agent key>"
+
+# Codex (reads the key from an environment variable; put the export in your shell profile)
+export CLAY_AGENT_KEY=<agent key>
+codex mcp add clay --url https://<host>/api/mcp --bearer-token-env-var CLAY_AGENT_KEY
+```
+
+Limits per person: `CLAY_USER_DAILY_REQUESTS` (default 40) Context.dev requests per UTC day, caused by their agent or their page, and `CLAY_USER_PLAYGROUNDS` (default 20) playgrounds. 0 turns a limit off. The deployment-wide `CONTEXT_DEV_DAILY_CAP` stays. At a limit the person and the agent get a message that says which limit and what to do. After 20 requests with a wrong bearer token in 10 minutes, an address gets 429 for the rest of the window (per function instance; the keys have 256 bits).
+
+How it is wired: `proxy.ts` runs Clerk's `clerkMiddleware()` on pages and the browser's API calls (not on `/api/mcp` and the webhooks). `identify()` in `app/api/respond.ts` resolves the caller: owner key, then agent key, then Clerk session. `refused()` binds the caller to the request (`bindActor()` in `lib/accounts.ts`, an AsyncLocalStorage), so `newPlayground()` stamps the owner and the Context.dev client counts the request against the person. The access rules are `canRead()` and `canWrite()` in `lib/accounts.ts`. Without Clerk keys the app runs as before: owner key only, and the development server without `CLAY_ACCESS_KEY` is open.
+
+Testing sign-up locally: Clerk development instances accept test addresses `<anything>+clerk_test@example.com` with the fixed code `424242`. A headless browser must send a Clerk Testing Token (`POST https://api.clerk.com/v1/testing_tokens` with the secret key, added as `__clerk_testing_token` to Frontend API requests), or Clerk's bot check stops the sign-up form.
+
 ## Production
 
-The app runs at **https://clay-steel-nu.vercel.app** (Vercel project `clay`, production only). Anyone can open a playground link and move the controls; that runs in the browser and costs nothing. Everything that writes state or spends Context.dev requests needs the owner key: the MCP endpoint, creating, revising, collecting, re-checking, webhook monitors, saving a decision, the exploration summary and the demo-page editor.
+The app runs at **https://clay-steel-nu.vercel.app** (Vercel project `clay`, production only). Anyone can open an example and move the controls; that runs in the browser and costs nothing. Everything that writes state or spends Context.dev requests needs a signed-in owner, their agent key, or the owner key (see Accounts). The admin connects with the owner key:
 
 ```bash
 # Claude Code
@@ -43,7 +67,7 @@ A browser gets the key once through the owner link `https://clay-steel-nu.vercel
 
 ## Connect your agent (local)
 
-The local MCP endpoint is `http://127.0.0.1:43117/api/mcp` (Streamable HTTP). The app must be running. Without `CLAY_ACCESS_KEY` the development server (`pnpm dev`) needs no key. A production build (`pnpm start`) and an app with `PUBLIC_BASE_URL` always need one.
+The local MCP endpoint is `http://127.0.0.1:43117/api/mcp` (Streamable HTTP). The app must be running. Without `CLAY_ACCESS_KEY` and without Clerk keys the development server (`pnpm dev`) needs no key; with Clerk keys, use an agent key from `/connect` or set `CLAY_ACCESS_KEY`. A production build (`pnpm start`) and an app with `PUBLIC_BASE_URL` always need one.
 
 ```bash
 # Claude Code
@@ -122,12 +146,12 @@ The official TypeScript SDK (`@modelcontextprotocol/sdk` 1.32.2) has `WebStandar
 
 ### Access guard
 
-`refused()` in `app/api/respond.ts` is called by every route that changes state or spends Context.dev requests. It checks two things.
+`refused()` in `app/api/respond.ts` is awaited by every route that changes state or spends Context.dev requests (`const no = await refused(req); if (no) return no;`). It checks the origin, the caller (see Accounts: a visitor is refused, a route under `/api/p/<id>/` needs the owner of that playground or the admin, `ADMIN_ONLY` routes need the admin) and:
 
 - The owner key (`lib/access.ts`, `CLAY_ACCESS_KEY`): `Authorization: Bearer <key>` from an agent, or the owner cookie in a browser. Keys are compared in constant time. With no key configured only the development server is open (`pnpm dev` binds to 127.0.0.1); a production build, Vercel, or an app with `PUBLIC_BASE_URL` refuses every write. A key shorter than 32 characters matches nothing.
 - The origin: a request that carries an `Origin` header must come from the app's own page, and the app must be addressed by its own name. So a web page open in the person's browser cannot spend requests or overwrite the saved decision.
 
-Public without a key: the pages, `GET /api/p/<id>/state`, `GET /api/playgrounds`, the demo vendor pricing page (Context.dev must read it) and the webhook route, which is protected by its signature check.
+Public without a key: the pages, `GET /api/p/<id>/state` and `GET /api/playgrounds` (examples only, and the caller's own), the demo vendor pricing page (Context.dev must read it) and the webhook route, which is protected by its signature check.
 
 ### Trust boundaries
 
@@ -148,8 +172,8 @@ Public without a key: the pages, `GET /api/p/<id>/state`, `GET /api/playgrounds`
 
 ## Layout
 
-- `lib/` has no Next.js or React imports: `spec.ts` (the spec an agent writes, and its validation), `kit.ts` (preview kit: controls, templates, values, exploration), `frame.ts` (the sandboxed frame document, its policy and the bridge), `reference.ts` (the kit reference and its two worked specs), `domain.ts` (the Domain type, the seed, the extraction schema), `config.ts` (validation of the price part of a spec), `contextdev.ts` (API client, request pacing, webhook verification), `pipeline.ts` (create, revise, collect, evidence guard, re-check), `pricing.ts` and `diff.ts` (pure computation), `explore.ts` (exploration summary), `report.ts` (what the agent sees), `mcp.ts` (the MCP server and its tool descriptions), `store.ts` (one JSON document: a local file in development, a private Vercel Blob with conditional writes on a deployment; also the daily budget), `access.ts` (the owner key check), `demo.ts` (demo vendor page content).
-- `app/page.tsx` lists the playgrounds. `app/p/[pg]/page.tsx` shows `app/playground.tsx` (price) or `app/kit.tsx` (preview); `app/p/[pg]/frame` serves the sandboxed preview document. `app/api/p/[pg]/*` are thin routes per playground. `app/api/mcp` is the MCP endpoint. `app/demo-vendor/pricing` is the demo vendor's pricing page. `app/enter` and `app/api/access` turn the owner link into the owner cookie.
+- `lib/` has no Next.js or React imports: `spec.ts` (the spec an agent writes, and its validation), `kit.ts` (preview kit: controls, templates, values, exploration), `frame.ts` (the sandboxed frame document, its policy and the bridge), `reference.ts` (the kit reference and its two worked specs), `domain.ts` (the Domain type, the seed, the extraction schema), `config.ts` (validation of the price part of a spec), `contextdev.ts` (API client, request pacing, webhook verification), `pipeline.ts` (create, revise, collect, evidence guard, re-check), `pricing.ts` and `diff.ts` (pure computation), `explore.ts` (exploration summary), `report.ts` (what the agent sees), `mcp.ts` (the MCP server and its tool descriptions), `store.ts` (one JSON document: a local file in development, a private Vercel Blob with conditional writes on a deployment; also the daily budget), `access.ts` (the owner key check), `accounts.ts` (the caller, the access rules, agent keys and limits), `demo.ts` (demo vendor page content).
+- `app/page.tsx` is the landing page: what Clay is, an example to try in place, the examples, and "Your playgrounds" for a signed-in person. `app/connect` is "Connect your agent". `app/sign-in`, `app/sign-up` are Clerk's forms. `app/p/[pg]/page.tsx` shows `app/playground.tsx` (price) or `app/kit.tsx` (preview); `app/p/[pg]/frame` serves the sandboxed preview document. `app/api/p/[pg]/*` are thin routes per playground. `app/api/mcp` is the MCP endpoint. `app/demo-vendor/pricing` is the demo vendor's pricing page. `app/enter` and `app/api/access` turn the owner link into the owner cookie.
 - `scripts/person.ts` acts as the person on a price playground in a headless browser, `scripts/person-kit.ts` on a preview playground. `scripts/sandbox-check.ts` runs hostile preview code against the sandbox. `scripts/mcp-call.sh` sends one MCP tool call. `scripts/fixture-api.ts` is a local stand-in for the Context.dev scrape endpoint, for checks that must not spend requests. `scripts/webhook-test.ts` signs requests as the Context.dev docs specify. `scripts/transcript.py` prints a `claude -p` stream-json transcript in a readable form.
 
 ## Limits you should know
@@ -187,6 +211,8 @@ Environment variables (Vercel project `clay`, Production):
 | Variable | Purpose |
 |---|---|
 | `CONTEXT_DEV_API_KEY` | Context.dev API key. Secret. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Clerk sign-in. Without both, accounts are off and only the owner key works. |
+| `CLAY_USER_DAILY_REQUESTS`, `CLAY_USER_PLAYGROUNDS` | Optional. Limits per person, default 40 and 20. |
 | `CLAY_ACCESS_KEY` | The owner key: random, 32 bytes or more. Secret. Without it a deployment refuses every write. |
 | `BLOB_READ_WRITE_TOKEN` | Set by Vercel when the private Blob store `clay-store` is connected. `BLOB_STORE_ID` works too. Either one switches the store from the local file to the blob. |
 | `CONTEXT_DEV_DAILY_CAP` | Optional. Context.dev requests per UTC day, default 300. |

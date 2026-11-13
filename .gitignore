@@ -59,3 +59,4 @@ run/demo-*.json
 
 # kit runs: transcripts, screenshots, store copies
 /run/kit-*
+run/accounts/

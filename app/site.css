@@ -1,0 +1,56 @@
+/* Site frame, landing page, accounts. Uses the tokens of globals.css. */
+a.button { display: inline-block; text-decoration: none; color: inherit; background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 7px 12px; font-weight: 500; }
+a.button:hover { border-color: var(--ink-2); }
+a.button.primary { background: var(--ink); color: var(--page); border-color: var(--ink); font-weight: 600; }
+.row.wrap { flex-wrap: wrap; align-items: center; }
+
+header.site { max-width: 1440px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+header.site .brand { font-weight: 700; font-size: 18px; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
+header.site nav { display: flex; align-items: center; gap: 16px; font-size: 14px; flex-wrap: wrap; justify-content: flex-end; }
+header.site nav a:not(.button) { color: var(--ink-2); text-decoration: none; }
+header.site nav a:not(.button):hover { color: var(--ink); text-decoration: underline; }
+header.site nav a.button { padding: 4px 12px; }
+.embedded header.site { display: none; }
+@media (max-width: 520px) { header.site nav a[href="/#examples"], header.site nav a[href="/#yours"] { display: none; } }
+
+.landing section { margin-top: 8px; }
+.landing section > h2, .landing .try-head h2 { font-size: 20px; margin: 0 0 6px; }
+.landing .shell { padding-top: 24px; padding-bottom: 8px; max-width: 1120px; }
+.hero { padding-top: 56px !important; }
+.hero h1 { font-size: clamp(32px, 5vw, 52px); letter-spacing: -0.02em; max-width: 18ch; margin: 6px 0 14px; }
+.lede { font-size: 18px; line-height: 1.5; color: var(--ink-2); max-width: 60ch; margin-bottom: 20px; text-wrap: pretty; }
+.try-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.try-head p { margin: 0; }
+.try iframe { display: block; width: 100%; height: min(820px, 86vh); border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
+.steps ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: step; }
+.steps li { counter-increment: step; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; color: var(--ink-2); }
+.steps li::before { content: counter(step); display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--page); font-weight: 700; font-size: 13px; margin-bottom: 10px; }
+.steps li strong { display: block; color: var(--ink); font-size: 16px; margin-bottom: 4px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
+.gallery .title, .mine .title { font-size: 17px; font-weight: 600; display: block; margin: 4px 0; text-wrap: balance; }
+.mine { display: grid; gap: 10px; }
+.mine li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mine p { margin: 2px 0 0; }
+.manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.connect-cta .card { display: grid; gap: 8px; justify-items: start; padding: 24px; }
+.connect-cta p { max-width: 64ch; margin: 0 0 4px; }
+.landing footer { padding-top: 24px !important; padding-bottom: 40px !important; }
+@media (max-width: 800px) {
+  .steps ol { grid-template-columns: 1fr; }
+  .hero { padding-top: 32px !important; }
+  .lede { font-size: 16px; }
+  .try iframe { height: 78vh; }
+}
+
+.narrow { max-width: 760px; display: grid; gap: 16px; }
+.narrow h1 { margin-bottom: 0; }
+.narrow .lede { margin: 0; }
+.auth-page { display: grid; justify-items: center; gap: 12px; padding-top: 40px; }
+.auth-page > p { max-width: 400px; text-align: center; }
+pre.code { background: var(--page); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 6px 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.command { margin: 10px 0 14px; }
+.command-head { display: flex; justify-content: space-between; align-items: center; }
+h2.step { margin-top: 22px; }
+ul.plain { display: grid; gap: 6px; }
+.example-note { max-width: 1440px; margin: 12px auto 0; padding: 8px 20px; font-size: 14px; color: var(--ink-2); }
+.embedded .example-note { display: none; }

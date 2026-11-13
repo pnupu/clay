@@ -7,7 +7,7 @@ import { update } from "@/lib/store";
  * agent-supplied code in the frame: it is cut short and stored as data.
  */
 export async function POST(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const body = (await req.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;

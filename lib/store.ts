@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
+import { currentUserId, type Account } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -65,6 +66,10 @@ export type Playground = {
   exploration: Exploration | null;
   /** A preview playground (lib/kit.ts): controls, a sandboxed preview and outputs. Its `domain` holds only the id and the title. */
   kit?: KitState;
+  /** The Clerk user id of the person whose agent created it. Missing: the admin's (lib/accounts.ts). */
+  owner?: string | null;
+  /** Marked by the admin as an example: anyone may open and use it without signing in. Missing: only the seed is one. */
+  example?: boolean;
 };
 
 export type Store = {
@@ -77,6 +82,8 @@ export type Store = {
   budget: Budget | null;
   /** A random value per write of the blob store, so a writer can tell its own write from an equal one of another instance. */
   rev: string | null;
+  /** Per Clerk user id: the agent key hash and the request count of the day (lib/accounts.ts). */
+  users: Record<string, Account>;
 };
 
 export type Budget = { day: string; used: number };
@@ -97,7 +104,8 @@ export const publicBase = (): string | null => process.env.PUBLIC_BASE_URL?.repl
 const FILE = ".data/store.json";
 const BLOB = "clay/store.json";
 const onBlob = () => !!process.env.BLOB_STORE_ID || !!process.env.BLOB_READ_WRITE_TOKEN;
-export const newPlayground = (domain: Domain): Playground => ({ domain, createdAt: new Date().toISOString(), sources: {}, decision: null, events: [], exploration: null });
+/** A new playground belongs to the signed-in person of the current request; the admin's has no owner. */
+export const newPlayground = (domain: Domain): Playground => ({ domain, createdAt: new Date().toISOString(), sources: {}, decision: null, events: [], exploration: null, ...(currentUserId() ? { owner: currentUserId() } : {}) });
 
 function parse(text: string | null): Store {
   let raw: Partial<Store> & Partial<Pick<Playground, "sources" | "decision" | "events">> = {};
@@ -105,10 +113,10 @@ function parse(text: string | null): Store {
     raw = JSON.parse(text ?? "");
   } catch {}
   // No prototype: an id such as "__proto__" or "constructor" from a URL must not look like a playground.
-  const s: Store = { playgrounds: Object.assign(Object.create(null), raw.playgrounds), webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null, budget: raw.budget ?? null, rev: raw.rev ?? null };
+  const s: Store = { playgrounds: Object.assign(Object.create(null), raw.playgrounds), webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null, budget: raw.budget ?? null, rev: raw.rev ?? null, users: Object.assign(Object.create(null), raw.users) };
   // The auth-provider playground is the seed: it always exists and its domain comes from the code.
   // A store written before playgrounds existed has its sources at the top level; they belong to the seed.
-  const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
+  const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), owner: null, sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
   seed.domain = DOMAIN;
   return s;
 }

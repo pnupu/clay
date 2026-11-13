@@ -1,5 +1,13 @@
-import { isOwner, stateResponse, type Ctx } from "@/app/api/respond";
+import { access, stateResponse, type Ctx } from "@/app/api/respond";
 
 export const dynamic = "force-dynamic";
-/** Public: anyone with the link may read a playground. `owner` in the answer says whether this browser holds the owner key. */
-export const GET = async (req: Request, { params }: Ctx) => stateResponse((await params).pg, null, 200, isOwner(req));
+/**
+ * Anyone may read an example; any other playground only its owner and the admin. A missing and a private playground get
+ * the same answer, so the answer does not tell whether an id exists. `owner` says whether this caller may write it.
+ */
+export async function GET(req: Request, { params }: Ctx) {
+  const { pg } = await params;
+  const a = await access(req, pg);
+  if (!a?.read) return Response.json({ error: "Playground not found, or it is private." }, { status: 404 });
+  return stateResponse(pg, null, 200, a.write);
+}

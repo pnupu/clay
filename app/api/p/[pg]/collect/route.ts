@@ -5,7 +5,7 @@ export const maxDuration = 300;
 
 /** Collect one vendor ({id}) or all of them, in parallel. */
 export async function POST(req: Request, { params }: Ctx) {
-  const no = refused(req);
+  const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const { id } = (await req.json().catch(() => ({}))) as { id?: string };
