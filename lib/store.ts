@@ -75,6 +75,11 @@ export type Store = {
 };
 
 export type Budget = { day: string; used: number };
+/** The daily cap from CONTEXT_DEV_DAILY_CAP. Only an explicit 0 turns it off; a missing, empty or malformed value gives the default, so a typo cannot switch the cap off. */
+export function dailyCap(raw: string | undefined, fallback = 300): number {
+  const n = raw == null || raw.trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 /** Count one Context.dev request against the daily cap. Returns the new budget, or null when the cap of that UTC day is reached. */
 export function spend(b: Budget | null, day: string, cap: number): Budget | null {
   const used = b?.day === day ? b.used : 0;
@@ -118,9 +123,13 @@ async function read(): Promise<{ text: string | null; etag: string | null; heade
   // The version is computed, not taken from the response: a blob's ETag is the MD5 of its bytes (checked against the Blob
   // API on 2026-11-13), and the ETag header of a read can be a weak or re-encoded form that a conditional write never matches.
   // A stale read gives a stale MD5, so the conditional write fails and the update runs again: it cannot overwrite silently.
+  // lean: this rests on "ETag = MD5 of the bytes" for a single-part upload. If Vercel changes that, every write fails after
+  // 13 attempts with an error that names both values (it fails closed, nothing is overwritten); then take the version from head().
   const bytes = Buffer.from(await new Response(r.stream).arrayBuffer());
-  return { text: bytes.toString("utf8"), etag: `"${createHash("md5").update(bytes).digest("hex")}"`, header: r.blob.etag };
+  return { text: bytes.toString("utf8"), etag: version(bytes), header: r.blob.etag };
 }
+
+const version = (bytes: Buffer | string) => `"${createHash("md5").update(bytes).digest("hex")}"`;
 
 export const load = async (): Promise<Store> => parse((await read()).text);
 
@@ -145,14 +154,19 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
       const { text, etag, header } = await read();
       const s = parse(text);
       const out = await fn(s);
+      const body = JSON.stringify(s);
+      if (body === text) return out; // `fn` changed nothing: no write, and no new version for the other writers
       try {
         // With an ETag: write only if nobody wrote since the read. Without one: create only (an existing blob is an error).
-        await put(BLOB, JSON.stringify(s), { access: "private", contentType: "application/json", addRandomSuffix: false, ...(etag ? { ifMatch: etag } : { allowOverwrite: false }) });
+        await put(BLOB, body, { access: "private", contentType: "application/json", addRandomSuffix: false, ...(etag ? { ifMatch: etag } : { allowOverwrite: false }) });
         return out;
       } catch (e) {
         // Another writer won: the ETag no longer matches, two conditional writes collided, or the blob was created meanwhile.
         const lost = e instanceof BlobPreconditionFailedError || /precondition|conditional request|already exists/i.test(String((e as Error)?.message));
         if (!lost) throw e;
+        // The SDK retries a write whose answer was lost, and the retry then fails its own precondition. When the stored
+        // document is exactly what this call sent, the write landed: `fn` must not run a second time on its own result.
+        if ((await read()).etag === version(body)) return out;
         if (attempt >= 12) throw new Error(`The store could not be written: 13 conditional writes failed in a row (computed version ${etag}, read header ${header}).`);
         await new Promise((r) => setTimeout(r, 40 + Math.random() * 60 * (attempt + 1)));
       }

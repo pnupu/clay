@@ -100,3 +100,16 @@
 - Context.dev: 38 requests in this task by the daily counter in the production store (27 by the app, 11 monitor and usage calls), 116 in total of the 400 cap. Account after the task: credits_remaining 50716, period credits_used 286. No 429 occurred.
 - State left in the production store: the seed `auth-providers` (5 sources, a saved decision for the demo vendor, 2 change events, demo page at its default price) and the agent-built `transactional-email-api` (3 sources, a saved decision). No monitor.
 - Checks run on the final commit: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+- Code review of adc9d95..95ba7e6 (/code-review, high): 10 findings. Answers, fixes in the next commit:
+  1. At the daily cap the webhook monitors could not be stopped, and the watch route answered a bare 500: fixed. A DELETE is not counted against the budget, and the watch route answers JSON with the message. Local check: watch POST 409 with its message, watch DELETE 200.
+  2. The owner link decoded a "+" of a base64 key into a space: fixed, the page reads the raw text after `key=`.
+  3. An app without a key was open on every host that is not Vercel: fixed. It is also closed with a public base URL or with a HOST beyond loopback (`isHosted()` in lib/access.ts, unit test).
+  4. An empty or malformed `CONTEXT_DEV_DAILY_CAP` turned the cap off: fixed, only an explicit 0 does (`dailyCap()`, unit test).
+  5. A store write whose answer was lost made the update run a second time on its own result: fixed. After a failed precondition the document is read again, and when it is exactly what was sent the update returns.
+  6. The budget counter lives in the one store document: partly fixed. An update that changes nothing no longer writes (check: 187 ms, read only). Declined as a follow-up, marked `lean:`: a counter blob of its own; the budget is counted before the pacing wait on purpose (a refused call returns at once).
+  7. Read-only notice while the state loads: declined, not a defect. The page returns "Loading" until the state is there (app/playground.tsx, `if (!state)`), so the notice is never shown before the answer.
+  8. The state reload interval equalled the highlight time of a new event: fixed, reload every 9 s, highlight 30 s. Declined: a reload on tab focus.
+  9. The store version is the computed MD5, not the service's ETag: declined, marked `lean:`. The ETag header of a read is not usable on Vercel, and a version from `head()` plus content from `get()` could overwrite silently on a stale read; the MD5 fails closed with an error that names both values.
+  10. `scripts/deploy.sh` resolved a relative export directory against the repository: fixed, and a directory inside the repository is refused.
+  Also fixed from the cut list: `POST /api/access` with the body `null` answers 401. Declined: scripts that import the Context.dev client write the local store; only the public base host counts as the app's own for browser writes; the demo route repeats the re-check reporting.
+- Checks after the review fixes: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, webhook test (7 PASS), 4 processes with 4 updates each against the production store (16 of 16 kept).

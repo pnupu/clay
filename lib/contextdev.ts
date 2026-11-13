@@ -2,7 +2,7 @@
 // Node builtins and the store only, so scripts can import it without a bundler.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { spend, update } from "./store.ts";
+import { dailyCap, spend, update } from "./store.ts";
 
 // CONTEXT_DEV_BASE_URL points the client at the local fixture API (scripts/fixture-api.ts) for checks that must not spend requests.
 const FIXTURE = process.env.CONTEXT_DEV_BASE_URL;
@@ -67,9 +67,12 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   };
   overCap();
   // Daily budget of a deployment (CONTEXT_DEV_DAILY_CAP, default 300 requests per UTC day, 0 turns it off), counted in the store.
-  const daily = Number(process.env.CONTEXT_DEV_DAILY_CAP ?? 300);
+  // A DELETE is not counted: it spends nothing, and stopping a monitor must work when the budget is used up.
+  // lean: the counter lives in the one store document, so each request costs one more read and conditional write of it.
+  // Move it to its own blob if playgrounds grow large or many requests run at once.
+  const daily = dailyCap(process.env.CONTEXT_DEV_DAILY_CAP);
   const day = new Date().toISOString().slice(0, 10);
-  if (daily > 0 && !(await update((s) => {
+  if (daily > 0 && method !== "DELETE" && !(await update((s) => {
     const b = spend(s.budget, day, daily);
     if (b) s.budget = b;
     return !!b;

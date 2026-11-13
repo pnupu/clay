@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COOKIE, cookieValue, hasAccess, isKey } from "./access.ts";
-import { spend } from "./store.ts";
+import { COOKIE, cookieValue, hasAccess, isHosted, isKey } from "./access.ts";
+import { dailyCap, spend } from "./store.ts";
 
 const KEY = "k".repeat(43);
 
@@ -24,6 +24,12 @@ test("access: no key is open only on a local machine; a short key matches nothin
   assert.equal(isKey(KEY, KEY), true);
   assert.equal(isKey("", ""), false);
   assert.equal(isKey(undefined, KEY), false);
+  // Reachable from other machines: Vercel, a public base URL, or a HOST beyond loopback.
+  assert.equal(isHosted({}), false);
+  assert.equal(isHosted({ HOST: "127.0.0.1" }), false);
+  assert.equal(isHosted({ HOST: "0.0.0.0" }), true);
+  assert.equal(isHosted({ VERCEL: "1" }), true);
+  assert.equal(isHosted({ PUBLIC_BASE_URL: "https://clay.example" }), true);
 });
 
 test("budget: counts per UTC day and stops at the cap", () => {
@@ -31,4 +37,6 @@ test("budget: counts per UTC day and stops at the cap", () => {
   assert.deepEqual(spend({ day: "2026-11-13", used: 1 }, "2026-11-13", 2), { day: "2026-11-13", used: 2 });
   assert.equal(spend({ day: "2026-11-13", used: 2 }, "2026-11-13", 2), null);
   assert.deepEqual(spend({ day: "2026-11-13", used: 2 }, "2026-11-14", 2), { day: "2026-11-14", used: 1 });
+  // Only an explicit 0 turns the cap off: an empty or malformed value keeps the default.
+  assert.deepEqual([undefined, "", " ", "300/day", "-5", "0", "50"].map((x) => dailyCap(x)), [300, 300, 300, 300, 300, 0, 50]);
 });

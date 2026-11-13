@@ -9,7 +9,8 @@ import { useEffect, useState } from "react";
 export default function Enter() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    const key = new URLSearchParams(location.hash.slice(1)).get("key");
+    // The raw text after "key=": URLSearchParams would turn a "+" of a base64 key into a space.
+    const key = /[#&]key=([^&]*)/.exec(location.hash)?.[1] ?? null;
     history.replaceState(null, "", location.pathname);
     fetch("/api/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) })
       .then((r) => (r.ok ? location.replace("/") : setError("This link does not hold the owner key of this deployment.")))

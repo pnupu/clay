@@ -88,13 +88,13 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
   }, [api]);
 
   // Nothing is re-checked on a timer: sources change through a webhook, a button, the agent, or a publish of the demo page.
-  // The clock ticks for the "ago" labels, and the stored state is reloaded every 15 s while the tab is visible, so a
-  // webhook result or a revision by the agent appears.
+  // The clock ticks for the "ago" labels, and the stored state is reloaded every 9 s while the tab is visible, so a
+  // webhook result or a revision by the agent appears while its highlight (30 s) still shows.
   useEffect(() => {
     let n = 0;
     const t = setInterval(async () => {
       setNow(Date.now());
-      if (++n % 5 || document.hidden || busyRef.current || tickRef.current) return;
+      if (++n % 3 || document.hidden || busyRef.current || tickRef.current) return;
       tickRef.current = true;
       const s = await call(`${api}/state`).catch(() => null).finally(() => (tickRef.current = false));
       if (s?.sources && !busyRef.current) setState(s);
@@ -284,7 +284,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
               {state.events.length === 0 && <p className="muted small">No source has changed since collection.</p>}
               <ul className="events">
                 {state.events.map((e) => (
-                  <li key={e.id} className={now - Date.parse(e.at) < 15000 ? "new" : undefined}>
+                  <li key={e.id} className={now - Date.parse(e.at) < 30000 ? "new" : undefined}>
                     <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "demo page published" : "re-check"}</p>
                     {e.changes.slice(0, 6).map((c) => (
                       <p className="change" key={c.path}>{h.humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
