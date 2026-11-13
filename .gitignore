@@ -53,3 +53,6 @@ run/dev-fixture.log
 run/fixture.log
 run/prod-*
 run/demo-*.json
+
+# Hackathon submission drafts and video work (not part of the product)
+/submission/
