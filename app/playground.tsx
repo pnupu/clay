@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DOMAIN, type MetricDef, type PricingModel } from "@/lib/domain";
 import { crossovers, rank, vendorCost, type Assumptions, type PlanCost, type VendorCost } from "@/lib/pricing";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
+import { standing as judge } from "@/lib/diff";
 import type { PublicState } from "@/lib/store";
 
 type Src = PublicState["sources"][string];
@@ -46,6 +47,7 @@ export default function Playground() {
   const [required, setRequired] = useState<string[]>([]);
   const [axis, setAxis] = useState(DOMAIN.metrics[0].id);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [tolerance, setTolerance] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -108,7 +110,7 @@ export default function Playground() {
   const pick = chosen && ranking.ranked.some((v) => v.id === chosen) ? chosen : ranking.cheapest;
 
   const decision = state?.decision ?? null;
-  const standing = useMemo(() => (decision ? rank(models, decision) : null), [models, decision]);
+  const standing = useMemo(() => (decision ? judge(decision, models) : null), [models, decision]);
 
   if (!state) return <main className="shell"><p className="muted">Loading…</p></main>;
 
@@ -170,13 +172,13 @@ export default function Playground() {
               )}
               <ol className="rank">
                 {ranking.ranked.map((v, i) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} place={i + 1} chosen={pick === v.id} onChoose={() => setChosen(v.id)} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} place={i + 1} chosen={pick === v.id} saved={decision?.chosen === v.id} onChoose={() => setChosen(v.id)} />
                 ))}
               </ol>
               {ranking.unranked.length > 0 && <h3>Cannot be ranked</h3>}
               <ul className="rank">
                 {ranking.unranked.map((v) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} effect={v.effect} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} saved={decision?.chosen === v.id} effect={v.effect} />
                 ))}
               </ul>
               {DOMAIN.vendors.filter((v) => sources[v.id]?.error && !sources[v.id]?.snapshot).map((v) => (
@@ -213,14 +215,22 @@ export default function Playground() {
             <section className="card">
               <h2>Standing decision</h2>
               {!decision || !standing ? (
-                <>
-                  <p className="small">Settle the controls, pick a vendor, then save. The app keeps the decision live: when a source changes, it recomputes under the saved assumptions.</p>
-                  <button className="primary" disabled={!pick || !!busy} onClick={() => run("Saving", "/api/decision", "POST", { usage, required, chosen: pick })}>
-                    Save decision{pick ? `: ${sources[pick]?.name}` : ""}
-                  </button>
-                </>
+                <p className="small">Settle the controls, select a vendor, then save. The app keeps the decision live: when a source changes, it recomputes under the saved assumptions.</p>
               ) : (
-                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); }} onClear={() => run("Clearing", "/api/decision", "DELETE")} />
+                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={() => run("Clearing", "/api/decision", "DELETE")} />
+              )}
+              {pick && (!decision || decision.chosen !== pick) && (
+                <div className="save">
+                  {decision && <p className="small">Selected now: <b>{sources[pick]?.name}</b>. It is not saved.</p>}
+                  <label className="small tolerance">
+                    Still fine if within $
+                    <input type="number" min={0} step={10} value={tolerance} onChange={(e) => setTolerance(Math.max(0, Number(e.target.value) || 0))} aria-label="Tolerance in dollars per month" />
+                    per month of the cheapest
+                  </label>
+                  <button className="primary" disabled={!!busy} onClick={() => run("Saving", "/api/decision", "POST", { usage, required, chosen: pick, tolerance })}>
+                    {decision ? "Replace saved decision with" : "Save decision:"} {sources[pick]?.name}
+                  </button>
+                </div>
               )}
               <h3>What changed</h3>
               {state.events.length === 0 && <p className="muted small">No source has changed since collection.</p>}
@@ -232,6 +242,7 @@ export default function Playground() {
                       <p className="change" key={c.path}>{humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
                     ))}
                     {e.changes.length > 6 && <p className="small muted">and {e.changes.length - 6} more facts</p>}
+                    {e.unconfirmed ? <p className="small muted">Confirmed by a second read. {e.unconfirmed} more {e.unconfirmed === 1 ? "difference" : "differences"} appeared in only one of the two reads and {e.unconfirmed === 1 ? "is" : "are"} not reported.</p> : null}
                     {e.verdict && (
                       <p className={e.verdict.holds ? "verdict ok" : "verdict bad"}>
                         {e.verdict.holds ? "✓ Decision holds. " : "✕ Decision no longer holds. "}
@@ -281,7 +292,7 @@ export default function Playground() {
   );
 }
 
-function VendorRow({ v, src, now, place, chosen, onChoose, effect }: { v: VendorCost; src: Src; now: number; place?: number; chosen?: boolean; onChoose?: () => void; effect?: string }) {
+function VendorRow({ v, src, now, place, chosen, saved, onChoose, effect }: { v: VendorCost; src: Src; now: number; place?: number; chosen?: boolean; saved?: boolean; onChoose?: () => void; effect?: string }) {
   const p = v.best;
   const snap = src?.snapshot;
   return (
@@ -290,9 +301,10 @@ function VendorRow({ v, src, now, place, chosen, onChoose, effect }: { v: Vendor
         <span className="dot" style={{ background: color(v.id) }} />
         <span className="name">{place ? `${place}. ` : ""}{src?.name}</span>
         {src?.demo && <span className="badge">Demo</span>}
+        {saved && <span className="badge saved">Saved decision</span>}
         <span className="plan muted">{p ? `${p.plan} plan` : "no eligible plan"}</span>
         <span className="cost">{p ? (place ? money(p.cost) : `≥ ${money(p.cost)}`) : "—"}<span className="muted small"> / month</span></span>
-        {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Chosen" : "Choose"}</button>}
+        {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
       </div>
       {effect && <p className="small warn">{effect}</p>}
       {p && (
@@ -348,18 +360,23 @@ function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingMo
   );
 }
 
-function Standing({ decision, standing, sources, now, onLoad, onClear }: { decision: NonNullable<PublicState["decision"]>; standing: ReturnType<typeof rank>; sources: Record<string, Src>; now: number; onLoad: () => void; onClear: () => void }) {
-  const mine = standing.ranked.find((v) => v.id === decision.chosen);
-  const holds = standing.cheapest === decision.chosen;
-  const top = standing.ranked[0];
+function Standing({ decision, standing: st, sources, now, onLoad, onClear }: { decision: NonNullable<PublicState["decision"]>; standing: ReturnType<typeof judge>; sources: Record<string, Src>; now: number; onLoad: () => void; onClear: () => void }) {
+  const name = sources[decision.chosen]?.name ?? decision.chosen;
+  const top = st.cheapest ? sources[st.cheapest]?.name : null;
+  const isCheapest = st.cheapest === decision.chosen;
   return (
     <>
-      <p className={holds ? "verdict ok" : "verdict bad"}>
-        {holds
-          ? `✓ Holds. ${sources[decision.chosen]?.name} is the cheapest at ${money(mine!.best!.cost)} per month.`
-          : mine
-            ? `✕ ${sources[decision.chosen]?.name} costs ${money(mine.best!.cost)} per month, but ${sources[top.id]?.name} is cheaper at ${money(top.best!.cost)}.`
-            : `✕ ${sources[decision.chosen]?.name} can no longer be priced under the saved assumptions.`}
+      <p className={st.holds ? "verdict ok" : "verdict bad"}>
+        {st.chosenCost == null
+          ? `✕ ${name} can no longer be priced under the saved assumptions.`
+          : isCheapest
+            ? `✓ Holds. ${name} is the cheapest at ${money(st.chosenCost)} per month.`
+            : st.holds
+              ? `✓ Holds. ${name} costs ${money(st.chosenCost)} per month, ${money(st.gap!)} more than ${top}. That is within your tolerance.`
+              : `✕ ${name} costs ${money(st.chosenCost)} per month, ${money(st.gap!)} more than ${top}${st.tolerance > 0 ? `. That is above your tolerance of ${money(st.tolerance)}` : ""}.`}
+      </p>
+      <p className="small">
+        Rule: the decision holds while {name} costs {st.tolerance > 0 ? `at most ${money(st.tolerance)} per month more than the cheapest vendor` : "no more than the cheapest vendor"}.
       </p>
       <p className="small muted">
         Saved {ago(decision.savedAt, now)} for {Object.entries(decision.usage).filter(([, n]) => n > 0).map(([k, n]) => `${num(n)} ${lower(label(k))}`).join(", ")}

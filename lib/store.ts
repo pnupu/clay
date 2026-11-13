@@ -39,6 +39,8 @@ export type ChangeEvent = {
   sourceId: string;
   trigger: "manual" | "webhook" | "auto";
   changes: FieldChange[];
+  /** Differences that only one of the two confirming extractions reported. They are not counted as changes. */
+  unconfirmed?: number;
   verdict: Verdict | null;
 };
 

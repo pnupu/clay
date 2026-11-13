@@ -36,7 +36,30 @@ export function diffModels(before: PricingModel | null, after: PricingModel | nu
     .map((path) => ({ path, before: a[path], after: b[path] }));
 }
 
-export type Decision = Assumptions & { chosen: string; savedAt: string };
+/**
+ * A change on a real source is recorded only when two fresh extractions agree on it: extraction is not deterministic,
+ * and a single read can report a value that is not on the page. Returns the changes both reads report with the same new value.
+ */
+export function agreed(first: FieldChange[], second: FieldChange[]): FieldChange[] {
+  return first.filter((c) => second.some((d) => d.path === c.path && d.after === c.after));
+}
+
+/** `tolerance`: the decision is still fine while the chosen vendor costs at most this much more per month than the cheapest. */
+export type Decision = Assumptions & { chosen: string; savedAt: string; tolerance?: number };
+
+export type Standing = { holds: boolean; chosenCost: number | null; cheapest: string | null; cheapestCost: number | null; /** Chosen cost minus cheapest cost. */ gap: number | null; tolerance: number };
+
+/** The one "holds" rule: the chosen vendor can be fully priced and costs at most `tolerance` more per month than the cheapest fully priced vendor. */
+export function standing(decision: Decision, models: Record<string, PricingModel | null>): Standing {
+  const r = rank(models, decision);
+  const chosenCost = r.ranked.find((v) => v.id === decision.chosen)?.best?.cost ?? null;
+  const cheapestCost = r.ranked[0]?.best?.cost ?? null;
+  const tolerance = Math.max(0, decision.tolerance ?? 0);
+  const gap = chosenCost == null || cheapestCost == null ? null : chosenCost - cheapestCost;
+  // The cheapest vendor always holds, also when a tied vendor is listed first.
+  return { holds: gap != null && (r.cheapest === decision.chosen || gap <= tolerance), chosenCost, cheapest: r.cheapest, cheapestCost, gap, tolerance };
+}
+
 export type Verdict = {
   holds: boolean;
   cheapestBefore: string | null;
@@ -46,15 +69,18 @@ export type Verdict = {
   reason: string;
 };
 
-/** Does the saved decision still hold after the sources changed? It holds when the chosen vendor is the cheapest under the saved assumptions. */
+const usd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+
+/** Does the saved decision still hold after the sources changed? Judged by standing() under the saved assumptions. */
 export function verdict(decision: Decision, before: Record<string, PricingModel | null>, after: Record<string, PricingModel | null>): Verdict {
-  const cost = (r: ReturnType<typeof rank>) => r.ranked.find((v) => v.id === decision.chosen)?.best?.cost ?? null;
-  const rb = rank(before, decision);
-  const ra = rank(after, decision);
-  const v = { cheapestBefore: rb.cheapest, cheapestNow: ra.cheapest, chosenCostBefore: cost(rb), chosenCostNow: cost(ra) };
-  const wasCheapest = rb.cheapest === decision.chosen;
-  const costChanged = v.chosenCostBefore != null && v.chosenCostNow != null && v.chosenCostNow !== v.chosenCostBefore;
-  if (v.chosenCostNow == null) return { ...v, holds: false, reason: "The chosen vendor can no longer be priced under your assumptions." };
-  if (ra.cheapest === decision.chosen) return { ...v, holds: true, reason: !wasCheapest ? "The chosen vendor is now the cheapest." : costChanged ? "The chosen vendor's cost changed, but it is still the cheapest." : "The chosen vendor is still the cheapest." };
-  return { ...v, holds: false, reason: wasCheapest ? "The chosen vendor is no longer the cheapest under your assumptions." : "The chosen vendor was not the cheapest before this change and still is not." };
+  const sb = standing(decision, before);
+  const sa = standing(decision, after);
+  const v = { holds: sa.holds, cheapestBefore: sb.cheapest, cheapestNow: sa.cheapest, chosenCostBefore: sb.chosenCost, chosenCostNow: sa.chosenCost };
+  const wasCheapest = sb.cheapest === decision.chosen;
+  const costChanged = sb.chosenCost != null && sa.chosenCost != null && sa.chosenCost !== sb.chosenCost;
+  if (sa.chosenCost == null) return { ...v, reason: "The chosen vendor can no longer be priced under your assumptions." };
+  if (sa.cheapest === decision.chosen) return { ...v, reason: !wasCheapest ? "The chosen vendor is now the cheapest." : costChanged ? "The chosen vendor's cost changed, but it is still the cheapest." : "The chosen vendor is still the cheapest." };
+  if (sa.holds) return { ...v, reason: `The chosen vendor costs ${usd(sa.gap!)} per month more than the cheapest, within your tolerance of ${usd(sa.tolerance)}.` };
+  if (sa.tolerance > 0) return { ...v, reason: `The chosen vendor now costs ${usd(sa.gap!)} per month more than the cheapest, above your tolerance of ${usd(sa.tolerance)}.` };
+  return { ...v, reason: wasCheapest ? "The chosen vendor is no longer the cheapest under your assumptions." : "The chosen vendor was not the cheapest before this change and still is not." };
 }

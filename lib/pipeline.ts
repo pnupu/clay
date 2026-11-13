@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { DOMAIN, EXTRACTION_INSTRUCTIONS, extractionSchema, normalise, type PricingModel, type RawModel } from "./domain";
 import { ContextDevError, scrape, searchTopUrl } from "./contextdev";
-import { diffModels, verdict } from "./diff";
+import { agreed, diffModels, verdict } from "./diff";
 import { load, update, type ChangeEvent, type Snapshot, type Source } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -154,10 +154,22 @@ async function recheckOnce(id: string, trigger: ChangeEvent["trigger"], origin: 
   let event: ChangeEvent | null = null;
   let snapshot = src.snapshot;
   let error: string | null = null;
+  let unconfirmed = 0;
   try {
     if (hash(await readText(src, origin)) !== src.snapshot.textHash) {
-      snapshot = await readModel(src, origin);
-      const changes = diffModels(src.snapshot.model, snapshot.model);
+      const first = await readModel(src, origin);
+      let changes = diffModels(src.snapshot.model, first.model);
+      snapshot = first;
+      if (changes.length && first.extractor === "context.dev") {
+        // Extraction is not deterministic. A change on a real source counts only when a second fresh extraction reports it too.
+        const second = await readModel(src, origin);
+        const again = diffModels(src.snapshot.model, second.model);
+        const both = agreed(changes, again);
+        unconfirmed = changes.length + again.length - 2 * both.length;
+        // Nothing confirmed: keep the facts as they were and remember the new page text, so the same text is not extracted again.
+        snapshot = both.length === 0 ? { ...src.snapshot, textHash: second.textHash } : again.length <= changes.length ? second : first;
+        changes = both;
+      }
       if (changes.length) {
         const models = (s: typeof before, own: PricingModel) => Object.fromEntries(Object.entries(s.sources).map(([k, x]) => [k, k === id ? own : (x.snapshot?.model ?? null)]));
         event = {
@@ -166,6 +178,7 @@ async function recheckOnce(id: string, trigger: ChangeEvent["trigger"], origin: 
           sourceId: id,
           trigger,
           changes,
+          ...(unconfirmed ? { unconfirmed } : {}),
           verdict: before.decision ? verdict(before.decision, models(before, src.snapshot.model), models(before, snapshot.model)) : null,
         };
       }
