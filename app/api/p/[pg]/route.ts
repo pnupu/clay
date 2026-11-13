@@ -16,6 +16,6 @@ export async function DELETE(req: Request, { params }: Ctx) {
     delete s.playgrounds[pg];
     return 204;
   });
-  if (status === 409) return Response.json({ error: "Stop the webhook monitors of this playground first." }, { status });
+  if (status === 409) return Response.json({ error: "This playground has webhook monitors, which only the operator can stop. Ask the operator to stop them, then delete it." }, { status });
   return status === 404 ? Response.json({ error: "Playground not found." }, { status }) : new Response(null, { status });
 }

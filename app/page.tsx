@@ -1,23 +1,24 @@
 import Link from "next/link";
 import { viewer } from "@/app/api/respond";
-import { canRead, canWrite, isExample } from "@/lib/accounts";
+import { canWrite, isExample } from "@/lib/accounts";
+import { DOMAIN } from "@/lib/domain";
 import { load, type Playground } from "@/lib/store";
 import Manage from "./manage";
 
 export const dynamic = "force-dynamic";
 
-// lean: the gallery reads a title and a kind from fields every playground has today (a preview keeps its title in
-// domain.question), with fallbacks, so a new kind shows without a change here. Give every kind a `kind` label if this grows.
-type AnyPlayground = Playground & { title?: string; kind?: string };
-const titleOf = (p: AnyPlayground, id: string) => p.title ?? p.domain?.question ?? id;
-const kindOf = (p: AnyPlayground) => p.kind ?? (p.kit ? "Preview, tuned by hand" : p.domain?.vendors?.length ? "Price decision" : "Playground");
+// The gallery reads the title from domain.question, which every kind has (a preview keeps its title there), so a new
+// kind shows without a change here; only its label falls back to "Playground".
+type AnyPlayground = Playground;
+const titleOf = (p: AnyPlayground, id: string) => p.domain?.question ?? id;
+const kindOf = (p: AnyPlayground) => (p.kit ? "Preview, tuned by hand" : p.domain?.vendors?.length ? "Price decision" : "Playground");
 const detailOf = (p: AnyPlayground) => (!p.kit && p.domain?.vendors?.length ? p.domain.vendors.map((v) => v.name).join(", ") : null);
 
 export default async function Home() {
   const me = await viewer();
   const all = Object.entries((await load()).playgrounds as Record<string, AnyPlayground>).sort(([, a], [, b]) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   const examples = all.filter(([id, p]) => isExample(p, id));
-  const yours = me.kind === "visitor" ? [] : all.filter(([id, p]) => canWrite(me, p) && canRead(me, p, id));
+  const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
   const first = examples[0]?.[0];
   return (
     <main className="landing">
@@ -79,7 +80,7 @@ export default async function Home() {
                     <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
                     <p className="small muted">{kindOf(p)} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? " · example" : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
                   </div>
-                  <Manage id={id} example={isExample(p, id)} admin={me.kind === "admin"} />
+                  <Manage id={id} example={isExample(p, id)} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
                 </li>
               ))}
             </ul>

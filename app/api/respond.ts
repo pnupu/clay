@@ -9,7 +9,8 @@ import { load, publicBase, publicState } from "@/lib/store";
 export const clerkOn = () => !!process.env.CLERK_SECRET_KEY && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const ADMIN: Actor = { kind: "admin" };
 const guesses = guessLimiter();
-const clientIp = (h: { get(name: string): string | null }) => h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "local";
+// Vercel sets x-real-ip to the client address; x-forwarded-for is only a fallback for other hosts.
+const clientIp = (h: { get(name: string): string | null }) => h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
 
 /**
  * Who sends this request (lib/accounts.ts)? In this order: the owner key (bearer or owner cookie) is the admin; a bearer
@@ -24,10 +25,11 @@ export async function identify(h: { get(name: string): string | null }): Promise
   if (key ? hasAccess({ authorization, cookie: h.get("cookie") }, key) : !isHosted() && !clerkOn()) return { actor: ADMIN, bad: null };
   const bearer = /^Bearer\s+(\S+)\s*$/i.exec(authorization ?? "")?.[1];
   if (bearer) {
-    const ip = clientIp(h);
-    if (guesses.blocked(ip)) return { actor: VISITOR, bad: "blocked" };
+    // A valid key always works, so nobody can lock a person out by sending wrong keys from (or claiming) their address.
     const userId = looksLikeAgentKey(bearer) ? userOfKey(bearer, (await load()).users) : null;
     if (userId) return { actor: { kind: "user", userId, via: "key" }, bad: null };
+    const ip = clientIp(h);
+    if (guesses.blocked(ip)) return { actor: VISITOR, bad: "blocked" };
     guesses.fail(ip);
     return { actor: VISITOR, bad: "key" };
   }
@@ -58,8 +60,6 @@ const noAccess = () => Response.json({ error: "Playground not found, or it is pr
 
 export type Ctx = { params: Promise<{ pg: string }> };
 
-/** Does this request carry the owner key (bearer header or owner cookie)? */
-export const isOwner = (req: Request) => hasAccess({ authorization: req.headers.get("authorization"), cookie: req.headers.get("cookie") });
 
 /** The state of one playground as JSON, or 404 when it does not exist. `owner` tells the page whether its write buttons will work. */
 export async function stateResponse(pg: string, error: string | null = null, status = error ? 502 : 200, owner = true) {
@@ -102,11 +102,17 @@ export async function refused(req: Request): Promise<Response | null> {
   if (bad === "blocked") return Response.json({ error: "Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from the Connect your agent page." }, { status: 429 });
   if (bad === "key") return Response.json({ error: "This key is not valid. It may have been regenerated or revoked. Get a new agent key on the Connect your agent page of Clay." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   if (actor.kind === "visitor") return Response.json({ error: "Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
-  const path = new URL(req.url).pathname;
+  // Decoded, so an encoded form of an admin-only path (for example /api/p/x/%77atch) is recognised too.
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(req.url).pathname);
+  } catch {
+    return Response.json({ error: "Malformed path" }, { status: 400 });
+  }
   if (ADMIN_ONLY.test(path) && actor.kind !== "admin") return Response.json({ error: "Only the operator of this Clay deployment can do this." }, { status: 403 });
   let pg: string | null = null;
   try {
-    pg = decodeURIComponent(/^\/api\/p\/([^/]+)/.exec(path)?.[1] ?? "") || null;
+    pg = /^\/api\/p\/([^/]+)/.exec(path)?.[1] || null;
   } catch {}
   const p = pg ? (await load()).playgrounds[pg] : undefined;
   if (p && !canWrite(actor, p)) return canRead(actor, p, pg!) ? Response.json({ error: "This is an example playground: move the controls as you like, but only the operator can save or re-check it. Connect your agent to build your own." }, { status: 403 }) : noAccess();

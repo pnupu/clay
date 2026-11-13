@@ -66,6 +66,8 @@ export const userDailyCap = () => limit(process.env.CLAY_USER_DAILY_REQUESTS, 40
 export const userPlaygroundCap = () => limit(process.env.CLAY_USER_PLAYGROUNDS, 20);
 
 /** The refusal when the current caller may not create one more playground, or null. Only signed-in people are capped. */
+// lean: checked on one read before the create, so parallel creates by one person can pass it together and end a few over
+// the cap (bounded by how many calls their agent sends at once). Move the count into the create's update() if that matters.
 export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): string | null {
   if (a?.kind !== "user") return null;
   const cap = userPlaygroundCap();
