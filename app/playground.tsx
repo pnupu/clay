@@ -164,7 +164,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     <main className="shell">
       <header className="top">
         <div>
-          <p className="eyebrow"><Link href="/">Live decision playground</Link> · data read from the web by Context.dev</p>
+          <p className="eyebrow"><Link href="/">Clay</Link> · data read from the web by Context.dev</p>
           <h1>{domain.question}</h1>
         </div>
         <div className="actions">

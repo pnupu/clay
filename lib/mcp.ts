@@ -14,7 +14,7 @@ const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully 
  * Server instructions. Many MCP clients load tool descriptions only on demand and show the agent just the tool names,
  * so this short text is what decides whether the agent thinks of the playground at all.
  */
-export const INSTRUCTIONS = `Decision Playground builds a web page on which a person explores a "which vendor or plan" decision, on prices read live from the vendors' public pricing pages.
+export const INSTRUCTIONS = `Clay builds a web page on which a person explores a "which vendor or plan" decision, on prices read live from the vendors' public pricing pages.
 
 When the person asks which service, vendor or plan to choose for a usage-priced product (an API, a SaaS product, a cloud service) and has not fixed what they need, call create_playground first, before you answer from memory or search the web. Prices from memory are out of date. This server reads the current pricing pages and keeps a source quote for every number, and the page lets the person try their own numbers instead of answering your questions. Give them the URL, together with your advice on what a price cannot show (for example reliability or support).
 
@@ -63,7 +63,7 @@ const fail = (message: string) => ({ ...text(message), isError: true });
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function buildServer(origin: string): McpServer {
-  const server = new McpServer({ name: "decision-playground", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
   const list = () => Object.values(load().playgrounds).map((p) => ({ playground_id: p.domain.id, question: p.domain.question, url: url(p.domain.id), decision_saved: !!p.decision }));
   /** The playground, or an error that names the ids that exist. */

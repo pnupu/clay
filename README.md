@@ -1,4 +1,6 @@
-# Live Decision Playground
+# Clay
+
+Clay is a live decision playground: your agent shapes it from web data, and you shape the decision by hand.
 
 Built for the Junction 2026 challenge "The Web Is Your Real-Time Database" by Context.dev.
 
@@ -28,10 +30,10 @@ The MCP endpoint is `http://127.0.0.1:43117/api/mcp` (Streamable HTTP). The app 
 
 ```bash
 # Claude Code
-claude mcp add --transport http decision-playground http://127.0.0.1:43117/api/mcp
+claude mcp add --transport http clay http://127.0.0.1:43117/api/mcp
 
 # Codex
-codex mcp add decision-playground --url http://127.0.0.1:43117/api/mcp
+codex mcp add clay --url http://127.0.0.1:43117/api/mcp
 ```
 
 Then ask in your own words, for example: "I need to pick an email service for my app, about 30k emails a month now, maybe 200k later. Which one makes sense?" The agent builds a playground and gives you its URL. Explore, select a vendor, set a tolerance and save. Later ask "what did I decide, and does it still hold?".

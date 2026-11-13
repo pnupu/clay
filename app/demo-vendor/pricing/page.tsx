@@ -9,7 +9,7 @@ export default function DemoPricing() {
   const model = load().demoPage ?? DEMO_DEFAULT;
   return (
     <main className="demo-page">
-      <p className="demo-banner">Demo page. Northwind Auth is not a real vendor. This page is served by the Decision Playground app.</p>
+      <p className="demo-banner">Demo page. Northwind Auth is not a real vendor. This page is served by the Clay app.</p>
       <h1>Northwind Auth pricing</h1>
       {model.plans?.map((p) => (
         <section key={p.name}>

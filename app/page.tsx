@@ -8,7 +8,7 @@ export default function Home() {
   const playgrounds = Object.values(load().playgrounds).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <main className="shell home">
-      <p className="eyebrow">Live decision playground · data read from the web by Context.dev</p>
+      <p className="eyebrow">Clay · data read from the web by Context.dev</p>
       <h1>Playgrounds</h1>
       <p className="muted">Your own agent builds a playground for a decision through the MCP server at <code>/api/mcp</code>. You explore it here, and the agent reads the settled result back.</p>
       <ul className="playgrounds">

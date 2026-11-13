@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Live Decision Playground",
+  title: "Clay",
   description: "Explore a decision on live web data, then keep it live as the web changes.",
 };
 

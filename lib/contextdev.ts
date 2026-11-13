@@ -127,7 +127,7 @@ export type Monitor = { id: string; status: string; webhook: { url: string; secr
 export function createMonitor(name: string, url: string, webhookUrl: string, instructions: string, minutes = Number(process.env.MONITOR_INTERVAL_MINUTES ?? 0)) {
   return cd<Monitor>("POST", "/monitors", {
     name,
-    tags: ["decision-playground"],
+    tags: ["clay"],
     target: { type: "page", url, instructions },
     webhook: { url: webhookUrl, events: ["change.detected"], retry: {} },
     // The API default is one run per day; the shortest interval the docs allow is 10 minutes, so a smaller value is raised to 10.
