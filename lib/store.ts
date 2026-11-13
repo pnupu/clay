@@ -114,7 +114,8 @@ async function read(): Promise<{ text: string | null; etag: string | null }> {
   const { get } = await import("@vercel/blob");
   const r = await get(BLOB, { access: "private", useCache: false });
   if (!r || r.statusCode !== 200) return { text: null, etag: null };
-  return { text: await new Response(r.stream).text(), etag: r.blob.etag };
+  // A compressed response carries the weak form of the ETag (W/"..."); the conditional write needs the strong form.
+  return { text: await new Response(r.stream).text(), etag: r.blob.etag.replace(/^W\//, "") };
 }
 
 export const load = async (): Promise<Store> => parse((await read()).text);
