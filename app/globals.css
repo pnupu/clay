@@ -106,7 +106,8 @@ ol.rank .vendor:first-child .name { font-size: 18px; }
 .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 @keyframes arrive { from { background: color-mix(in srgb, var(--warn) 30%, transparent); } to { background: transparent; } }
-.events li { animation: arrive 2.5s ease-out; border-radius: 6px; }
+.events li { border-radius: 6px; }
+.events li.new { animation: arrive 2.5s ease-out; }
 @media (prefers-reduced-motion: reduce) { .live i, .events li { animation: none; } }
 .vendor details { margin: 4px 0 0 18px; }
 .vendor summary { cursor: pointer; }

@@ -80,8 +80,9 @@ export function createMonitor(name: string, url: string, webhookUrl: string, ins
     tags: ["decision-playground"],
     target: { type: "page", url, instructions },
     webhook: { url: webhookUrl, events: ["change.detected"], retry: {} },
-    // The API default is one run per day; the shortest interval the docs allow is 10 minutes. Not yet exercised against the API.
-    ...(minutes >= 10 ? { schedule: { type: "interval", frequency: Math.round(minutes), unit: "minutes" } } : {}),
+    // The API default is one run per day; the shortest interval the docs allow is 10 minutes, so a smaller value is raised to 10.
+    // Not yet exercised against the API.
+    ...(minutes > 0 ? { schedule: { type: "interval", frequency: Math.max(10, Math.round(minutes)), unit: "minutes" } } : {}),
   });
 }
 

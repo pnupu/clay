@@ -50,6 +50,7 @@ export default function Playground() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef(false);
+  const tickRef = useRef(false);
 
   const run = useCallback(async (what: string, path: string, method = "POST", body?: unknown) => {
     busyRef.current = true;
@@ -76,9 +77,10 @@ export default function Playground() {
   useEffect(() => {
     const t = setInterval(async () => {
       setNow(Date.now());
-      if (busyRef.current) return;
-      const s = demoLocal ? await call("/api/recheck", "POST", { id: "demo", trigger: "auto" }) : await call("/api/state");
-      if (s.sources && !busyRef.current) setState(s);
+      if (busyRef.current || tickRef.current) return;
+      tickRef.current = true;
+      const s = await (demoLocal ? call("/api/recheck", "POST", { id: "demo", trigger: "auto" }) : call("/api/state")).catch(() => null).finally(() => (tickRef.current = false));
+      if (s?.sources && !busyRef.current) setState(s);
     }, 3000);
     return () => clearInterval(t);
   }, [demoLocal]);
@@ -96,6 +98,13 @@ export default function Playground() {
   const axisDef = DOMAIN.metrics.find((m) => m.id === axis) ?? DOMAIN.metrics[0];
   const cross = useMemo(() => crossovers(models, a, axisDef.id, axisDef.min, axisDef.max), [models, a, axisDef]);
   const nextCross = cross.find((c) => c.at > (usage[axisDef.id] ?? 0));
+  const topCost = ranking.ranked[0]?.best?.cost ?? 0;
+  const gap = (ranking.ranked[1]?.best?.cost ?? 0) - topCost;
+  /** Vendors that cannot be fully priced and whose known cost is below the cheapest ranked vendor. */
+  const maybeCheaper = ranking.unranked.filter((v) => v.best && v.best.cost < topCost);
+  /** The header states the oldest check, so a fresh demo check cannot make old real data look fresh. */
+  const healthy = collected.filter((x) => !x.error);
+  const oldestCheck = healthy.map((x) => x.lastCheckedAt ?? "").sort()[0];
   const pick = chosen && ranking.ranked.some((v) => v.id === chosen) ? chosen : ranking.cheapest;
 
   const decision = state?.decision ?? null;
@@ -114,7 +123,7 @@ export default function Playground() {
         </div>
         <div className="actions">
           {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (
-            <span className="live"><i />{collected.length} sources live · last check {ago(collected.map((x) => x.lastCheckedAt ?? "").sort().at(-1), now)}</span>
+            <span className="live"><i />{healthy.length} of {DOMAIN.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
           )}
           {!collectedAll && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", "/api/collect")}>Collect pricing pages</button>}
           {collected.length > 0 && <button disabled={!!busy} onClick={() => run("Re-checking sources", "/api/recheck")}>Re-check all now</button>}
@@ -125,7 +134,7 @@ export default function Playground() {
       {collected.length === 0 ? (
         <section className="card empty">
           <h2>No data yet</h2>
-          <p>Collect reads each vendor&apos;s public pricing page with Context.dev (search to find the page, then structured extraction). It takes about 15 seconds and uses about 6 credits per vendor.</p>
+          <p>Collect reads each vendor&apos;s public pricing page with Context.dev (search to find the page, then structured extraction). It takes about 10 seconds and uses about 6 credits per vendor.</p>
         </section>
       ) : (
         <div className="grid">
@@ -153,9 +162,10 @@ export default function Playground() {
               <h2>Monthly cost under these assumptions</h2>
               {ranking.ranked[0] && (
                 <p className="answer">
-                  Cheapest: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month
-                  {ranking.ranked[1] ? `, ${money(ranking.ranked[1].best!.cost - ranking.ranked[0].best!.cost)} less than ${sources[ranking.ranked[1].id]?.name}` : ""}.
-                  {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {axisDef.unit}.</span>}
+                  {maybeCheaper.length ? "Cheapest of the fully priced vendors" : "Cheapest"}: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month
+                  {ranking.ranked[1] ? (gap < 0.5 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${money(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
+                  {maybeCheaper.length > 0 && <span className="warn"> {maybeCheaper.map((v) => sources[v.id]?.name).join(", ")} could be cheaper: a price is unknown.</span>}
+                  {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {lower(axisDef.label)}.</span>}
                 </p>
               )}
               <ol className="rank">
@@ -216,7 +226,7 @@ export default function Playground() {
               {state.events.length === 0 && <p className="muted small">No source has changed since collection.</p>}
               <ul className="events">
                 {state.events.map((e) => (
-                  <li key={e.id}>
+                  <li key={e.id} className={now - Date.parse(e.at) < 15000 ? "new" : undefined}>
                     <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "watch loop" : "re-check"}</p>
                     {e.changes.slice(0, 6).map((c) => (
                       <p className="change" key={c.path}>{humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>

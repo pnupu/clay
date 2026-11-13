@@ -14,7 +14,7 @@ try {
   console.log("deleted", { deleted: d.deleted, ms: d._ms });
 }
 // Confirm the deletion: the monitor is gone from the API and the account count is back.
-const after = await cd<Record<string, unknown>>("GET", `/monitors/${m.id}`).then((g) => `still readable, status ${g.status}`, (e) => `GET -> ${e.status} ${e.code ?? ""}`);
+const after = await cd<Record<string, unknown>>("GET", `/monitors/${m.id}`).then((g) => `NOT CONFIRMED: still readable, status ${g.status}`, (e) => (e?.status === 404 ? "confirmed: GET -> 404" : `NOT CONFIRMED: ${e?.status ?? ""} ${e?.message ?? e}`));
 const list = await cd<{ data: { id: string }[] }>("GET", "/monitors?tag=decision-playground");
 const limits = await cd<Record<string, unknown>>("GET", "/monitors/limits");
 console.log("confirmed", { get_after_delete: after, listed_with_tag: list.data.length, still_listed: list.data.some((x) => x.id === m.id), monitors_used: limits.monitors_used, monitors_limit: limits.monitors_limit, plan: limits.plan });

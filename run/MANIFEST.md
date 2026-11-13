@@ -23,3 +23,4 @@
 - Checks run: `pnpm test` (15 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, `node scripts/webhook-test.ts` (7 PASS, twice), `node --env-file=.env.local scripts/monitor-contract.ts`, a headless Chromium run of the demo flow at 1280 and 1920 pixels.
 - Screenshots (git-ignored): run/shots/final-1-explore-1280.png, final-2-changed-1280.png, final-3-changed-1920.png, cold-0-empty.png, cold-1-collected-1280.png.
 - State left in .data/store.json: 5 sources collected, no saved decision, no change events, demo page at its defaults.
+- Code review of 9eaf559..a8bc55c (/code-review, medium): 10 findings, all answered in the follow-up commit. Checks re-run after the fixes: test, typecheck, lint, the browser flow, and 3 concurrent re-checks of one published demo change (1 event).

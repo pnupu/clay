@@ -136,7 +136,15 @@ export async function collect(id: string, origin: string): Promise<void> {
  * Re-check one source. Step 1 reads the page text and compares its hash (1 credit). Only when the text changed,
  * step 2 extracts again (5 credits), diffs the facts and judges the saved decision. Webhook, button and timer all end here.
  */
-export async function recheck(id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
+export function recheck(id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
+  const run = (inFlight.get(id) ?? Promise.resolve()).then(() => recheckOnce(id, trigger, origin));
+  inFlight.set(id, run.catch(() => {}));
+  return run;
+}
+/** Per source: the tail of its re-check chain. In-process only, like the store queue. */
+const inFlight = new Map<string, Promise<unknown>>();
+
+async function recheckOnce(id: string, trigger: ChangeEvent["trigger"], origin: string): Promise<ChangeEvent | null> {
   const before = load();
   const src = before.sources[id];
   if (!src?.url || !src.snapshot) {
@@ -168,7 +176,7 @@ export async function recheck(id: string, trigger: ChangeEvent["trigger"], origi
   } finally {
     await update((s) => {
       // The demo page lives on this app's origin, which changes with the port.
-      Object.assign(s.sources[id], { snapshot, error, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      Object.assign(s.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) s.events = [event, ...s.events].slice(0, 30);
     });
   }
