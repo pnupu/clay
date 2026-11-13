@@ -6,7 +6,7 @@
 set -euo pipefail
 out=$(realpath -m "$1") # resolved before the cd, against the caller's directory
 cd "$(dirname "$0")/.."
-case "$out/" in "$PWD"/*) echo "$out is inside the repository. Give a directory outside it." >&2; exit 1;; esac
+case "$out/" in "$(pwd -P)"/*) echo "$out is inside the repository. Give a directory outside it." >&2; exit 1;; esac
 [ -z "$(git status --porcelain)" ] || { echo "The tree is not clean. Commit first." >&2; exit 1; }
 [ ! -e "$out" ] || { echo "$out exists. Give a new directory." >&2; exit 1; }
 mkdir -p "$out"

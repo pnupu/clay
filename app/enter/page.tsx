@@ -9,8 +9,11 @@ import { useEffect, useState } from "react";
 export default function Enter() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    // The raw text after "key=": URLSearchParams would turn a "+" of a base64 key into a space.
-    const key = /[#&]key=([^&]*)/.exec(location.hash)?.[1] ?? null;
+    // The text after "key=", with %XX decoded. URLSearchParams is not used: it would turn a "+" of a base64 key into a space.
+    let key = /[#&]key=([^&]*)/.exec(location.hash)?.[1] ?? null;
+    try {
+      key = key && decodeURIComponent(key);
+    } catch {}
     history.replaceState(null, "", location.pathname);
     fetch("/api/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) })
       .then((r) => (r.ok ? location.replace("/") : setError("This link does not hold the owner key of this deployment.")))

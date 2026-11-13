@@ -24,10 +24,10 @@ test("access: no key is open only on a local machine; a short key matches nothin
   assert.equal(isKey(KEY, KEY), true);
   assert.equal(isKey("", ""), false);
   assert.equal(isKey(undefined, KEY), false);
-  // Reachable from other machines: Vercel, a public base URL, or a HOST beyond loopback.
+  // Only the development server runs without a key: a production build, Vercel or a public base URL needs one.
   assert.equal(isHosted({}), false);
-  assert.equal(isHosted({ HOST: "127.0.0.1" }), false);
-  assert.equal(isHosted({ HOST: "0.0.0.0" }), true);
+  assert.equal(isHosted({ NODE_ENV: "development", HOST: "some-machine" }), false);
+  assert.equal(isHosted({ NODE_ENV: "production" }), true);
   assert.equal(isHosted({ VERCEL: "1" }), true);
   assert.equal(isHosted({ PUBLIC_BASE_URL: "https://clay.example" }), true);
 });

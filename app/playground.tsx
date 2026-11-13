@@ -88,13 +88,13 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
   }, [api]);
 
   // Nothing is re-checked on a timer: sources change through a webhook, a button, the agent, or a publish of the demo page.
-  // The clock ticks for the "ago" labels, and the stored state is reloaded every 9 s while the tab is visible, so a
+  // The clock ticks for the "ago" labels, and the stored state is reloaded every 15 s while the tab is visible, so a
   // webhook result or a revision by the agent appears while its highlight (30 s) still shows.
   useEffect(() => {
     let n = 0;
     const t = setInterval(async () => {
       setNow(Date.now());
-      if (++n % 3 || document.hidden || busyRef.current || tickRef.current) return;
+      if (++n % 5 || document.hidden || busyRef.current || tickRef.current) return;
       tickRef.current = true;
       const s = await call(`${api}/state`).catch(() => null).finally(() => (tickRef.current = false));
       if (s?.sources && !busyRef.current) setState(s);

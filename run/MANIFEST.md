@@ -113,3 +113,15 @@
   10. `scripts/deploy.sh` resolved a relative export directory against the repository: fixed, and a directory inside the repository is refused.
   Also fixed from the cut list: `POST /api/access` with the body `null` answers 401. Declined: scripts that import the Context.dev client write the local store; only the public base host counts as the app's own for browser writes; the demo route repeats the re-check reporting.
 - Checks after the review fixes: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, webhook test (7 PASS), 4 processes with 4 updates each against the production store (16 of 16 kept).
+- Code review of 95ba7e6..8fcab2e (/code-review, high, round 2): 10 findings. Answers, fixes in the next commit:
+  1. The lost-answer check also matched an equal write of another instance (two deliveries of one webhook id both counted as new): fixed. Every write carries a random `rev`, so only the writer's own document matches. Check against the production store: 4 processes applying the identical change, exactly one reported "fresh" in 3 of 3 rounds; 16 of 16 distinct updates kept. Not fixed, marked `lean:`: a third write on top of a lost-answer write.
+  2. The keyless mode was guessed from HOST and VERCEL: fixed. Only the development server runs without a key; a production build, Vercel or an app with PUBLIC_BASE_URL needs one. Local check: `pnpm dev` without a key writes (204), `pnpm start` without a key refuses (401). Not fixed, marked `lean:`: a dev server behind a tunnel without PUBLIC_BASE_URL.
+  3. The Secure owner cookie could not be set over plain http on a LAN address: fixed, Secure is left out only when the app itself is served over http.
+  4. A percent-encoded key in the owner link no longer matched: fixed, %XX is decoded and "+" is kept.
+  5. Stopping the monitors stopped at the first error, also for a monitor that is already gone: fixed, a 404 counts as deleted and the loop goes on.
+  6. A monitor that was created but could not be stored was orphaned: fixed, it is deleted again.
+  7. An ambient HOST closed a local app, and the README promised otherwise: fixed with finding 2; the README states the rule.
+  8. The repository check of `scripts/deploy.sh` compared a physical with a logical path: fixed (`pwd -P`). Declined: `realpath -m` on macOS.
+  9. The watch route answered an error without the state and logged nothing: fixed, it answers the state with the message and logs.
+  10. The 9 s state reload: reverted to 15 s; the 30 s highlight covers two reloads. Declined: a reload on tab focus.
+- Checks after round 2: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, webhook test (7 PASS).

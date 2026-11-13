@@ -2,7 +2,7 @@
 // On Vercel (BLOB_STORE_ID is set by the connected private Blob store) it is one private blob: reads bypass the CDN cache,
 // and every write is conditional on the ETag that was read, so a concurrent writer never loses an update.
 // The webhook secrets in `monitor.secret` live only in this server-side document.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
@@ -72,6 +72,8 @@ export type Store = {
   demoPage: PricingModel | null;
   /** Context.dev requests sent on one UTC day (the daily cap). */
   budget: Budget | null;
+  /** A random value per write of the blob store, so a writer can tell its own write from an equal one of another instance. */
+  rev: string | null;
 };
 
 export type Budget = { day: string; used: number };
@@ -100,7 +102,7 @@ function parse(text: string | null): Store {
     raw = JSON.parse(text ?? "");
   } catch {}
   // No prototype: an id such as "__proto__" or "constructor" from a URL must not look like a playground.
-  const s: Store = { playgrounds: Object.assign(Object.create(null), raw.playgrounds), webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null, budget: raw.budget ?? null };
+  const s: Store = { playgrounds: Object.assign(Object.create(null), raw.playgrounds), webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null, budget: raw.budget ?? null, rev: raw.rev ?? null };
   // The auth-provider playground is the seed: it always exists and its domain comes from the code.
   // A store written before playgrounds existed has its sources at the top level; they belong to the seed.
   const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
@@ -154,8 +156,9 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
       const { text, etag, header } = await read();
       const s = parse(text);
       const out = await fn(s);
+      if (JSON.stringify(s) === text) return out; // `fn` changed nothing: no write, and no new version for the other writers
+      s.rev = randomUUID();
       const body = JSON.stringify(s);
-      if (body === text) return out; // `fn` changed nothing: no write, and no new version for the other writers
       try {
         // With an ETag: write only if nobody wrote since the read. Without one: create only (an existing blob is an error).
         await put(BLOB, body, { access: "private", contentType: "application/json", addRandomSuffix: false, ...(etag ? { ifMatch: etag } : { allowOverwrite: false }) });
@@ -165,7 +168,8 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
         const lost = e instanceof BlobPreconditionFailedError || /precondition|conditional request|already exists/i.test(String((e as Error)?.message));
         if (!lost) throw e;
         // The SDK retries a write whose answer was lost, and the retry then fails its own precondition. When the stored
-        // document is exactly what this call sent, the write landed: `fn` must not run a second time on its own result.
+        // document is exactly what this call sent (`rev` is unique per write), the write landed: `fn` must not run a second
+        // time on its own result. lean: when a third writer has already written on top of it, `fn` does run twice.
         if ((await read()).etag === version(body)) return out;
         if (attempt >= 12) throw new Error(`The store could not be written: 13 conditional writes failed in a row (computed version ${etag}, read header ${header}).`);
         await new Promise((r) => setTimeout(r, 40 + Math.random() * 60 * (attempt + 1)));

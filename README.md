@@ -41,7 +41,7 @@ A browser gets the key once through the owner link `https://clay-steel-nu.vercel
 
 ## Connect your agent (local)
 
-The local MCP endpoint is `http://127.0.0.1:43117/api/mcp` (Streamable HTTP). The app must be running. Without `CLAY_ACCESS_KEY` a local app needs no key.
+The local MCP endpoint is `http://127.0.0.1:43117/api/mcp` (Streamable HTTP). The app must be running. Without `CLAY_ACCESS_KEY` the development server (`pnpm dev`) needs no key. A production build (`pnpm start`) and an app with `PUBLIC_BASE_URL` always need one.
 
 ```bash
 # Claude Code
@@ -72,7 +72,7 @@ The official TypeScript SDK (`@modelcontextprotocol/sdk` 1.32.2) has `WebStandar
 
 `refused()` in `app/api/respond.ts` is called by every route that changes state or spends Context.dev requests. It checks two things.
 
-- The owner key (`lib/access.ts`, `CLAY_ACCESS_KEY`): `Authorization: Bearer <key>` from an agent, or the owner cookie in a browser. Keys are compared in constant time. With no key configured the app is open on a local machine (it binds to 127.0.0.1) and closed on a deployment. A key shorter than 32 characters matches nothing.
+- The owner key (`lib/access.ts`, `CLAY_ACCESS_KEY`): `Authorization: Bearer <key>` from an agent, or the owner cookie in a browser. Keys are compared in constant time. With no key configured only the development server is open (`pnpm dev` binds to 127.0.0.1); a production build, Vercel, or an app with `PUBLIC_BASE_URL` refuses every write. A key shorter than 32 characters matches nothing.
 - The origin: a request that carries an `Origin` header must come from the app's own page, and the app must be addressed by its own name. So a web page open in the person's browser cannot spend requests or overwrite the saved decision.
 
 Public without a key: the pages, `GET /api/p/<id>/state`, `GET /api/playgrounds`, the demo vendor pricing page (Context.dev must read it) and the webhook route, which is protected by its signature check.
@@ -135,7 +135,7 @@ Environment variables (Vercel project `clay`, Production):
 | `BLOB_READ_WRITE_TOKEN` | Set by Vercel when the private Blob store `clay-store` is connected. `BLOB_STORE_ID` works too. Either one switches the store from the local file to the blob. |
 | `CONTEXT_DEV_DAILY_CAP` | Optional. Context.dev requests per UTC day, default 300. |
 | `CONTEXT_DEV_REQUESTS_PER_MINUTE` | Optional. Request pacing per function instance, default 10. |
-| `PUBLIC_BASE_URL` | Optional. The public https origin. On Vercel it defaults to `https://$VERCEL_PROJECT_PRODUCTION_URL`. It is used for playground URLs, webhook URLs and the demo page URL. |
+| `PUBLIC_BASE_URL` | Optional. The public https origin. On Vercel it defaults to `https://$VERCEL_PROJECT_PRODUCTION_URL`. It is used for playground URLs, webhook URLs and the demo page URL. Setting it makes the owner key mandatory. |
 | `MONITOR_INTERVAL_MINUTES` | Optional. Interval of new webhook monitors, 10 or more; the API default is one run per day. |
 
 - Storage: one private Vercel Blob document (`clay/store.json`). It holds the webhook secrets, so the store is private. Reads bypass the CDN cache. Every write is conditional on the version that was read (the MD5 of the document, which is the blob's ETag); a writer that loses re-reads and applies its change again.
