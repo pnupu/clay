@@ -1,7 +1,7 @@
 // Collect and re-check. Live sources and the demo source share every step except how the page is read.
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { DOMAIN, EXTRACTION_INSTRUCTIONS, extractionSchema, type PricingModel } from "./domain";
+import { DOMAIN, EXTRACTION_INSTRUCTIONS, extractionSchema, normalise, type PricingModel, type RawModel } from "./domain";
 import { ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { diffModels, verdict } from "./diff";
 import { load, update, type ChangeEvent, type Snapshot, type Source } from "./store";
@@ -23,20 +23,47 @@ function numberForms(n: number): string[] {
   if (n >= 1_000_000 && n % 100_000 === 0) forms.push(`${n / 1_000_000}m`, `${n / 1_000_000}million`);
   return forms;
 }
-export function evidence(model: PricingModel, pageText: string): Record<string, boolean> {
+const parts = (quote: string) => quote.split(/<br\s*\/?>|[|;]/).map(squash).filter(Boolean);
+
+/**
+ * Check every extracted fact against the page text of the same capture.
+ * A number that is not in the page text is quarantined: it becomes null (unknown) and is listed, never used.
+ * Facts without numbers (feature status) are only flagged when their quote is not on the page.
+ */
+export function verify(model: PricingModel, pageText: string): Pick<Snapshot, "model" | "evidence" | "quarantined"> {
   const page = squash(pageText);
-  const seen = (quote: string | null, nums: (number | null | undefined)[]) => {
-    if (quote && page.includes(squash(quote))) return true;
-    const real = nums.filter((n): n is number => typeof n === "number");
-    return real.length > 0 && real.every((n) => numberForms(n).some((f) => page.includes(f)));
+  const onPage = (n: number) => numberForms(n).some((f) => page.includes(f.toLowerCase()));
+  const quoted = (q: string | null) => !!q && parts(q).every((x) => page.includes(x));
+  const evidence: Record<string, boolean> = {};
+  const quarantined: Snapshot["quarantined"] = [];
+  const keep = (path: string, n: number | null): number | null => {
+    if (n == null || onPage(n)) return n;
+    quarantined.push({ path, value: n });
+    return null;
   };
-  const out: Record<string, boolean> = {};
-  for (const p of model.plans ?? []) {
-    if (p.base_price != null || p.custom_pricing) out[`${p.name}/base`] = seen(p.price_quote, [p.base_price]);
-    for (const m of p.meters ?? []) out[`${p.name}/meter/${m.metric}`] = seen(m.quote, [m.included, ...(m.tiers ?? []).map((t) => t.price)]);
-    for (const f of p.features ?? []) if (f.status != null) out[`${p.name}/feature/${f.feature}`] = seen(f.quote, [f.addon_price]);
-  }
-  return out;
+  const plans = (model.plans ?? []).map((p) => {
+    const before = quarantined.length;
+    const base_price = quoted(p.price_quote) ? p.base_price : keep(`${p.name} / base price`, p.base_price);
+    if (base_price != null || p.custom_pricing) evidence[`${p.name}/base`] = quarantined.length === before;
+    const meters = (p.meters ?? []).map((m) => {
+      const start = quarantined.length;
+      const path = `${p.name} / ${m.metric}`;
+      const out = {
+        ...m,
+        included: keep(`${path} / included`, m.included),
+        tiers: (m.tiers ?? []).map((t, i) => ({ ...t, price: keep(`${path} / tier ${i + 1} price`, t.price) })),
+      };
+      evidence[`${p.name}/meter/${m.metric}`] = quarantined.length === start;
+      return out;
+    });
+    const features = (p.features ?? []).map((f) => {
+      const addon_price = keep(`${p.name} / ${f.feature} / add-on price`, f.addon_price);
+      evidence[`${p.name}/feature/${f.feature}`] = quoted(f.quote) && addon_price === f.addon_price;
+      return { ...f, addon_price };
+    });
+    return { ...p, base_price, meters, features };
+  });
+  return { model: { ...model, plans }, evidence, quarantined };
 }
 
 // ---- Reading a page
@@ -59,13 +86,13 @@ async function readModel(src: Source, origin: string): Promise<Snapshot> {
     if (!m) throw new Error("Demo page has no embedded pricing model");
     const model = JSON.parse(m[1]) as PricingModel;
     const text = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<[^>]+>/g, " ");
-    return { url: demoUrl(origin), fetchedAt: new Date().toISOString(), extractor: "local-demo-parser", model, textHash: hash(html), evidence: evidence(model, text), truncated: false, latencyMs: Date.now() - t0, requestId: null };
+    return { url: demoUrl(origin), fetchedAt: new Date().toISOString(), extractor: "local-demo-parser", textHash: hash(html), ...verify(model, text), truncated: false, latencyMs: Date.now() - t0, requestId: null };
   }
   const r = await scrape(src.url!, { schema: extractionSchema(DOMAIN), instructions: EXTRACTION_INSTRUCTIONS });
   // HTTP 200 does not mean every output succeeded: check each one.
   if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`);
   const text = r.markdown.success && r.markdown.data ? r.markdown.data : "";
-  const model = r.json.data as PricingModel;
+  const model = normalise(r.json.data as RawModel);
   try {
     mkdirSync(".data/pages", { recursive: true });
     writeFileSync(`.data/pages/${src.id}.md`, text);
@@ -74,9 +101,8 @@ async function readModel(src: Source, origin: string): Promise<Snapshot> {
     url: r.url,
     fetchedAt: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString(),
     extractor: "context.dev",
-    model,
+    ...verify(model, text),
     textHash: hash(text),
-    evidence: evidence(model, text),
     truncated: r.json.isTruncated === true,
     latencyMs: r._ms,
     requestId: r.request_id ?? null,

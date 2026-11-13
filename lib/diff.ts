@@ -46,18 +46,15 @@ export type Verdict = {
   reason: string;
 };
 
-/** Does the saved decision still hold after the sources changed? It holds when the chosen vendor keeps its position against the cheapest. */
+/** Does the saved decision still hold after the sources changed? It holds when the chosen vendor is the cheapest under the saved assumptions. */
 export function verdict(decision: Decision, before: Record<string, PricingModel | null>, after: Record<string, PricingModel | null>): Verdict {
   const cost = (r: ReturnType<typeof rank>) => r.ranked.find((v) => v.id === decision.chosen)?.best?.cost ?? null;
   const rb = rank(before, decision);
   const ra = rank(after, decision);
   const v = { cheapestBefore: rb.cheapest, cheapestNow: ra.cheapest, chosenCostBefore: cost(rb), chosenCostNow: cost(ra) };
   const wasCheapest = rb.cheapest === decision.chosen;
-  const costChange = v.chosenCostBefore != null && v.chosenCostNow != null && v.chosenCostNow !== v.chosenCostBefore;
+  const costChanged = v.chosenCostBefore != null && v.chosenCostNow != null && v.chosenCostNow !== v.chosenCostBefore;
   if (v.chosenCostNow == null) return { ...v, holds: false, reason: "The chosen vendor can no longer be priced under your assumptions." };
-  if (ra.cheapest === decision.chosen) return { ...v, holds: true, reason: wasCheapest ? (costChange ? "The chosen vendor's cost changed, but it is still the cheapest." : "The chosen vendor is still the cheapest.") : "The chosen vendor is now the cheapest." };
-  if (wasCheapest) return { ...v, holds: false, reason: "The chosen vendor is no longer the cheapest under your assumptions." };
-  if (ra.cheapest !== rb.cheapest) return { ...v, holds: false, reason: "The cheapest vendor changed under your assumptions." };
-  if (v.chosenCostBefore != null && v.chosenCostNow > v.chosenCostBefore) return { ...v, holds: false, reason: "The chosen vendor was not the cheapest and now costs more." };
-  return { ...v, holds: true, reason: "The ranking that your decision rests on did not change." };
+  if (ra.cheapest === decision.chosen) return { ...v, holds: true, reason: !wasCheapest ? "The chosen vendor is now the cheapest." : costChanged ? "The chosen vendor's cost changed, but it is still the cheapest." : "The chosen vendor is still the cheapest." };
+  return { ...v, holds: false, reason: wasCheapest ? "The chosen vendor is no longer the cheapest under your assumptions." : "The chosen vendor was not the cheapest before this change and still is not." };
 }

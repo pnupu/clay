@@ -32,16 +32,16 @@ export const DOMAIN: Domain = {
       id: "sso_connections",
       label: "Enterprise SSO connections",
       unit: "connections",
-      describe: "Enterprise single sign-on connections (SAML or OIDC), counted per connection or per connected organisation.",
+      describe: "Enterprise single sign-on (SAML or OIDC) priced PER CONNECTION or per connected organisation. Do not use this entry when the page prices SSO per user or per MAU.",
       min: 0,
       max: 200,
       initial: 3,
     },
     {
-      id: "sso_mau",
+      id: "sso_users",
       label: "Users signing in through SSO",
       unit: "users",
-      describe: "Monthly active users who sign in through enterprise SSO, only when the page prices SSO per user instead of per connection.",
+      describe: "Enterprise single sign-on priced PER USER: monthly active users who sign in through SSO (for example '50 included, then $0.015 per MAU' in an SSO row). Use this entry only when the SSO price is per user or per MAU, not per connection.",
       min: 0,
       max: 100_000,
       initial: 500,
@@ -105,46 +105,57 @@ export function extractionSchema(d: Domain) {
             custom_pricing: nullable("boolean", "true if the plan price is 'Custom' or 'Contact sales'."),
             price_quote: nullable("string", "Short verbatim text from the page that states the base price."),
             meters: {
-              type: "array",
-              description: "Usage-priced dimensions of this plan. Only include a meter when the page states something about it for this plan.",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["metric"],
-                properties: {
-                  metric: { type: "string", enum: d.metrics.map((m) => m.id), description: d.metrics.map((m) => `${m.id}: ${m.describe}`).join(" ") },
-                  included: nullable("number", "Units included in the base price. 0 if none are included. null if not stated."),
-                  overage_allowed: nullable("boolean", "true if usage above `included` is billed, false if `included` is a hard limit or the metric is not available on this plan, null if not stated."),
-                  tiers: {
-                    type: ["array", "null"],
-                    description: "Graduated prices for usage above `included`, in ascending order. One entry if there is a single overage price. Empty or null if the page states no overage price.",
-                    items: {
-                      type: "object",
-                      additionalProperties: false,
-                      properties: {
-                        up_to: nullable("number", "Highest total usage this tier covers. null for the last, open-ended tier."),
-                        price: nullable("number", "Price per month for `per_units` units, exactly as on the page."),
-                        per_units: nullable("number", "Number of units the price buys, for example 1 for '$0.02 each' and 1000000 for '$2,500 per 1M users'."),
+              type: "object",
+              additionalProperties: false,
+              description: "Usage-priced dimensions of this plan, one entry per metric.",
+              properties: Object.fromEntries(
+                d.metrics.map((m) => [
+                  m.id,
+                  {
+                    type: ["object", "null"],
+                    additionalProperties: false,
+                    description: `${m.describe} null if the page says nothing about this for this plan.`,
+                    properties: {
+                      status: { type: ["string", "null"], enum: ["priced", "not_available", null], description: "not_available: the page says this plan does not include or offer it. priced: the page states an included quantity or a price." },
+                      included: nullable("number", "Units included in the base price. 0 if none are included. null if not stated."),
+                      overage_allowed: nullable("boolean", "true if usage above `included` is billed, false if `included` is a hard limit, null if not stated."),
+                      tiers: {
+                        type: ["array", "null"],
+                        description: "Graduated prices for usage above `included`, in ascending order. One entry if there is a single overage price. Empty or null if the page states no overage price.",
+                        items: {
+                          type: "object",
+                          additionalProperties: false,
+                          properties: {
+                            up_to: nullable("number", "Highest total usage this tier covers. null for the last, open-ended tier."),
+                            price: nullable("number", "Price per month for `per_units` units, exactly as on the page."),
+                            per_units: nullable("number", "Number of units the price buys, for example 1 for '$0.02 each' and 1000000 for '$2,500 per 1M users'."),
+                          },
+                        },
                       },
+                      quote: nullable("string", "Short verbatim text from the page that states these numbers."),
                     },
                   },
-                  quote: nullable("string", "Short verbatim text from the page that states these numbers."),
-                },
-              },
+                ]),
+              ),
             },
             features: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["feature"],
-                properties: {
-                  feature: { type: "string", enum: d.features.map((f) => f.id), description: d.features.map((f) => `${f.id}: ${f.describe}`).join(" ") },
-                  status: { type: ["string", "null"], enum: ["included", "addon", "not_available", null], description: "included: part of the plan. addon: available for an extra fee. not_available: the page says the plan lacks it. null: the page does not say." },
-                  addon_price: nullable("number", "Extra fixed fee per month (monthly billing) when status is addon. null if not stated."),
-                  quote: nullable("string", "Short verbatim text from the page that supports the status."),
-                },
-              },
+              type: "object",
+              additionalProperties: false,
+              properties: Object.fromEntries(
+                d.features.map((f) => [
+                  f.id,
+                  {
+                    type: ["object", "null"],
+                    additionalProperties: false,
+                    description: `${f.describe} null if the page does not say whether this plan has it.`,
+                    properties: {
+                      status: { type: ["string", "null"], enum: ["included", "addon", "not_available", null], description: "included: part of the plan. addon: available for an extra fee. not_available: the page says the plan lacks it. null: the page does not say." },
+                      addon_price: nullable("number", "Extra fixed fee per month (monthly billing) when status is addon. null if not stated."),
+                      quote: nullable("string", "Short verbatim text from the page that supports the status."),
+                    },
+                  },
+                ]),
+              ),
             },
           },
         },
@@ -155,8 +166,37 @@ export function extractionSchema(d: Domain) {
 
 export const EXTRACTION_INSTRUCTIONS =
   "Extract the pricing of this vendor's authentication product for a business-to-business SaaS customer. " +
-  "Use only facts stated on this page. Never estimate, infer or calculate a value: when the page does not state a fact, return null. " +
+  "Use only facts stated on this page. Never estimate, infer or calculate a number: when the page does not state it, return null. " +
   "Keep prices and quantities exactly as written (monthly billing prices, not annual-discount prices). " +
   "If the page has no named plans, describe it as one plan named after the pricing model (for example 'Pay as you go'). " +
-  "Report each metric at most once per plan and each feature at most once per plan. " +
-  "When the page says a metric is not included or not available on a plan, still report that meter with included 0 and overage_allowed false. Quotes must be copied verbatim from the page.";
+  "If a plan is described as usage-based, pay-as-you-go or free with no fixed fee, its base_price is 0. " +
+  "An SSO price per user or per MAU belongs to sso_users, never to sso_connections. " +
+  "Quotes must be copied verbatim from one place on the page.";
+
+/** Shape returned by the schema above: meters and features keyed by id. normalise() turns it into PricingModel. */
+type RawMeter = Omit<Meter, "metric"> & { status?: "priced" | "not_available" | null };
+type RawPlan = Omit<Plan, "meters" | "features"> & { meters?: Record<string, RawMeter | null> | null; features?: Record<string, Omit<FeatureFact, "feature"> | null> | null };
+export type RawModel = { vendor: string | null; currency: string | null; plans: RawPlan[] | null };
+
+export function normalise(raw: RawModel): PricingModel {
+  return {
+    vendor: raw.vendor ?? null,
+    currency: raw.currency ?? null,
+    plans: (raw.plans ?? []).map((p) => ({
+      name: p.name,
+      base_price: p.base_price ?? null,
+      custom_pricing: p.custom_pricing ?? null,
+      price_quote: p.price_quote ?? null,
+      meters: Object.entries(p.meters ?? {}).flatMap(([metric, m]): Meter[] => {
+        if (!m) return [];
+        const quote = m.quote ?? null;
+        // "Not available on this plan" is a hard limit of 0.
+        if (m.status === "not_available") return [{ metric, included: 0, overage_allowed: false, tiers: [], quote }];
+        // An entry with no content says nothing: leave it out, so the metric counts as "no charge stated".
+        if (m.included == null && m.overage_allowed == null && !m.tiers?.length && !quote) return [];
+        return [{ metric, included: m.included ?? null, overage_allowed: m.overage_allowed ?? null, tiers: m.tiers ?? [], quote }];
+      }),
+      features: Object.entries(p.features ?? {}).flatMap(([feature, f]): FeatureFact[] => (f?.status ? [{ feature, status: f.status, addon_price: f.addon_price ?? null, quote: f.quote ?? null }] : [])),
+    })),
+  };
+}

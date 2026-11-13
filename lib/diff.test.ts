@@ -1,0 +1,61 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { diffModels, verdict, type Decision } from "./diff.ts";
+import type { PricingModel } from "./domain.ts";
+
+const model = (base: number | null, price: number | null, quote = "q"): PricingModel => ({
+  vendor: "V",
+  currency: "USD",
+  plans: [
+    {
+      name: "Pro",
+      base_price: base,
+      custom_pricing: false,
+      price_quote: quote,
+      meters: [{ metric: "mau", included: 10_000, overage_allowed: true, tiers: [{ up_to: null, price, per_units: 1 }], quote }],
+      features: [{ feature: "mfa", status: "included", addon_price: null, quote }],
+    },
+  ],
+});
+
+test("identical facts give no changes, even when quotes differ", () => {
+  assert.deepEqual(diffModels(model(25, 0.02, "a"), model(25, 0.02, "b")), []);
+});
+
+test("a changed price is reported with its path, before and after", () => {
+  assert.deepEqual(diffModels(model(25, 0.02), model(35, 0.02)), [{ path: "Pro / base price", before: 25, after: 35 }]);
+  assert.deepEqual(diffModels(model(25, 0.02), model(25, 0.03)), [{ path: "Pro / mau / tier 1 price", before: "0.02 per 1", after: "0.03 per 1" }]);
+});
+
+test("a fact that became unknown and a removed plan are both changes", () => {
+  assert.deepEqual(diffModels(model(25, 0.02), model(25, null)), [{ path: "Pro / mau / tier 1 price", before: "0.02 per 1", after: null }]);
+  const gone = diffModels(model(25, 0.02), { vendor: "V", currency: "USD", plans: [] });
+  assert.ok(gone.some((c) => c.path === "Pro / base price" && c.after === undefined));
+});
+
+const decision: Decision = { usage: { mau: 20_000 }, required: [], chosen: "a", savedAt: "2026-11-13T00:00:00Z" };
+const b = model(250, 0.001); // 260 at 20k
+
+test("verdict: the chosen vendor stays cheapest after a small rise", () => {
+  const v = verdict(decision, { a: model(25, 0.02), b }, { a: model(35, 0.02), b });
+  assert.equal(v.holds, true);
+  assert.deepEqual([v.chosenCostBefore, v.chosenCostNow, v.cheapestNow], [225, 235, "a"]);
+});
+
+test("verdict: a rise that makes another vendor cheapest breaks the decision", () => {
+  const v = verdict(decision, { a: model(25, 0.02), b }, { a: model(125, 0.02), b });
+  assert.equal(v.holds, false);
+  assert.deepEqual([v.cheapestBefore, v.cheapestNow, v.chosenCostNow], ["a", "b", 325]);
+});
+
+test("verdict: the decision breaks when the chosen vendor can no longer be priced", () => {
+  const v = verdict(decision, { a: model(25, 0.02), b }, { a: model(25, null), b });
+  assert.equal(v.holds, false);
+  assert.equal(v.chosenCostNow, null);
+});
+
+test("verdict: a change at another vendor that undercuts the choice breaks the decision", () => {
+  const v = verdict(decision, { a: model(25, 0.02), b }, { a: model(25, 0.02), b: model(100, 0.001) });
+  assert.equal(v.holds, false);
+  assert.equal(v.cheapestNow, "b");
+});

@@ -14,6 +14,8 @@ export type Snapshot = {
   textHash: string;
   /** Per fact: was its quote or its numbers found in the page text of the same capture? Keys: "<plan>/base", "<plan>/meter/<id>", "<plan>/feature/<id>". */
   evidence: Record<string, boolean>;
+  /** Numbers the extraction returned that are not in the page text. They are set to null in `model` and never used. */
+  quarantined: { path: string; value: number }[];
   truncated: boolean;
   latencyMs: number;
   requestId: string | null;

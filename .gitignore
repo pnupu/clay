@@ -42,3 +42,8 @@ next-env.d.ts
 
 # local data store and run logs with raw responses
 .data/
+run/dev.log
+run/dev.pid
+run/port
+run/shots/
+run/requests.jsonl

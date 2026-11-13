@@ -286,6 +286,9 @@ function VendorRow({ v, src, now, place, chosen, onChoose, effect }: { v: Vendor
         </details>
       )}
       {p?.unknowns.map((u) => <p className="small warn" key={u}>Unknown: {humanize(u)}.</p>)}
+      {p && snap?.quarantined?.filter((q) => q.path.startsWith(p.plan + " / ")).map((q) => (
+        <p className="small warn" key={q.path}>Not used: the extraction returned {q.value} for {humanize(q.path)}, but that number is not in the page text.</p>
+      ))}
       {p?.assumed.map((u) => <p className="small muted" key={u}>Assumed $0: {humanize(u)}.</p>)}
     </li>
   );
