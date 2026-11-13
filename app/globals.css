@@ -46,8 +46,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--page); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-h1 { font-size: 24px; line-height: 1.2; margin: 2px 0 0; text-wrap: balance; }
-h2 { font-size: 15px; margin: 0 0 10px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 2px 0 0; text-wrap: balance; }
+h2 { font-size: 16px; margin: 0 0 10px; }
 h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); margin: 16px 0 6px; }
 p { margin: 0 0 8px; }
 a, .link { color: var(--accent); }
@@ -92,10 +92,22 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--page); border
 .vendor { border-top: 1px solid var(--line); padding: 10px 0; }
 .vendor:first-child { border-top: 0; }
 .vendor.chosen { background: color-mix(in srgb, var(--ink) 4%, transparent); margin: 0 -8px; padding: 10px 8px; border-radius: 8px; border-top-color: transparent; }
-.vendor-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vendor-head { display: flex; align-items: center; gap: 8px; }
+.vendor-head .name, .vendor-head .cost { white-space: nowrap; }
+.vendor-head .plan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vendor .name { font-weight: 600; }
 .vendor .plan { font-size: 13px; }
-.vendor .cost { margin-left: auto; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.vendor .cost { margin-left: auto; font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+ol.rank .vendor:first-child .cost { font-size: 30px; }
+ol.rank .vendor:first-child .name { font-size: 18px; }
+.vendor .name { font-size: 16px; }
+.answer { font-size: 17px; margin: 0 0 10px; text-wrap: pretty; }
+.live { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
+.live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@keyframes arrive { from { background: color-mix(in srgb, var(--warn) 30%, transparent); } to { background: transparent; } }
+.events li { animation: arrive 2.5s ease-out; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .live i, .events li { animation: none; } }
 .vendor details { margin: 4px 0 0 18px; }
 .vendor summary { cursor: pointer; }
 .vendor > p { margin: 4px 0 0 18px; }
@@ -104,8 +116,9 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--page); border
 .lines .amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lines q { color: var(--ink-2); }
 
-.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.chart-head select { padding: 2px 6px; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.chart-head label { white-space: nowrap; }
+.chart-head select { padding: 2px 6px; max-width: 200px; }
 .chart { margin: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
 .legend li { display: flex; align-items: center; gap: 6px; }
@@ -122,7 +135,7 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
 .tip em { font-style: normal; margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
 .cross li { padding: 3px 0; }
 
-.verdict { border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.verdict { border-radius: 8px; padding: 10px 12px; font-size: 15px; font-weight: 550; }
 .verdict.ok { background: var(--ok-bg); color: var(--ok); }
 .verdict.bad { background: var(--bad-bg); color: var(--bad); }
 .events li { border-top: 1px solid var(--line); padding: 8px 0; }
@@ -149,3 +162,7 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
   .grid { grid-template-columns: 1fr; }
   .controls { position: static; }
 }
+
+/* Projector and large displays: scale the one screen up instead of leaving wide empty margins. */
+@media (min-width: 1800px) { .shell { zoom: 1.3; } }
+@media (min-width: 2400px) { .shell { zoom: 1.6; } }

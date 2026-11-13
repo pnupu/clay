@@ -12,7 +12,8 @@ const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const num = (n: number) => n.toLocaleString("en-US");
 const label = (id: string) => DOMAIN.metrics.find((m) => m.id === id)?.label ?? DOMAIN.features.find((f) => f.id === id)?.label ?? id;
 /** Replace metric and feature ids in a computed message with their labels. */
-const humanize = (s: string) => [...DOMAIN.metrics, ...DOMAIN.features].reduce((t, d) => t.replaceAll(d.id, d.label.toLowerCase()), s);
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+const humanize = (s: string) => [...DOMAIN.metrics, ...DOMAIN.features].reduce((t, d) => t.replaceAll(d.id, lower(d.label)), s);
 const color = (id: string) => `var(--series-${DOMAIN.vendors.findIndex((v) => v.id === id) + 1})`;
 
 function ago(iso: string | null | undefined, now: number) {
@@ -69,7 +70,7 @@ export default function Playground() {
     call("/api/state").then(setState);
   }, []);
 
-  // Watch loop. The demo source on localhost is re-checked every 5 s by the app itself (no Context.dev call).
+  // Watch loop. The demo source on localhost is re-checked every 3 s by the app itself (no Context.dev call).
   // Everything else changes only through a webhook or the button, so the loop just reloads the state.
   const demoLocal = state?.sources.demo?.snapshot?.extractor === "local-demo-parser";
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function Playground() {
       if (busyRef.current) return;
       const s = demoLocal ? await call("/api/recheck", "POST", { id: "demo", trigger: "auto" }) : await call("/api/state");
       if (s.sources && !busyRef.current) setState(s);
-    }, 5000);
+    }, 3000);
     return () => clearInterval(t);
   }, [demoLocal]);
 
@@ -94,6 +95,7 @@ export default function Playground() {
   const ranking = useMemo(() => rank(models, a), [models, a]);
   const axisDef = DOMAIN.metrics.find((m) => m.id === axis) ?? DOMAIN.metrics[0];
   const cross = useMemo(() => crossovers(models, a, axisDef.id, axisDef.min, axisDef.max), [models, a, axisDef]);
+  const nextCross = cross.find((c) => c.at > (usage[axisDef.id] ?? 0));
   const pick = chosen && ranking.ranked.some((v) => v.id === chosen) ? chosen : ranking.cheapest;
 
   const decision = state?.decision ?? null;
@@ -111,7 +113,9 @@ export default function Playground() {
           <h1>{DOMAIN.question}</h1>
         </div>
         <div className="actions">
-          {busy && <span className="muted">{busy}…</span>}
+          {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (
+            <span className="live"><i />{collected.length} sources live · last check {ago(collected.map((x) => x.lastCheckedAt ?? "").sort().at(-1), now)}</span>
+          )}
           {!collectedAll && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", "/api/collect")}>Collect pricing pages</button>}
           {collected.length > 0 && <button disabled={!!busy} onClick={() => run("Re-checking sources", "/api/recheck")}>Re-check all now</button>}
         </div>
@@ -147,6 +151,13 @@ export default function Playground() {
           <section className="results">
             <div className="card">
               <h2>Monthly cost under these assumptions</h2>
+              {ranking.ranked[0] && (
+                <p className="answer">
+                  Cheapest: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month
+                  {ranking.ranked[1] ? `, ${money(ranking.ranked[1].best!.cost - ranking.ranked[0].best!.cost)} less than ${sources[ranking.ranked[1].id]?.name}` : ""}.
+                  {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {axisDef.unit}.</span>}
+                </p>
+              )}
               <ol className="rank">
                 {ranking.ranked.map((v, i) => (
                   <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} place={i + 1} chosen={pick === v.id} onChoose={() => setChosen(v.id)} />
@@ -169,7 +180,7 @@ export default function Playground() {
                 <label className="muted small">
                   Along{" "}
                   <select value={axis} onChange={(e) => setAxis(e.target.value)}>
-                    {metrics.map((m) => <option key={m.id} value={m.id}>{m.label.toLowerCase()}</option>)}
+                    {metrics.map((m) => <option key={m.id} value={m.id}>{lower(m.label)}</option>)}
                   </select>
                 </label>
               </div>
@@ -234,7 +245,7 @@ export default function Playground() {
                       <a href={s.url ?? "#"} target="_blank" rel="noreferrer">{s.name}</a>
                       {s.demo && <span className="badge">Demo</span>}
                       <p className="small muted">
-                        {s.snapshot ? `Read ${ago(s.snapshot.fetchedAt, now)} by ${s.snapshot.extractor === "context.dev" ? "Context.dev" : "the app (localhost)"}` : "Not read"} · checked {ago(s.lastCheckedAt, now)}
+                        {s.snapshot ? `Extracted ${ago(s.snapshot.fetchedAt, now)} by ${s.snapshot.extractor === "context.dev" ? `Context.dev in ${(s.snapshot.latencyMs / 1000).toFixed(1)} s` : "the app (localhost)"}` : "Not read"} · last checked {ago(s.lastCheckedAt, now)}
                         {s.monitor ? " · webhook monitor on" : ""}
                       </p>
                       {s.error && <p className="small bad">{s.error}</p>}
@@ -248,7 +259,7 @@ export default function Playground() {
                   {Object.values(sources).some((s) => s.monitor) ? "Stop webhook monitors" : "Start webhook monitors"}
                 </button>
               ) : (
-                <p className="small muted">Webhook monitors are off: Context.dev needs a public URL to deliver to, and this app runs on localhost. Use Re-check. The demo source is watched every 5 seconds.</p>
+                <p className="small muted">Webhook monitors are off: Context.dev needs a public URL to deliver to, and this app runs on localhost. Use Re-check. The demo source is watched every 3 seconds.</p>
               )}
             </section>
 
@@ -283,13 +294,13 @@ function VendorRow({ v, src, now, place, chosen, onChoose, effect }: { v: Vendor
           <Lines p={p} model={snap?.model ?? null} evidence={snap?.evidence ?? {}} url={snap?.url ?? src?.url ?? ""} age={ago(snap?.fetchedAt, now)} />
           {v.plans.filter((x) => x.ineligible).map((x) => <p className="small muted" key={x.plan}>{x.plan} plan is out: {humanize(x.ineligible!)}.</p>)}
           {snap?.truncated && <p className="small warn">The page was too long to read in full. Some values may be missing.</p>}
+          {p.assumed.map((u) => <p className="small muted" key={u}>Counted as $0: {humanize(u)}.</p>)}
         </details>
       )}
       {p?.unknowns.map((u) => <p className="small warn" key={u}>Unknown: {humanize(u)}.</p>)}
       {p && snap?.quarantined?.filter((q) => q.path.startsWith(p.plan + " / ")).map((q) => (
         <p className="small warn" key={q.path}>Not used: the extraction returned {q.value} for {humanize(q.path)}, but that number is not in the page text.</p>
       ))}
-      {p?.assumed.map((u) => <p className="small muted" key={u}>Assumed $0: {humanize(u)}.</p>)}
     </li>
   );
 }
@@ -341,8 +352,8 @@ function Standing({ decision, standing, sources, now, onLoad, onClear }: { decis
             : `✕ ${sources[decision.chosen]?.name} can no longer be priced under the saved assumptions.`}
       </p>
       <p className="small muted">
-        Saved {ago(decision.savedAt, now)} for {Object.entries(decision.usage).filter(([, n]) => n > 0).map(([k, n]) => `${num(n)} ${label(k).toLowerCase()}`).join(", ")}
-        {decision.required.length ? `; must have ${decision.required.map((f) => label(f).toLowerCase()).join(", ")}` : ""}. Judged against the sources as they are now.
+        Saved {ago(decision.savedAt, now)} for {Object.entries(decision.usage).filter(([, n]) => n > 0).map(([k, n]) => `${num(n)} ${lower(label(k))}`).join(", ")}
+        {decision.required.length ? `; must have ${decision.required.map((f) => lower(label(f))).join(", ")}` : ""}. Judged against the sources as they are now.
       </p>
       <div className="row">
         <button className="small-btn" onClick={onLoad}>Load into controls</button>
@@ -406,7 +417,7 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
         {series.map((s) => <li key={s.id}><span className="swatch" style={{ background: color(s.id) }} />{names[s.id]}</li>)}
       </ul>
       <div className="plot">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Monthly cost per vendor along ${axis.label.toLowerCase()}`}
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Monthly cost per vendor along ${lower(axis.label)}`}
           onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover(inv(((e.clientX - r.left) / r.width) * W)); }} onMouseLeave={() => setHover(null)}>
           {yt.map((y) => <g key={y}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="grid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
           {xt.map((x, i) => <text key={i} x={sx(x)} y={H - 8} textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"} className="tick">{short(x)} {i === 2 ? axis.unit : ""}</text>)}

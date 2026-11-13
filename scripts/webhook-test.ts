@@ -10,8 +10,10 @@ const FILE = ".data/store.json";
 const secret = "whsec_" + randomBytes(24).toString("hex");
 const monitorId = "mon_localtest";
 
-const edit = (fn: (s: any) => void) => { const s = JSON.parse(readFileSync(FILE, "utf8")); fn(s); writeFileSync(FILE, JSON.stringify(s, null, 1)); };
-edit((s) => (s.sources[sourceId].monitor = { id: monitorId, secret, webhookUrl: "(local test)" }));
+type Ev = { id: string; trigger: string; changes: unknown; verdict: unknown };
+type St = { sources: Record<string, { monitor: unknown; lastCheckedAt: string }>; webhookEventIds: string[]; events: Ev[] };
+const edit = (fn: (s: St) => void) => { const s = JSON.parse(readFileSync(FILE, "utf8")); fn(s); writeFileSync(FILE, JSON.stringify(s, null, 1)); };
+edit((s) => void (s.sources[sourceId].monitor = { id: monitorId, secret, webhookUrl: "(local test)" }));
 
 const payload = (id: string, monitor = monitorId) => JSON.stringify({ event: "change.detected", id, created_at: new Date().toISOString(), data: { change: { mode: "web", id: "chg_localtest", monitor_id: monitor, run_id: "run_localtest", target_type: "page", change_detection_type: "semantic", title: "Local test", summary: "Local test", detected_at: new Date().toISOString(), url: "https://example.com", tags: [] } } });
 
@@ -24,7 +26,7 @@ async function send(name: string, expect: number, body: string, opts: { t?: numb
   if (res.status !== expect) process.exitCode = 1;
 }
 
-const state = async () => (await fetch(`${base}/api/state`)).json();
+const state = async (): Promise<St> => (await fetch(`${base}/api/state`)).json();
 const before = await state();
 const evt = "evt_" + randomBytes(6).toString("hex");
 try {
@@ -36,9 +38,9 @@ try {
   await send("replay of the same event id is acknowledged", 204, payload(evt));
   await new Promise((r) => setTimeout(r, Number(process.env.WAIT_MS ?? 15000)));
   const after = await state();
-  const fresh = after.events.filter((e: any) => !before.events.some((b: any) => b.id === e.id));
+  const fresh = after.events.filter((e) => !before.events.some((b) => b.id === e.id));
   console.log(`re-check ran: lastCheckedAt ${before.sources[sourceId].lastCheckedAt} -> ${after.sources[sourceId].lastCheckedAt}`);
-  console.log(`new change events: ${fresh.length}`, JSON.stringify(fresh.map((e: any) => ({ trigger: e.trigger, changes: e.changes, verdict: e.verdict })), null, 1));
+  console.log(`new change events: ${fresh.length}`, JSON.stringify(fresh.map((e) => ({ trigger: e.trigger, changes: e.changes, verdict: e.verdict })), null, 1));
   const ok = after.sources[sourceId].lastCheckedAt !== before.sources[sourceId].lastCheckedAt && fresh.length <= 1;
   console.log(`${ok ? "PASS" : "FAIL"}  exactly one re-check for the accepted event (the replay did not start a second one)`);
   if (!ok) process.exitCode = 1;

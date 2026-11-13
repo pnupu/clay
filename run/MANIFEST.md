@@ -12,3 +12,14 @@
 - Context.dev account at start: credits_remaining 50999, period credits_used 1
 - Request log: run/requests.jsonl (method, path, status, latency, credits; no key, no bodies)
 - Local data (git-ignored): .data/store.json, .data/pages/*.md, .data/explore/*
+
+## Continuation by the replacement child (2026-11-13, from 18:52Z)
+
+- Took over at commit f20c1b9 plus uncommitted work; checkpoint commit 9eaf559 before any change. Branch: master.
+- Start command now: `pnpm dev` (`next dev -H 127.0.0.1 -p ${PORT:-43117}`). During verification the server ran on random port 35013, then on 43117; both are stopped.
+- Docs re-checked live: https://docs.context.dev/openapi.json (scrape, search, monitors, usage), /webhooks.md, /monitors/overview.md, /monitors/webhooks.md.
+- Context.dev requests: 50 in total in run/requests.jsonl (26 by the first child, 24 in this continuation). Account after the run: credits_remaining 50885, period credits_used 115 (it was 1 at the start of the first child).
+- Monitor contract: 1 monitor created and deleted (GET after delete returned 404, monitors_used 0 of 10, plan free).
+- Checks run: `pnpm test` (15 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, `node scripts/webhook-test.ts` (7 PASS, twice), `node --env-file=.env.local scripts/monitor-contract.ts`, a headless Chromium run of the demo flow at 1280 and 1920 pixels.
+- Screenshots (git-ignored): run/shots/final-1-explore-1280.png, final-2-changed-1280.png, final-3-changed-1920.png, cold-0-empty.png, cold-1-collected-1280.png.
+- State left in .data/store.json: 5 sources collected, no saved decision, no change events, demo page at its defaults.

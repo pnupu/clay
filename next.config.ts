@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
+// The dev indicator bubble is hidden so it does not cover the screen on a projector.
+const nextConfig: NextConfig = { devIndicators: false };
 
 export default nextConfig;
