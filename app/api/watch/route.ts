@@ -1,0 +1,28 @@
+import { createMonitor, deleteMonitor } from "@/lib/contextdev";
+import { load, publicState, update } from "@/lib/store";
+
+const INSTRUCTIONS = "Report changes to prices, plan names, included quantities, usage tiers, limits and feature availability. Ignore navigation, testimonials, counters, dates and marketing copy.";
+
+/** Start watching: one Context.dev page monitor per source, with a signed webhook back to this deployment. Needs a public URL. */
+export async function POST() {
+  const base = process.env.PUBLIC_BASE_URL;
+  if (!base) return Response.json({ error: "PUBLIC_BASE_URL is not set. Context.dev can only deliver webhooks to a public URL." }, { status: 409 });
+  for (const src of Object.values(load().sources)) {
+    if (src.monitor || !src.url) continue;
+    const webhookUrl = `${base}/api/webhooks/context/${src.id}`;
+    const m = await createMonitor(`Decision playground: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS);
+    if (!m.webhook?.secret) return Response.json({ error: "Monitor created without a webhook secret; the API key needs monitors:write." }, { status: 502 });
+    await update((s) => void (s.sources[src.id].monitor = { id: m.id, secret: m.webhook!.secret!, webhookUrl }));
+  }
+  return Response.json(publicState(load()));
+}
+
+/** Stop watching: delete the monitors this app created. */
+export async function DELETE() {
+  for (const src of Object.values(load().sources)) {
+    if (!src.monitor) continue;
+    await deleteMonitor(src.monitor.id);
+    await update((s) => void (s.sources[src.id].monitor = null));
+  }
+  return Response.json(publicState(load()));
+}
