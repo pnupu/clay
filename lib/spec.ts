@@ -80,13 +80,12 @@ export function parseSpec(input: unknown): ParsedSpec {
   if (s.view.type === "price_ranking") {
     if (!s.data?.price_pages) errors.push('data.price_pages: the price_ranking view needs it: {"product", "metrics", "features", "vendors"}.');
     for (const k of ["controls", "outputs"] as const) if (s[k]) errors.push(`${k}: the price_ranking view brings its own controls (one slider per metric, one checkbox per feature) and its own hand-back (the saved decision). Remove ${k}.`);
-    if (s.notes) errors.push("notes: a price playground shows no note. Put guidance for the extraction in data.price_pages.notes, or remove notes.");
     for (const k of ["brand", "inline"] as const) if (s.data?.[k]) errors.push(`data.${k}: only a preview view can use it. Remove it, or build a second playground with view.type "preview".`);
     for (const k of ["html", "css", "js", "tailwind", "height"] as const) if (s.view[k] !== undefined) errors.push(`view.${k}: only a preview view has ${k}. Remove it.`);
     if (errors.length) return { ok: false, errors };
     const p = parseConfig({ id: s.id, question: s.title, ...s.data!.price_pages });
     if (!p.ok) return { ok: false, errors: p.errors.map((e) => (e.startsWith("question:") ? e.replace("question:", "title (for a price playground, the decision as a question of 10 characters or more):") : `data.price_pages.${e}`)) };
-    return { ok: true, kind: "price", domain: p.domain };
+    return { ok: true, kind: "price", domain: { ...p.domain, ...(s.notes ? { note: s.notes } : {}) } };
   }
   if (s.data?.price_pages) errors.push('data.price_pages: a preview view has no price ranking. Remove it, or build a second playground with view.type "price_ranking".');
   const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand, inline: s.data?.inline });
@@ -99,7 +98,7 @@ export function parseSpec(input: unknown): ParsedSpec {
 export function toSpec(p: Playground): Spec {
   if (!p.kit) {
     const c = toConfig(p.domain);
-    return { id: c.id, title: c.question, data: { price_pages: { product: c.product, ...(c.notes ? { notes: c.notes } : {}), metrics: c.metrics, features: c.features ?? [], vendors: c.vendors } }, view: { type: "price_ranking" } };
+    return { id: c.id, title: c.question, ...(p.domain.note ? { notes: p.domain.note } : {}), data: { price_pages: { product: c.product, ...(c.notes ? { notes: c.notes } : {}), metrics: c.metrics, features: c.features ?? [], vendors: c.vendors } }, view: { type: "price_ranking" } };
   }
   const { kit } = p.kit;
   return {

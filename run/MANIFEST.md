@@ -136,3 +136,19 @@
   8. Declined: the store document is serialized twice per write; the watch route has its own `message` helper. Fixed: the two stale comments.
   This commit has had no review of its own: three rounds is the limit.
 - Checks after round 3: `pnpm test` (25 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`, webhook test (7 PASS), local guard checks with and without a key.
+
+## Kit slice: one spec, preview playgrounds, sandbox (2026-11-13, from 23:22Z)
+
+- Started at commit f1db121, branch master, clean tree. Model and harness: Claude Fable 5.2 in Claude Code. Run directory (git-ignored): run/kit-20261113T233624Z.
+- Dev servers, all on 127.0.0.1 and all stopped at the end: fixture mode (`CONTEXT_DEV_BASE_URL=http://127.0.0.1:<fixture port> CONTEXT_DEV_API_KEY=fixture PORT=<port> pnpm dev`, ports 36325 and 30977, fixture API ports 32891 and one more), real mode (`PORT=<port> pnpm dev`, ports 40905 and 48649). The local store was copied before and after each phase into the run directory.
+- Docs checked live: https://docs.context.dev/openapi.json and /brand/lookup-by-domain.md (`POST /brand/retrieve`, `type: by_domain`, 10 credits). Tailwind: `npm view @tailwindcss/browser version` gave 4.3.5; the CDN file was downloaded, hashed (sha384) and scanned: no eval, no fetch, no storage use.
+- Context.dev requests in this slice: 8 (1 brand retrieve, 6 scrape, 1 search; all status 200; 36 credits by the request log). No 429. No monitor was created. Total in run/requests.jsonl: 97 of the 400 cap.
+- Agent runs (claude 2.1.321, `claude -p ... --mcp-config <file> --strict-mcp-config --setting-sources "" --model claude-opus-5-5 --allowedTools mcp__clay Read [Edit] --output-format stream-json --verbose --no-session-persistence`, working directory: a scratch project outside the repository). 8 of 8 runs used. Transcripts: run/kit-20261113T233624Z/agent/run-*.jsonl, requests in request-*.txt, file diffs in *.diff.
+  - a1 button, first shot: Read, kit_reference, create_playground valid on the first call (6 controls, brand palette from stripe.com). a2 (new session): read_playground, then an Edit equal to the settled output.
+  - b1 physics, first shot: valid on the first call, the real spring loop from the file, a live damping readout. b2: the settled `const SPRING` line written.
+  - g1 toast (a case the reference has no example of), first shot: valid on the first call (CSS placeholders, replay on change, the whole CSS file as output). g2: the file written equal to the settled output.
+  - c1 price on the fixture API: the first create was rejected (`notes` on a price spec), the second passed; the agent then distrusted the fixture's identical prices, correctly. Change after it: `notes` is accepted on a price playground and shown under the title.
+  - c2 price on live pages: valid on the first call; SendGrid's page gave no plans, one repair, then the vendor was removed through revise_playground.
+- Person (scripts/person-kit.ts and scripts/person.ts, headless Chromium): moved the controls, settled or saved. Screenshots: run/kit-20261113T233624Z/shots/a-button-settled.png, b-physics-settled.png, g-toast-viewport.png, c-price-agent-built.png, c-price-seed.png.
+- Sandbox: `node scripts/sandbox-check.ts` on the final code: 42 PASS, 0 FAIL (run/kit-20261113T233624Z/sandbox-check-final.txt).
+- Checks: `pnpm test` (34 pass), `pnpm typecheck`, `pnpm lint`, `pnpm build`.

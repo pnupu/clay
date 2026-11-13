@@ -169,6 +169,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
         <div>
           <p className="eyebrow"><Link href="/">Clay</Link> · data read from the web by Context.dev</p>
           <h1>{domain.question}</h1>
+          {domain.note && <p className="muted" style={{ maxWidth: "70ch", margin: "6px 0 0" }}>{domain.note}</p>}
         </div>
         <div className="actions">
           {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (

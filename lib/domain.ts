@@ -13,6 +13,8 @@ export type Domain = {
   product: string;
   /** Optional extra guidance for the extraction, for example how to tell two similar metrics apart. */
   notes?: string;
+  /** Optional short note for the person, shown under the question. Not part of the extraction. */
+  note?: string;
   metrics: MetricDef[];
   features: FeatureDef[];
   vendors: VendorDef[];

@@ -77,7 +77,9 @@ export function render(template: string, controls: Control[], values: Values): s
     return c && values[name] !== undefined ? textOf(c, values[name]) : all;
   });
 }
-export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => Object.fromEntries(kit.outputs.map((o) => [o.id, render(o.template, kit.controls, values).replace(/[ \t]+/g, " ").trim()]));
+/** A one-line output (a class string) loses the gaps that an empty toggle text leaves. A multi-line output (CSS, JSON) keeps its layout. */
+const tidy = (text: string) => (text.includes("\n") ? text.replace(/[ \t]+$/gm, "").trim() : text.replace(/\s+/g, " ").trim());
+export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => Object.fromEntries(kit.outputs.map((o) => [o.id, tidy(render(o.template, kit.controls, values))]));
 
 const names = (template: string) => [...template.matchAll(PLACEHOLDER)].map((m) => m[1]);
 const word = (id: string) => new RegExp(`(?<![\\w$])${id}(?![\\w$])`);

@@ -58,9 +58,11 @@ test("a price spec goes to the price engine; price and preview parts cannot be m
   assert.equal(r.domain.question, price.title);
   assert.equal(r.domain.vendors[0].url, "https://resend.com/pricing");
   // toSpec() gives back a spec that parses to the same domain, and a revision replaces whole parts.
-  const again = parseSpec(mergeSpec(toSpec(newPlayground(r.domain)), { title: "Which email API fits a salon booking app?" }));
+  const again = parseSpec(mergeSpec(toSpec(newPlayground(r.domain)), { title: "Which email API fits a salon booking app?", notes: "Drag the slider from 40k to 150k." }));
   assert.ok(again.ok && again.kind === "price");
-  assert.deepEqual({ ...again.domain, question: price.title }, r.domain);
+  assert.equal(again.domain.note, "Drag the slider from 40k to 150k.");
+  assert.deepEqual({ ...again.domain, question: price.title, note: undefined }, { ...r.domain, note: undefined });
+  assert.equal(toSpec(newPlayground(again.domain)).notes, "Drag the slider from 40k to 150k.");
   assert.ok(errors({ ...price, controls: BUTTON_EXAMPLE.controls }).some((e) => /controls: the price_ranking view brings its own controls/.test(e)));
   assert.ok(errors({ ...BUTTON_EXAMPLE, data: { ...BUTTON_EXAMPLE.data, price_pages: price.data!.price_pages } }).some((e) => /a preview view has no price ranking/.test(e)));
   assert.ok(errors({ ...price, data: { price_pages: { ...price.data!.price_pages!, vendors: [price.data!.price_pages!.vendors[0]] } } }).some((e) => e.startsWith("data.price_pages.vendors")));
@@ -72,6 +74,9 @@ test("values from the browser: only values a control can have are stored; output
   assert.deepEqual(cleanValues(kit.controls, ok), { bg: "#ff0000", radius: 9, pad_x: 20, weight: "font-semibold", shadow: true });
   assert.equal(renderOutputs(kit, cleanValues(kit.controls, ok)!).class_name, "bg-[#ff0000] rounded-[9px] px-[20px] py-2 text-sm text-white font-semibold shadow-md");
   for (const bad of [{ ...ok, radius: 25 }, { ...ok, radius: "9" }, { ...ok, weight: "font-black" }, { ...ok, bg: "red" }, { ...ok, bg: "#ff0000;x" }, { ...ok, shadow: "yes" }, { bg: "#ff0000" }, null, "x"]) assert.equal(cleanValues(kit.controls, bad), null);
+  // A multi-line output keeps its indentation; only a one-line output is collapsed.
+  const css = { ...kit, outputs: [{ id: "css", label: "Rule", template: ".btn {\n  border-radius: {{radius}}px;\n  {{shadow}}\n}\n" }] };
+  assert.equal(renderOutputs(css, { ...cleanValues(kit.controls, ok)!, shadow: false }).css, ".btn {\n  border-radius: 9px;\n\n}");
   // A slider on a fractional grid has no floating-point dust.
   const spring = kitOf(SPRING_EXAMPLE);
   assert.equal(cleanValues(spring.controls, { stiffness: 120, damping: 26, mass: 0.1 + 0.2 })!.mass, 0.3);

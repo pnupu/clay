@@ -113,7 +113,7 @@ One playground is one spec (`lib/spec.ts`). A preview playground:
 - **The preview** runs the real artifact. `{{control_id}}` in `view.html` and `view.css` is updated in place on every move; `view.js` reads `clay.values`, `clay.onChange(fn)` and `clay.data`. `view.tailwind` loads the in-browser Tailwind v4 build (pinned by version and hash), so arbitrary values such as `rounded-[7px]` work.
 - **Data sources** keep their origin on the page: `data.brand` (colours and logos of a site, read by Context.dev `POST /brand/retrieve`, 10 credits, once), `data.inline` (shown as "provided by your agent, not checked"), `data.price_pages` (the price engine).
 - **Outputs** are templates rendered from the control values. The page shows them as "What goes back to your agent"; `read_playground` returns them after the person presses Settle.
-- A price playground has `view: {"type": "price_ranking"}` and `data.price_pages` (product, metrics, features, vendors). Its metrics and features are its controls, because the extraction reads the pricing pages with their descriptions. One view per playground.
+- A price playground has `view: {"type": "price_ranking"}` and `data.price_pages` (product, metrics, features, vendors). `notes` is shown under its title. Its metrics and features are its controls, because the extraction reads the pricing pages with their descriptions. One view per playground.
 
 Validation at creation (`lib/kit.ts`, `lib/spec.ts`) rejects: an unknown control type or field, a control nothing uses, a `{{binding}}` or `clay.values.x` to a control that does not exist, an output that references a missing control or none, an initial value outside its range or off its step grid, script tags in the html, sizes over the limits, bad ids, price and preview parts in one spec. Every output is rendered once at the initial values and returned. The preview code cannot run on the server: the create result says "unverified", the page reports to the store whether the code ran in the owner's browser, and `read_playground` returns the error so the agent can repair it with `revise_playground`.
 
@@ -130,7 +130,7 @@ What it enforces:
 - **Navigation.** A preview that navigates its own frame is removed by the page on the frame's second load.
 - The page labels the preview as built by the owner's agent.
 
-`node scripts/sandbox-check.ts http://127.0.0.1:<port>` runs hostile preview code in a real browser and checks each of these (41 checks; no Context.dev request).
+`node scripts/sandbox-check.ts http://127.0.0.1:<port>` runs hostile preview code in a real browser and checks each of these (42 checks; no Context.dev request).
 
 What it does not protect against:
 

@@ -9,7 +9,8 @@ import { chromium } from "playwright-core";
 const [url, stepsJson = "{}", shot = "kit.png"] = process.argv.slice(2);
 const steps = JSON.parse(stepsJson) as { set?: Record<string, (number | boolean | string)[]>; settle?: boolean; wait?: number; probe?: string; drag?: { selector: string; dx: number } };
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/snap/bin/chromium" });
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+// A tall viewport and a viewport screenshot: a full-page capture draws the sandboxed frame wrongly when the page must be resized for it.
+const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 if (process.env.OWNER_KEY_FILE) {
@@ -49,6 +50,6 @@ if (steps.settle) {
   await page.waitForSelector("[data-settled]");
 }
 await page.waitForTimeout(300);
-await page.screenshot({ path: shot, fullPage: true });
+await page.screenshot({ path: shot });
 console.log(JSON.stringify({ url: page.url(), previewFailed: await page.locator('p[role="alert"]').allInnerTexts(), outputs: Object.fromEntries(await page.locator("[data-output]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-output"), e.textContent]))), settled: await page.locator("[data-settled]").count(), probe, errors }, null, 1));
 await browser.close();

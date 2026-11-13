@@ -32,6 +32,8 @@ createServer(async (req, res) => {
   const read = wantsJson ? (prices.length > 1 ? prices.shift()! : prices[0]) : null;
   if (read === "fail") return res.writeHead(500, { "Content-Type": "application/json" }).end(JSON.stringify({ error_code: "FIXTURE_FAILURE", message: "fixture read failed" }));
   const [price, extra] = Array.isArray(read) ? read : [read, 1];
+  // The meter is keyed by the first metric of the playground's extraction schema, so any agent-built price spec gets a price.
+  const metric = Object.keys((b.jsonParams as { schema?: { properties?: { plans?: { items?: { properties?: { meters?: { properties?: object } } } } } } } | undefined)?.schema?.properties?.plans?.items?.properties?.meters?.properties ?? {})[0] ?? "emails";
   send({
     url: b.url,
     request_id: "fixture",
@@ -45,7 +47,7 @@ createServer(async (req, res) => {
           data: {
             vendor: "Fixture Mail",
             currency: "USD",
-            plans: [{ name: "Pro", base_price: price, custom_pricing: false, price_quote: null, meters: { emails: { status: "priced", included: 50000, overage_allowed: true, tiers: [{ up_to: null, price: extra, per_units: 1000 }], quote: "50,000 emails included, then $1 per 1,000 emails" } }, features: {} }],
+            plans: [{ name: "Pro", base_price: price, custom_pricing: false, price_quote: null, meters: { [metric]: { status: "priced", included: 50000, overage_allowed: true, tiers: [{ up_to: null, price: extra, per_units: 1000 }], quote: "50,000 emails included, then $1 per 1,000 emails" } }, features: {} }],
           },
         }
       : { requested: false, success: null, data: null },
