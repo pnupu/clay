@@ -131,8 +131,9 @@ clay.onChange((v) => {
   const month = (r) => usd(r.perTask == null ? null : r.perTask * v.tasks);
   // The answer first: one sentence that changes with the controls. Under it the rule behind it, with its numbers, and
   // the person's own choice.
-  // The sentence names the measure of the mark (cost per passed task): a model with a lower bill and more failed tasks is not "cheaper".
-  el("answer").textContent = pick ? pick.m.model + " costs the least per passed hard task inside your limits: " + month(pick) + " a month." : "No model inside your limits has a known price.";
+  // The sentence names the measure of the mark and gives its number first (cost per passed task), then the bill: a
+  // model with a lower bill and more failed tasks is not "cheaper".
+  el("answer").textContent = pick ? pick.m.model + " costs the least per passed hard task inside your limits: " + usd(pick.perPassed) + ", " + month(pick) + " a month." : "No model inside your limits has a known price.";
   const own = list.find((r) => r.m.model === v.model);
   el("chosen").textContent = "Your limits: at least " + v.min_pass + "% of the hard tasks passed, within " + v.max_seconds + " s per task." + (!own ? "" : own === pick ? " It is the model you chose." : " You chose " + own.m.model + ": " + month(own) + " a month" + (own.ok ? "." : ", outside your limits."));
   body.textContent = "";

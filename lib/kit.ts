@@ -227,7 +227,7 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
     return h.length === 9 && h.endsWith("ff") ? h.slice(0, 7) : h;
   };
   const values = [...styles.matchAll(/:([^;{}]*)(?=[;}])/g)].map((m) => m[1]).join("\n");
-  const colours = [...new Set((values.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/gi) ?? []).map((c) => c.toLowerCase().replace(/\s*,\s*/g, ",").replace(/\(\s+|\s+\)/g, (x) => x.trim()).replace(/\s+/g, " ")).map((c) => (c.startsWith("#") ? hex(c) : c)))];
+  const colours = [...new Set((values.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/gi) ?? []).map((c) => c.toLowerCase().replace(/\s*([,/()])\s*/g, "$1").replace(/\s+/g, " ")).map((c) => (c.startsWith("#") ? hex(c) : c)))];
   if (colours.length > OWN_COLOURS) out.push(`view.css: ${colours.length} colours of its own (${colours.slice(0, 4).join(", ")}${colours.length > 4 ? ", ..." : ""}). A data view takes its colours from the variables: var(--ink), var(--muted), var(--line), var(--field), var(--accent), var(--ok), var(--warn), var(--bad), and --accent-bg, --ok-bg, --warn-bg, --bad-bg behind them; the parts .pick, .out, .badge and .note use them already. Keep a colour of your own only when it is data: a brand colour, a series in a chart.`);
   return out;
 }

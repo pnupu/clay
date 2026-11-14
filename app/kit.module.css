@@ -76,7 +76,9 @@
 .webFields { width: auto; min-width: min(100%, 360px); }
 .web th, .web td { text-align: left; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--c-line); vertical-align: top; font-variant-numeric: tabular-nums; }
 .web th:last-child, .web td:last-child { padding-right: 0; }
-/* The line under the last row in view is the line between two sources (a folded table hides its other rows). */
+/* The line under the last row in view is the line between two sources. A folded table hides its other rows, so the
+   second rule finds the last row that is shown; a browser without "of" in :nth-last-child keeps the first rule alone. */
+.web tbody tr:last-child > * { border-bottom: 0; }
 .web tbody tr:nth-last-child(1 of :not([hidden])) > * { border-bottom: 0; }
 .web th { color: var(--p-muted); font-weight: 500; }
 .web .num { text-align: right; }

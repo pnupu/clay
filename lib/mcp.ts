@@ -99,12 +99,12 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     const k = p.kit!;
     const reading = webReading(p);
     /**
-     * How a page of data looks (lib/kit.ts, styleProblems): part of problems, and it comes first in `next`. Not after a
-     * revision that left the preview code as it was (`previewKept`): a change of a label is no reason to rewrite a page
-     * the person may have settled.
+     * How a page of data looks (lib/kit.ts, styleProblems): always part of problems, so a revision that changed nothing
+     * of the look does not read as a repair. It comes first in `next` too, but not after a revision that left the
+     * preview code as it was (`previewKept`): a change of a label is no reason to rewrite a page the person may have settled.
      */
-    const style = styleProblems(k.kit);
-    const look = previewKept ? [] : style;
+    const look = styleProblems(k.kit);
+    const lead = look.length > 0 && !previewKept;
     return text({
       playground_id: id,
       url: url(id),
@@ -116,11 +116,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       data: dataReport(k, reading),
       problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null), ...look],
       // What is in problems is not said twice.
-      warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !style.includes(x)),
+      warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !look.includes(x)),
       next:
         // A page of data in styles of its own is repaired before the person gets the link, also while the pages are
         // still being read: read_playground does not list the look of a page, so this result is where it is said.
-        (look.length ? `First act on what problems says about the look of the page, which only this result lists: revise it with revise_playground now${reading.length ? " (the pages are read on meanwhile)" : ""}, unless the problem itself says that it may stay. Then: ` : "") +
+        (lead ? `First act on what problems says about the look of the page, which only a build or revise result lists: revise it with revise_playground now${reading.length ? " (the pages are read on meanwhile)" : ""}, and give the person the url only after that. When the problem itself says that the page may stay as it is, go on: ` : "") +
         (reading.length
           ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
           : k.kit.web?.length

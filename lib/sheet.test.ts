@@ -61,9 +61,13 @@ test("the colours of a data view are the page's own: every colour of the sheet's
   // This keeps them equal: a change of the palette (app/tokens.ts, app/clay.css) fails here until the sheet follows.
   const page = (readFileSync(new URL("../app/tokens.ts", import.meta.url), "utf8") + readFileSync(new URL("../app/clay.css", import.meta.url), "utf8")).toLowerCase();
   const root = dataSheet(null).match(/:root \{([^}]*)\}/)![1];
-  const colours = root.match(/#[0-9a-f]{6}\b/g) ?? [];
-  assert.ok(colours.length >= 11, root);
-  for (const c of colours) assert.ok(page.includes(c), `${c} is a colour of the page`);
+  // Each variable of the sheet against the page's token of the same meaning, by name.
+  const value = (text: string, name: string) => text.match(new RegExp(`(?<![\\w-])${name}:\\s*(#[0-9a-f]{6})\\b`))?.[1];
+  const same = { "--ink": "--p-ink", "--muted": "--p-muted", "--accent": "--p-accent", "--pane": "--c-pane", "--field": "--c-field", "--ok": "--ok", "--ok-bg": "--ok-bg", "--warn": "--warn", "--warn-bg": "--warn-bg", "--bad": "--bad", "--bad-bg": "--bad-bg" };
+  for (const [mine, pages] of Object.entries(same)) {
+    assert.ok(value(root, mine), `the sheet has ${mine}`);
+    assert.equal(value(root, mine), value(page, pages), `${mine} of the sheet is ${pages} of the page`);
+  }
   // The hairlines are the page's ink (38 37 30 is #26251e) at the page's shares.
   assert.match(root, /--ink: #26251e;/);
   assert.match(root, /--line: rgb\(38 37 30 \/ 0\.13\); --line-2: rgb\(38 37 30 \/ 0\.3\);/);
@@ -96,8 +100,10 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // in a selector is not a colour, also in a list of selectors over two lines, and one colour written in three ways is one.
   assert.deepEqual(parsed(model({ css: "li:hover #add,\n#bad { color: var(--muted); font-size: 13px; font-weight: 600; } .series-a { background: #2a78d6; } .series-b { background: #eb6834; }" })).warnings, []);
   assert.deepEqual(data(".a { color: #fff; background: #FFFFFF; border-color: #ffffffff; outline-color: #2a78d6 }"), []);
-  // Two colours that differ only in where their spaces are stay two colours.
-  assert.equal(data(".a { color: rgb(1 10 0); background: rgb(11 0 0); border-color: rgb( 1  10 0 ); outline-color: #2a78d6 }").length, 1);
+  // One colour in several spellings of its spaces is one colour: two colours here, so nothing is said.
+  assert.deepEqual(data(".a { color: rgb(1 10 0); border-color: rgb( 1  10 0 ); background: rgb(0 0 0 / 0.5); outline-color: rgb(0 0 0/0.5); fill: rgb(0 0 0 /0.5) }"), []);
+  // Two colours that differ only in where their spaces are stay two colours: with a third, three.
+  assert.match(data(".a { color: rgb(1 10 0); background: rgb(11 0 0); outline-color: #2a78d6 }")[0], /3 colours of its own \(rgb\(1 10 0\), rgb\(11 0 0\), #2a78d6\)/);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });

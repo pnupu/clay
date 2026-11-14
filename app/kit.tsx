@@ -542,6 +542,8 @@ function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /*
   const isShown = (r: (typeof rows)[number]) => !foldable || all || first.includes(r);
   const tableId = `rows-${s.id}`;
   const site = hostsOf([host])[0] ?? host;
+  /** The name under which this tab remembers that the person opened the values of this source. */
+  const fold = `${pg}:${s.id}`;
   // Values the read did not find: counted in the line that opens the values, so "unknown" is said also while they are closed.
   const unknown = s.fields ? s.fields.filter((f) => read?.fields?.[f.id] == null).length : rows.reduce((n, r) => n + fields.filter((f) => r[f.id] == null).length, 0);
   return (
@@ -554,7 +556,7 @@ function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /*
       {!read && !reading && <p className="small warn">This page could not be read{st?.error ? `: ${st.error.slice(0, 200)}` : ""}. Its values are unknown.</p>}
       {read && st?.error && <p className="small warn">{st.error.slice(0, 200)}</p>}
       {read && s.fields && (
-        <Values id={`${pg}:${s.id}`} summary={unknown ? `${s.fields.length - unknown} of ${count(s.fields.length, "value")} read, ${unknown} unknown` : `${count(s.fields.length, "value")} read`}>
+        <Values id={fold} summary={unknown ? `${s.fields.length - unknown} of ${count(s.fields.length, "value")} read, ${unknown} unknown` : `${count(s.fields.length, "value")} read`}>
           <table className={`${css.web} ${css.webFields}`}>
             <tbody>
               {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{words(f.id)}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
@@ -564,7 +566,7 @@ function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /*
       )}
       {read && s.rows && (
         // A page on which no row was found has nothing to fold: the line that says so stays in view.
-        <Values id={`${pg}:${s.id}`} summary={rows.length ?`${count(rows.length, "row")} read${unknown ? `, ${count(unknown, "value")} unknown` : ""}` : null}>
+        <Values id={fold} summary={rows.length ? `${count(rows.length, "row")} read${unknown ? `, ${count(unknown, "value")} unknown` : ""}` : null}>
           <div className={`${css.webScroll} ${all ? css.webOpen : ""}`} id={tableId}>
             <table className={css.web}>
               <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe} className={f.type === "number" ? css.num : undefined}>{words(f.id)}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
