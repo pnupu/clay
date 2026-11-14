@@ -136,4 +136,8 @@ test("nothing changed is said only when every page was read again after the sett
   // A change was found earlier and a later re-read of the page fails: the failure is said next to the change.
   assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", changes: [change("2026-11-14T03:00:00.000Z")], error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge, /still holds.* A page could not be read again/);
   assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z" }, null)).judge, /no fact changed since the build/);
+  // A source whose build read failed was never read: the re-check that can read it stays advised.
+  const unread = webChanges(state({ read: null, error: "Page text not readable" }, settledAt)).judge;
+  assert.match(unread, /call recheck_playground first/);
+  assert.doesNotMatch(unread, /could not be read again/);
 });

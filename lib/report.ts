@@ -268,7 +268,8 @@ export function webChanges(k: KitState) {
   // A build read is not a re-check: it is the state the person settled on.
   const rechecked = states.length > 0 && states.every((s) => !!s?.read && !s.error && !!s.recheckedAt && (!since || s.recheckedAt > since));
   // A page whose re-read failed keeps its old facts: said in every answer, so "still holds" is never judged on it silently.
-  const failed = states.some((s) => s?.error) ? " A page could not be read again (see data): its facts are as they were. Say so; do not call recheck_playground again now." : "";
+  // A source that was never read is not such a page: a re-check reads it for the first time, so it stays advised.
+  const failed = states.some((s) => s?.error && s.read) ? " A page could not be read again (see data): its facts are as they were. Say so; do not call recheck_playground again now." : "";
   if (changes.length) return { since: period, changes, judge: (since ? "These facts changed after the person settled. Work out, with the settled values and the new facts, whether the settled result still holds. If it does, say so with the numbers. If it does not, say what changed and send the person back to the url to settle again; do not pick for them." : "These facts changed since the build. The page shows the new values.") + failed };
   const oldest = states.map((s) => s?.read?.fetchedAt ?? "").filter(Boolean).sort()[0] ?? null;
   // Not an instruction to re-check at every hand-back: the facts are as old as their read, and the agent decides when
