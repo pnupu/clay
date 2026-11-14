@@ -129,7 +129,8 @@ export function ClayPlayground(props: {
       id, title,
       // The level, what it names, the files the hand-back may edit, and the uses that change and that do not.
       level: level?.id ?? null, target: level?.target ?? null, files: level?.files ?? [],
-      uses: { changed: uses.filter(changes).map((u) => u.file), unchanged: uses.filter((u) => !changes(u)).map((u) => u.file), changedNotShown: level?.others ?? [] },
+      // Nothing moved means nothing changes: the badges then show what the level can reach, which is not a change to hand back.
+      uses: moved.length ? { changed: uses.filter(changes).map((u) => u.file), unchanged: uses.filter((u) => !changes(u)).map((u) => u.file), changedNotShown: level?.others ?? [] } : { changed: [], unchanged: uses.map((u) => u.file), changedNotShown: [] },
       values: pick(values), initial: pick(initial), changed: moved.map((c) => c.id),
       // For every spacing, radius and colour control: is the value on the project's scale?
       onScale: Object.fromEntries(active.filter((c) => c.type === "scale").map((c) => [c.id, onScale(c)])),
