@@ -218,7 +218,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"} data-tall={tall || undefined}>
       <header className="top k-head">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · {builtByViewer ? "a playground built by your agent" : "a person's playground, built by their agent"}</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · {builtByViewer ? "a playground built by your agent" : "a playground built by its author's agent"}</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
           <Title className={css.title}>{title}</Title>
         </div>
       </header>
@@ -233,7 +233,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
           {unseenChange && <button className={`primary ${css.jump}`} data-preview-changed onClick={() => stage.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>The preview changed. Show it</button>}
-          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. {canWrite ? "A short summary of what you tried is kept for your agent." : "Nothing you try here is saved."}</p>
+          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
         </section>
 
         <div className={`${css.main} k-main`}>
@@ -245,7 +245,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
             </div>
             {frame.status === "failed" && (
               <p className={`alert ${css.failed}`} role="alert">
-                Preview failed: {frame.error} {canWrite ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : ""}
+                Preview failed: {frame.error} {!canWrite ? "" : builtByViewer ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : "The error is saved; the author's agent can read it and repair the preview."}
               </p>
             )}
             <div className={css.mat}>
@@ -265,7 +265,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           </details>
 
           <section className="pane k-out">
-            <Head className="k-label">{canWrite ? "What goes back to your agent" : "If this were yours, your agent would now write this into the code"}</Head>
+            <Head className="k-label">{!canWrite ? "If this were yours, your agent would now write this into the code" : builtByViewer ? "What goes back to your agent" : "What goes back to the author's agent"}</Head>
             {kit.outputs.map((o) => (
               <div className={css.output} key={o.id}>
                 <div className={css.outputHead}>
@@ -279,11 +279,11 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               <div className={css.settle}>
                 <button className="primary" disabled={busy || isSettled} onClick={settle}>{isSettled ? "Settled" : settled ? "Settle again on these values" : "Settle on these values"}</button>
                 {isSettled ? (
-                  <span className="small ok" data-settled>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</span>
+                  <span className="small ok" data-settled>{builtByViewer ? <>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</> : "✓ Settled. The author's agent reads these outputs when it next reads this playground."}</span>
                 ) : settled ? (
                   <span className="small warn">The controls differ from what you settled.</span>
                 ) : (
-                  <span className="small muted">When it is right, settle. Your agent gets the values, this text, and the range you tried.</span>
+                  <span className="small muted">When it is right, settle. {builtByViewer ? "Your agent" : "The author's agent"} gets the values, this text, and the range you tried.</span>
                 )}
               </div>
             ) : (
@@ -308,7 +308,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                   </li>
                 )}
                 {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
-                {kit.inline && <li data-inline><p className="small">{canWrite ? "Provided by your agent, not checked" : "Provided by the author's agent, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
+                {kit.inline && <li data-inline><p className="small">{builtByViewer ? "Provided by your agent, not checked" : "Provided by the author's agent, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
                 {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b> — {reasonOf(x.reason)}</p></li>)}
               </ul>
