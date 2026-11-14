@@ -234,12 +234,16 @@ def run_check(task_dir, task, work, limit=600):
                 try:
                     os.killpg(p.pid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
+                    p.kill()
+                try:
+                    p.wait(timeout=15)
+                except subprocess.TimeoutExpired:
                     pass
-                p.wait()
-        text = open(out_path, errors="replace").read()
-        fail = next((ln.strip() for ln in text.splitlines() if ln.startswith("FAIL")), None)
+        with open(out_path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
         if timed_out:
-            return False, text[-600:], fail or f"FAIL check-timeout: the hidden check did not finish within {limit} s"
+            return False, text[-600:], f"FAIL check-timeout: the hidden check did not finish within {limit} s"
+        fail = next((ln.strip() for ln in text.splitlines() if ln.startswith("FAIL")), None)
         return p.returncode == 0, text[-600:], fail
 
 
