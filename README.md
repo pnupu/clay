@@ -180,7 +180,7 @@ Public without a key: the pages, `GET /api/p/<id>/state` and `GET /api/playgroun
 
 ## Limits you should know
 
-- New free Context.dev accounts allow 10 requests per minute. The client waits for a free slot (`CONTEXT_DEV_REQUESTS_PER_MINUTE`, default 10; 0 turns the wait off), so a large build or a build followed by a repair can take up to 2 minutes.
+- New free Context.dev accounts allow 10 requests per minute. The client waits for a free slot (`CONTEXT_DEV_REQUESTS_PER_MINUTE`, default 10; 0 turns the wait off), so a large build or a build followed by a repair can take up to 2 minutes. The agent's tool call does not wait that long: see "A build answers within 20 seconds" below. A request that Context.dev still answers with 429 RATE_LIMITED (the account's limit is shared by every instance and person) is sent again after the wait the API states, up to 3 times.
 - `CONTEXT_DEV_DAILY_CAP` (default 300, 0 turns it off) caps the Context.dev requests per UTC day. The count is kept in the store. At the cap, a call fails with a message that says so, for the person and for the agent, and no request is sent.
 - `CONTEXT_DEV_REQUEST_CAP=<n>` is an optional hard cap on the number of requests logged in `run/requests.jsonl` (local development only).
 - The pricing model is "base price plus metered usage with included quantities and graduated tiers, plus features". Pages that set the price with an interactive volume slider, and plans with "unlimited" quantities, extract poorly. Transactional email extracted well; error tracking did not.
@@ -223,9 +223,21 @@ Environment variables (Vercel project `clay`, Production):
 | `MONITOR_INTERVAL_MINUTES` | Optional. Interval of new webhook monitors, 10 or more; the API default is one run per day. |
 
 - Storage: one private Vercel Blob document (`clay/store.json`). It holds the webhook secrets, so the store is private. Reads bypass the CDN cache. Every write is conditional on the version that was read (the MD5 of the document, which is the blob's ETag); a writer that loses re-reads and applies its change again.
-- Function duration: the routes that read pricing pages set `maxDuration = 300` seconds. Vercel Pro allows 800 seconds with fluid compute; a build takes 10 to 120 seconds.
+- Function duration: the routes that read pricing pages set `maxDuration = 300` seconds. Vercel Pro allows 800 seconds with fluid compute; a build takes 10 to 120 seconds, and goes on in the same function after the agent's tool call has answered (`after()` in `app/api/mcp/route.ts`), so 300 seconds is also the longest a build can run.
 - Webhook URL: `<public base URL>/api/webhooks/context/<playgroundId>/<sourceId>`, set per monitor by "Start webhook monitors". A page monitor run costs 1 Context.dev credit.
 - Known limits: request pacing and the re-check queue are per function instance (see the `lean:` comments in `lib/contextdev.ts` and `lib/pipeline.ts`). `run/requests.jsonl` logging is skipped where the filesystem is read-only.
+
+## A build answers within 20 seconds
+
+Claude Code and Codex cut an MCP tool call at about 60 seconds, and a cut call looks like a failure although the server finished. So `create_playground`, `revise_playground` and `recheck_playground` wait at most 20 seconds (`CLAY_TOOL_WAIT_MS`) for the pricing pages and then answer with `build.status`: `done`, or `running` when pages are still being read. The reads go on in the background; the MCP route keeps the function alive for them with Next.js `after()`, within `maxDuration` (300 s). Meanwhile:
+
+- the playground URL works at once: the page says "Reading the pricing pages: n of m read", shows each vendor as it arrives, and reloads its state every 3 seconds until the build ends;
+- `read_playground` waits up to 20 seconds while a build runs and returns `build` and the `problems` list, so the agent repairs after an early answer exactly as after a complete one;
+- a build that was cut off (its function instance ended) shows as `stalled`: the page says which vendors are missing, and "Collect pricing pages" or `recheck_playground` reads them.
+
+A build that ranks fewer than two vendors at the starting values starts its `problems` with `BROKEN BUILD` and names the metric to rewrite or remove. A preview playground needs no web read except the brand, and is stored before the brand is read.
+
+Limits of a create (`lib/spec.ts`, `lib/store.ts`): the request body is bounded (200 KB for a spec), every collection of a spec is checked against its bound before any element is validated, at most 20 problems are returned, the per-person playground cap is checked inside the store update that inserts the playground, and a taken id never fails a create: the playground gets the id with a short suffix, and the result says so.
 
 ## Evals: does Clay just work?
 
@@ -245,5 +257,7 @@ node evals/run.ts --base-url http://127.0.0.1:43117 --kind price,none --concurre
 Output: `evals/out/<run id>/report.md` (git-ignored) with the pass rate overall and by kind, one row per case with the first failing check, failures grouped by cause, and a contact sheet of screenshots (`contact.html`). `--one-leg <ids|all>` skips the second leg, `--from <run dir>` re-runs the checker on saved transcripts without starting agents, and `node evals/run.ts report <run dir> <run dir>` merges runs into one report. `node evals/fixture-web.ts <port>` is a stand-in for Context.dev that answers for any playground with fictional prices, for agent runs that must not spend requests (start the app with `CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture CONTEXT_DEV_DAILY_CAP=0`).
 
 Everything that depends on Clay's tool names, tool results and page markup is in `evals/adapter.ts`. Change that file when the tools or the page change. Each agent run uses the person's own model subscription, and a build on a real server spends Context.dev requests.
+
+`evals/heldout.ts` holds 6 more requests that were written after the fixes of the first "just works" pass (`--set heldout`); write new ones for a new pass. The checker waits for a running build to end, as a person would, and it compares only texts when a preview animates on its own.
 
 Use the owner key (`CLAY_ACCESS_KEY`) as the key: the harness also acts as the person in a browser, through the owner link. With a per-person agent key the agent legs work, but the person's steps (save, settle) need a signed-in browser, which the harness does not have yet. Run against a fresh store, or expect a void sample when an agent picks the id of a playground that an earlier run left behind. Each CLI keeps its default tool-call timeout (about 60 s) on purpose: a build that outlasts it is reported as its own failure cause.
