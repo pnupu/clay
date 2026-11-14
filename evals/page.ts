@@ -181,8 +181,13 @@ export async function previewWithoutWebNumbers(browser: Browser, o: { baseUrl: s
     for (const pattern of PAGE_REPORTS) await context.route(pattern, (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
     await context.route(FRAME_REQUEST, async (route) => {
       // The frame route answers only a request that says it is the playground page's own frame (Fetch Metadata), and
-      // Playwright's re-fetch drops those headers: send what the browser sent for this very request.
-      const response = await route.fetch({ headers: { ...(await route.request().allHeaders()), "sec-fetch-dest": "iframe", "sec-fetch-site": "same-origin" } });
+      // Playwright's re-fetch does not carry those headers. They are set here only when this request is what they say:
+      // the document of a sub-frame whose parent page has the same origin. Any other load of the frame stays refused.
+      const req = route.request();
+      const parent = req.frame().parentFrame();
+      const ownFrame = req.isNavigationRequest() && !!parent && new URL(parent.url()).origin === new URL(req.url()).origin;
+      const sent = Object.fromEntries(Object.entries(await req.allHeaders()).filter(([name]) => !name.startsWith(":")));
+      const response = await route.fetch({ headers: { ...sent, ...(ownFrame ? { "sec-fetch-dest": "iframe", "sec-fetch-site": "same-origin" } : {}) } });
       const body = withoutWebNumbers(await response.text());
       altered ||= body != null;
       await route.fulfill({ response, ...(body != null ? { body } : {}) });

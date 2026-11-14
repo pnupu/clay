@@ -92,9 +92,10 @@ export const MAX_WIDTH = 20;
 /**
  * A slider that multiplies the others: "Growth by spring, 1x to 8x". A playground may answer "40M now, 5 times that by
  * spring" with such a control and show today and spring side by side; the later number is then reached as the base
- * value times the multiplier, and the base slider need not run that far.
+ * value times the multiplier, and the base slider need not run that far. A growth rate in percent is not one: its unit
+ * must be "x" (or be absent, with growth, multiplier or factor in the name), and it must start above 0.
  */
-export const isMultiplier = (d: Dimension) => /^(x|×|times)$/i.test(d.unit.trim()) || /growth|multipl|factor/i.test(`${d.id} ${d.label}`);
+export const isMultiplier = (d: Dimension) => d.min > 0 && (/^(x|×|times)$/i.test(d.unit.trim()) || (!d.unit.trim() && /growth|multipl|factor/i.test(`${d.id} ${d.label}`)));
 
 export function rangeProblem(g: Given, d: Dimension, multipliers: Dimension[] = []): string | null {
   const k = SCALES.find((s) => near(d.initial * s, g.value));
@@ -115,7 +116,7 @@ export function ranges(given: Given[] | undefined, dims: Dimension[] | null): Ch
   for (const g of given) {
     const matching = dims.filter((d) => g.about.test(`${d.id} ${d.label} ${d.unit}`));
     if (!matching.length) return fail("ranges", `no control for ${g.about} (the person said ${fmt(g.value)}); controls: ${dims.map((d) => d.id).join(", ")}`);
-    const problems = matching.map((d) => rangeProblem(g, d, dims.filter((x) => isMultiplier(x) && !g.about.test(`${x.id} ${x.label} ${x.unit}`))));
+    const problems = matching.map((d) => rangeProblem(g, d, dims.filter(isMultiplier)));
     if (!problems.includes(null)) return fail("ranges", problems[0]!);
   }
   return pass("ranges", `${given.length} given number(s) are the starting values, inside ranges of sane width`);

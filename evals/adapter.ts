@@ -211,9 +211,14 @@ export async function previewContent(page: Page): Promise<number | null> {
  */
 export async function signIn(page: Page, baseUrl: string, key: string | undefined) {
   if (!key) return; // a local development server without Clerk keys needs no key
-  await page.goto(`${baseUrl}/enter#key=${key}`);
   // The error of a failed sign-in must not carry the address: its fragment is the key, and the error is saved with the run.
-  await page.waitForURL((u) => u.pathname === "/" && !u.hash, { timeout: 20000 }).catch(() => { throw new Error("the browser could not sign in within 20 s (a cold development server compiles /enter on its first visit)"); });
+  // So only the kind of error is kept. A TimeoutError is usually a cold development server compiling /enter.
+  try {
+    await page.goto(`${baseUrl}/enter#key=${key}`);
+    await page.waitForURL((u) => u.pathname === "/" && !u.hash, { timeout: 20000 });
+  } catch (e) {
+    throw new Error(`the browser could not sign in at /enter (${e instanceof Error ? e.name : "error"}; the address is left out, it holds the key)`);
+  }
 }
 
 /** Dimensions that the playground declares but the page does not show as a control ("its slider is hidden"). */

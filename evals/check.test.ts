@@ -53,6 +53,9 @@ test("range sanity: a growth multiplier control reaches the later number", () =>
   assert.match(ranges(given, [dim("input_m", 10, 100, 40), { ...growth, max: 1.5 }]).reason, /leaves out 200,000,000/);
   assert.match(ranges(given, [dim("input_m", 10, 100, 40), { id: "budget", label: "Budget", unit: "USD", min: 1, max: 8, initial: 5 }]).reason, /leaves out 200,000,000/);
   assert.match(ranges(given, [dim("input_m", 10, 100, 40)]).reason, /leaves out 200,000,000/);
+  // A growth rate in percent is no multiplier, whatever its name; a multiplier named after the metric still counts.
+  assert.match(ranges(given, [dim("input_m", 10, 100, 40), { id: "growth", label: "Monthly growth", unit: "%", min: 0, max: 50, initial: 10 }]).reason, /leaves out 200,000,000/);
+  assert.equal(ranges(given, [dim("input_m", 10, 100, 40), { ...growth, id: "input_growth", label: "Input growth by spring" }]).status, "pass");
   // The starting value is still the person's own number, and the width limit still holds for the slider itself.
   assert.match(ranges(given, [dim("input_m", 10, 100, 60), growth]).reason, /starts at 60/);
 });
