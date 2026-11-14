@@ -27,6 +27,13 @@ test("the standing instruction: the file and the text on /connect are the same, 
   assert.match(STANDING_INSTRUCTION, /exact instruction .* needs no playground/);
 });
 
+test("the workflow file that people copy holds the re-check script as it is", () => {
+  // public/clay-recheck.yml carries connect/github/clay-recheck.sh inline (evals/recheck-workflow.test.ts runs it).
+  const yml = readFileSync(new URL("../public/clay-recheck.yml", import.meta.url), "utf8");
+  const inline = yml.slice(yml.indexOf("        run: |\n") + "        run: |\n".length).split("\n").map((l) => l.replace(/^ {10}/, "")).join("\n");
+  assert.equal(inline.trimEnd(), readFileSync(new URL("../connect/github/clay-recheck.sh", import.meta.url), "utf8").trimEnd());
+});
+
 test("the first sentence of every tool description says when to call it", () => {
   for (const [name, text] of Object.entries(TOOLS)) {
     const first = text.slice(0, text.search(/[.:](\s|$)/) + 1);

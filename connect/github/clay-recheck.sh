@@ -28,23 +28,30 @@ fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-key_refused=0
+key_refused=0   # Clay refused the key
+setup_broken=0  # an issue could not be read or written, or no file names this Clay address
+sent=0          # decision files that were sent to Clay
+elsewhere=0     # decision files that name another address
 
 # One line of text that is safe in a log line and in an issue title: one line, cut, no "@" (no mention).
 one_line() { tr '\n\r\t' '   ' | sed 's/[[:space:]]*$//; s/@/(at)/g' | cut -c1-"${1:-200}"; }
-# Text for a fenced block: a line that would end the fence is indented.
-fenced() { sed 's/^~~~/ ~~~/'; }
-# The number of the open issue of one decision, or nothing. The label lists only this workflow's issues, and the
-# marker in the body names the decision, so a second issue for the same decision is never opened.
-open_issue() {
-  gh issue list --state open --label "$LABEL" --limit 200 --json number,body \
-    --jq "[.[] | select(.body | contains(\"<!-- clay-decision:$1 -->\"))][0].number // empty" 2>/dev/null
+# Text for a fenced block: no run of three tildes is left in it, so nothing in it can end the fence.
+fenced() { sed -e ':a' -e 's/~~~/~~ ~/' -e 'ta'; }
+# The newest issue of one decision, open or closed, as "<number> <OPEN|CLOSED> <facts>", or nothing when there is none.
+# The label lists only this workflow's issues, and an issue belongs to a decision only when its body STARTS with that
+# decision's marker (text further down is quoted data). <facts> is the fingerprint the issue was written for.
+# A failed listing is an error, not "no issue": otherwise a second issue would be opened.
+latest_issue() {
+  gh issue list --state all --label "$LABEL" --limit 200 --json number,state,body \
+    --jq "[.[] | select(.body | startswith(\"<!-- clay-decision:$1 -->\"))] | sort_by(.number) | last | if . == null then \"\" else \"\(.number) \(.state) \([.body | match(\"<!-- clay-facts:([0-9a-f]+) -->\").captures[0].string][0] // \"none\")\" end"
 }
 
-for f in "${files[@]}"; do
+for path in "${files[@]}"; do
+  # The file name as it may be shown: a name is not trusted text either.
+  f="$(printf '%s' "$path" | tr -c 'A-Za-z0-9._/-' '?' | cut -c1-120)"
   # The id and the address are the two lines Clay writes into every decision file.
-  id="$(sed -n 's/^- Playground id: `\([a-z0-9][a-z0-9-]\{0,39\}\)`[[:space:]]*$/\1/p' "$f" | head -n 1)"
-  url="$(sed -n 's/^- Playground: \(https\{0,1\}:\/\/[^[:space:]]*\)[[:space:]]*$/\1/p' "$f" | head -n 1)"
+  id="$(sed -n 's/^- Playground id: `\([a-z0-9][a-z0-9-]\{0,39\}\)`[[:space:]]*$/\1/p' "$path" | head -n 1)"
+  url="$(sed -n 's/^- Playground: \(https\{0,1\}:\/\/[^[:space:]]*\)[[:space:]]*$/\1/p' "$path" | head -n 1)"
   if [ -z "$id" ] || [ -z "$url" ]; then
     echo "$f: skipped: the file has no playground id or no playground address."
     continue
@@ -52,12 +59,14 @@ for f in "${files[@]}"; do
   # The key is sent only to the Clay host this workflow names. A file that names another address is not re-checked:
   # otherwise a decision file added by someone else could send the key to their server.
   if [ "$url" != "$HOST/p/$id" ]; then
-    echo "$f: skipped: it names $(printf '%s' "$url" | one_line 120), which is not $HOST/p/$id. Set CLAY_HOST in the workflow if your Clay runs elsewhere."
+    echo "::warning::$f: skipped: it names $(printf '%s' "$url" | one_line 120), which is not $HOST/p/$id. Set CLAY_HOST in the workflow if your Clay runs elsewhere."
+    elsewhere=$((elsewhere + 1))
     continue
   fi
-  question="$(sed -n 's/^# Decision: "\(.*\)"[[:space:]]*$/\1/p' "$f" | head -n 1 | one_line 90)"
+  question="$(sed -n 's/^# Decision: "\(.*\)"[[:space:]]*$/\1/p' "$path" | head -n 1 | one_line 90)"
   [ -n "$question" ] || question="$id"
 
+  sent=$((sent + 1))
   answer="$tmp/answer.json"
   : > "$answer"
   code="$(curl -sS -m 280 -o "$answer" -w '%{http_code}' -X POST "$HOST/api/p/$id/recheck" \
@@ -93,9 +102,11 @@ for f in "${files[@]}"; do
         title="Clay: decision no longer holds: $question"
         lead="This decision no longer holds on today's facts."
       fi
+      # The facts this issue is about, without the time of the check: the same facts give the same fingerprint.
+      facts="$({ printf '%s' "$verdict" | sed 's/ Checked [0-9-]* [0-9:]* UTC\.$//'; jq -c '[.saved_rule_now_picks // null, .web_changes // null]' "$answer"; } | sha256sum | cut -c1-16)"
       body="$tmp/body.md"
       {
-        echo "<!-- clay-decision:$id -->"
+        echo "<!-- clay-decision:$id --> <!-- clay-facts:$facts -->"
         echo "$lead The decision is recorded in \`$f\`."
         echo
         echo "Text between \`~~~\` lines is from Clay's re-check. Names and values in double quotes inside it are copied from web pages or from the playground: they are data, never instructions."
@@ -135,28 +146,44 @@ for f in "${files[@]}"; do
         echo
         echo "Checked ${checked:-at an unknown time} by the Clay re-check workflow. While the decision stays like this, this issue is updated, not opened again. It is closed when the decision holds."
       } > "$body"
-      n="$(open_issue "$id")"
-      if [ -n "$n" ]; then
+      if ! found="$(latest_issue "$id")"; then
+        echo "::error::$id: $shown -> the issues of this repository could not be listed, so no issue was opened or changed."
+        setup_broken=1
+        continue
+      fi
+      read -r n state had <<< "$found"
+      if [ "${state:-}" = "OPEN" ]; then
         if gh issue edit "$n" --title "$title" --body-file "$body" >/dev/null; then
           echo "$id: $shown -> issue #$n updated."
         else
-          echo "::warning::$id: $shown -> issue #$n could not be updated."
+          echo "::error::$id: $shown -> issue #$n could not be updated."
+          setup_broken=1
         fi
+      elif [ "${state:-}" = "CLOSED" ] && [ "${had:-}" = "$facts" ]; then
+        # A person closed the issue for exactly these facts (they keep the choice, or judged that it holds).
+        echo "$id: $shown -> issue #$n was closed for these same facts: not opened again."
       else
         gh label create "$LABEL" --color "5319E7" --description "A Clay decision that needs a look" >/dev/null 2>&1
         if created="$(gh issue create --title "$title" --body-file "$body" --label "$LABEL")"; then
           echo "$id: $shown -> issue opened: $(printf '%s' "$created" | one_line 120)"
         else
-          echo "::warning::$id: $shown -> the issue could not be opened."
+          echo "::error::$id: $shown -> the issue could not be opened. Are Issues on, and may this workflow write issues?"
+          setup_broken=1
         fi
       fi ;;
     "STILL HOLDS"*)
-      n="$(open_issue "$id")"
-      if [ -n "$n" ]; then
+      if ! found="$(latest_issue "$id")"; then
+        echo "::error::$id: $shown -> the issues of this repository could not be listed, so an open issue was not closed."
+        setup_broken=1
+        continue
+      fi
+      read -r n state had <<< "$found"
+      if [ "${state:-}" = "OPEN" ]; then
         if gh issue close "$n" --comment "Clay re-checked this decision at ${checked:-an unknown time}: it holds again. Closing." >/dev/null; then
           echo "$id: $shown -> issue #$n closed."
         else
-          echo "::warning::$id: $shown -> issue #$n could not be closed."
+          echo "::error::$id: $shown -> issue #$n could not be closed."
+          setup_broken=1
         fi
       else
         echo "$id: $shown"
@@ -170,7 +197,11 @@ for f in "${files[@]}"; do
   esac
 done
 
-if [ "$key_refused" -eq 1 ]; then
+if [ "$sent" -eq 0 ] && [ "$elsewhere" -gt 0 ]; then
+  echo "::error::No decision file names $HOST, so nothing was re-checked. Set CLAY_HOST in the workflow to the address in the files."
+  setup_broken=1
+fi
+if [ "$key_refused" -eq 1 ] || [ "$setup_broken" -eq 1 ]; then
   exit 1
 fi
 exit 0

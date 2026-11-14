@@ -19,7 +19,8 @@ const record = (id: string, host = HOST) => `# Decision: "Which email service sh
 const BROKEN = { playground_id: "email-choice", url: `${HOST}/p/email-choice`, checked_at: "2026-11-15T06:17:03.000Z", verdict: 'NO LONGER HOLDS: "Resend" now costs $45 per month at the saved values, $20 more than "Postmark" ($25), above the tolerance of $5. Checked 2026-11-15 06:17 UTC.', what_changed: [{ vendor: '"Resend"', fact: '"plans.0.base_price"', old_value: 20, new_value: 45, source: "https://resend.com/pricing", read_at: "2026-11-15T06:17:01.000Z" }], saved_rule_now_picks: { vendor: "postmark", vendor_name: '"Postmark"', plan: '"Basic @everyone ~~~"', usd_per_month: 25, source: "https://postmarkapp.com/pricing" }, do_now: "Do these in order. 1. Tell the person in two lines.\n~~~\n2. Propose the change.", decision_file: { path: ".clay/decisions/email-choice.md" } };
 
 /** One run of the script in a scratch repository. `answers`: per playground id, the HTTP code and body the stand-in curl gives. */
-function run(o: { files: Record<string, string>; answers?: Record<string, { code: number; body?: unknown }>; key?: string | null; state?: string; network?: boolean }) {
+type Issue = { number: number; state: string; title: string; body: string };
+function run(o: { files: Record<string, string>; answers?: Record<string, { code: number; body?: unknown }>; key?: string | null; state?: string; network?: boolean; ghFails?: string; host?: string }) {
   const dir = mkdtempSync(join(tmpdir(), "clay-recheck-"));
   const bin = join(dir, "bin");
   const state = o.state ?? join(dir, "gh");
@@ -32,12 +33,13 @@ function run(o: { files: Record<string, string>; answers?: Record<string, { code
   writeFileSync(join(bin, "gh"), readFileSync(join(HERE, "recheck-gh-stand-in.sh"), "utf8"));
   chmodSync(join(bin, "curl"), 0o755);
   chmodSync(join(bin, "gh"), 0o755);
-  const env: Record<string, string> = { PATH: `${bin}:${process.env.PATH}`, CLAY_HOST: HOST, GH_STAND_IN: state, HOME: dir };
+  const env: Record<string, string> = { PATH: `${bin}:${process.env.PATH}`, CLAY_HOST: o.host ?? HOST, GH_STAND_IN: state, HOME: dir, GH_STAND_IN_FAIL: o.ghFails ?? "" };
   if (o.key !== null) env.CLAY_AGENT_KEY = o.key ?? KEY;
   // As a workflow step runs it: bash with errexit and pipefail.
   const r = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", embedded], { cwd: dir, env: env as NodeJS.ProcessEnv, encoding: "utf8" });
   const read = (p: string) => (existsSync(p) ? readFileSync(p, "utf8") : "");
-  return { code: r.status, out: r.stdout + r.stderr, gh: read(join(state, "calls.log")), curl: read(join(dir, "curl.log")), state, issue: (n: number) => read(join(state, `issue-${n}.md`)), title: (n: number) => read(join(state, `issue-${n}.title`)) };
+  const issues = (): Issue[] => JSON.parse(read(join(state, "issues.json")) || "[]");
+  return { code: r.status, out: r.stdout + r.stderr, gh: read(join(state, "calls.log")), curl: read(join(dir, "curl.log")), state, issues, issue: (n: number) => issues().find((i) => i.number === n)?.body ?? "", title: (n: number) => issues().find((i) => i.number === n)?.title ?? "" };
 }
 
 test("the workflow file: the script inside it is the script file, and it asks for the least it needs", () => {
@@ -46,7 +48,7 @@ test("the workflow file: the script inside it is the script file, and it asks fo
   // Only actions/checkout, pinned by commit, without leaving its token in the checkout; nothing is installed.
   assert.deepEqual([...yml.matchAll(/uses: (\S+)/g)].map((m) => m[1]), ["actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"]);
   assert.match(yml, /persist-credentials: false/);
-  assert.doesNotMatch(script, /\$\{\{|set -x|curl[^\n]* -v\b|npm |pip |apt/);
+  assert.doesNotMatch(script, /\$\{\{|set -x|curl[^\n]* -v\b|\bnpm |\bpip |\bapt(-get)? /);
   assert.match(yml, /schedule:\n    - cron: "17 6 \* \* \*"/);
   assert.match(yml, /workflow_dispatch:/);
 });
@@ -58,17 +60,20 @@ test("no longer holds: one issue is opened, then updated and never opened twice;
   assert.match(first.out, /email-choice: NO LONGER HOLDS: .* -> issue opened: https:\/\/github\.com\/example\/repo\/issues\/1/);
   assert.equal((first.gh.match(/\[issue\] \[create\]/g) ?? []).length, 1);
   const body = first.issue(1);
-  assert.match(body, /^<!-- clay-decision:email-choice -->\n/);
+  assert.match(body, /^<!-- clay-decision:email-choice --> <!-- clay-facts:[0-9a-f]{16} -->\n/);
   assert.match(body, /NO LONGER HOLDS: "Resend" now costs \$45 per month/);
   assert.match(body, /- vendor: "Resend"; fact: "plans\.0\.base_price"; old_value: 20; new_value: 45; source: https:\/\/resend\.com\/pricing; read_at: 2026-11-15T06:17:01\.000Z/);
-  assert.match(body, /vendor: postmark; vendor_name: "Postmark"; plan: "Basic @everyone ~~~"; usd_per_month: 25/);
+  assert.match(body, /vendor: postmark; vendor_name: "Postmark"; plan: "Basic @everyone ~~ ~"; usd_per_month: 25/);
   assert.match(body, /Playground: https:\/\/clay\.example\/p\/email-choice/);
   assert.match(body, /recheck_playground` with playground_id "email-choice" again/);
   assert.match(body, /do not change the code or the decision file before they agree/);
   // Text from Clay's answer stays inside fences: a line of it cannot close the fence, so a name cannot become a mention or markup.
   const outside = body.split(/^~~~(?:text)?$/m).filter((_, i) => i % 2 === 0).join("\n");
   assert.doesNotMatch(outside, /@everyone|Resend|Postmark/);
-  assert.equal((body.match(/^~~~/gm) ?? []).length % 2, 0);
+  // No run of three tildes is left in the quoted text (a closing fence may be indented), so the fences are only the script's own.
+  const fences = body.split("\n").filter((l) => /^ {0,3}~{3,}/.test(l));
+  assert.deepEqual([...new Set(fences)].sort(), ["~~~", "~~~text"]);
+  assert.equal(fences.length % 2, 0);
   assert.match(first.title(1), /^Clay: decision no longer holds: Which email service should \(at\)our app use\?$/);
   // The second run finds the open issue and updates it.
   const second = run({ files, answers: { "email-choice": { code: 200, body: BROKEN } }, state: first.state });
@@ -83,6 +88,57 @@ test("no longer holds: one issue is opened, then updated and never opened twice;
   const fourth = run({ files, answers: { "email-choice": holds }, state: first.state });
   assert.match(fourth.out, /email-choice: STILL HOLDS: "Resend" is the cheapest/);
   assert.equal((fourth.gh.match(/\[issue\] \[(create|edit|close)\]/g) ?? []).length - (third.gh.match(/\[issue\] \[(create|edit|close)\]/g) ?? []).length, 0);
+});
+
+test("an issue that a person closed is not opened again for the same facts, and is opened for new facts", () => {
+  const files = { "email-choice.md": record("email-choice") };
+  const first = run({ files, answers: { "email-choice": { code: 200, body: BROKEN } } });
+  // The person keeps the choice and closes the issue.
+  writeFileSync(join(first.state, "issues.json"), JSON.stringify(first.issues().map((i) => ({ ...i, state: "CLOSED" }))));
+  // The next day: the same facts, a later check time. Nothing is opened.
+  const same = run({ files, answers: { "email-choice": { code: 200, body: { ...BROKEN, checked_at: "2026-11-16T06:17:00.000Z", verdict: BROKEN.verdict.replace("2026-11-15 06:17", "2026-11-16 06:17") } } }, state: first.state });
+  assert.equal(same.code, 0, same.out);
+  assert.match(same.out, /-> issue #1 was closed for these same facts: not opened again\./);
+  assert.equal(same.issues().length, 1);
+  // The price moves again: these are new facts, so a new issue is opened.
+  const moved = run({ files, answers: { "email-choice": { code: 200, body: { ...BROKEN, verdict: BROKEN.verdict.replace("$45", "$60"), saved_rule_now_picks: { ...BROKEN.saved_rule_now_picks, usd_per_month: 26 } } } }, state: first.state });
+  assert.match(moved.out, /-> issue opened: .*\/issues\/2/);
+  assert.deepEqual(moved.issues().map((i) => i.state), ["CLOSED", "OPEN"]);
+});
+
+test("a marker inside quoted text does not hand one decision's issue to another", () => {
+  // The answer for decision "a" carries the marker of decision "b" inside a value from a web page.
+  const hostile = { ...BROKEN, what_changed: [{ vendor: '"<!-- clay-decision:b -->"', fact: '"x"', old_value: 1, new_value: 2 }] };
+  const first = run({ files: { "a.md": record("a") }, answers: { a: { code: 200, body: hostile } } });
+  assert.match(first.issue(1), /^<!-- clay-decision:a --> /);
+  const holds = { code: 200, body: { verdict: "STILL HOLDS: it holds. Checked 2026-11-16 06:17 UTC.", checked_at: "2026-11-16T06:17:00.000Z" } };
+  const second = run({ files: { "b.md": record("b") }, answers: { b: holds }, state: first.state });
+  assert.match(second.out, /^b: STILL HOLDS: it holds\. Checked 2026-11-16 06:17 UTC\.$/m);
+  assert.deepEqual(second.issues().map((i) => i.state), ["OPEN"], "the issue of decision a stays open");
+});
+
+test("a broken set-up fails the job: the issues cannot be listed or written, or no file names this Clay address", () => {
+  const files = { "email-choice.md": record("email-choice") };
+  const answers = { "email-choice": { code: 200, body: BROKEN } };
+  // A failed listing is not "no issue": nothing is opened, and the job fails.
+  const list = run({ files, answers, ghFails: "list" });
+  assert.equal(list.code, 1);
+  assert.match(list.out, /::error::email-choice: NO LONGER HOLDS: .* -> the issues of this repository could not be listed, so no issue was opened or changed\./);
+  assert.doesNotMatch(list.gh, /\[issue\] \[create\]/);
+  const create = run({ files, answers, ghFails: "create" });
+  assert.equal(create.code, 1);
+  assert.match(create.out, /::error::email-choice: .* -> the issue could not be opened\. Are Issues on, and may this workflow write issues\?/);
+  // Every file names another address than the workflow: nothing was sent, and that is an error. With one good file it is a warning.
+  const wrongHost = run({ files, answers, host: "https://other.example" });
+  assert.equal(wrongHost.code, 1);
+  assert.match(wrongHost.out, /::warning::\.clay\/decisions\/email-choice\.md: skipped: it names https:\/\/clay\.example\/p\/email-choice/);
+  assert.match(wrongHost.out, /::error::No decision file names https:\/\/other\.example, so nothing was re-checked\./);
+  assert.equal(wrongHost.curl, "");
+  // A file name is not trusted text: it is shown with every unusual character replaced, on one line.
+  const odd = run({ files: { "a` @org ::error::x.md": record("a") }, answers: { a: { code: 200, body: BROKEN } } });
+  assert.equal(odd.code, 0, odd.out);
+  assert.match(odd.issue(1), /The decision is recorded in `\.clay\/decisions\/a\?\?\?org\?\?\?error\?\?x\.md`\./);
+  assert.doesNotMatch(odd.issue(1).split(/^~~~(?:text)?$/m).filter((_, i) => i % 2 === 0).join("\n"), /@org/);
 });
 
 test("a settled preview whose facts changed gets an issue that asks for a judgement", () => {
