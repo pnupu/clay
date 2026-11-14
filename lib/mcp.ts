@@ -56,7 +56,7 @@ view.type "price_ranking": a "which vendor or plan" decision for a usage-priced 
 - Features (checkboxes): the hard requirements the person mentioned, and only ones that pricing pages state per plan.
 - No facts. Never put prices, plan names or limits in the spec. They are read from each pricing page, each with a source quote and a check that the number is on the page.
 The call answers within about 20 seconds, with build.status. "done": every pricing page is read; the result lists per vendor what was read, and a problems list that says how to fix each problem. "running": the pages are still being read (5 to 40 seconds each, more when requests wait for the rate limit) and arrive by themselves; the URL works already and shows each vendor as it arrives. When it is running, first tell the person in a sentence that the comparison is being built from the live pricing pages and give them the URL to watch it fill in. Then call read_playground, which waits up to 20 seconds for the reads, and repeat it until build.status is "done"; it returns the same problems list. Never call create_playground a second time for a build that is running.
-Repair a broken first build with revise_playground before you tell the person it is ready: for a page that was not read, try once with the exact pricing_url (or only the domain); if the vendor still cannot be priced, remove it and tell the person. A vendor that "cannot be ranked" only at some values is a true finding and stays.
+Repair a broken first build with revise_playground before you tell the person it is ready: for a page that was not read, try once with the exact pricing_url (or only the domain); if the vendor still cannot be priced, remove it and tell the person. A vendor that "cannot be ranked" only at some values is a true finding and stays. But a page on which fewer than two vendors can be ranked at the starting values compares nothing: problems then starts with BROKEN BUILD and names the metric to remove or rewrite. Repair that before you hand over.
 
 Then give the person the URL: for a preview, "move the controls until it is right, then press Settle"; for prices, "explore, select a vendor and save the decision". When they say they are done, call read_playground. Always use the playground_id and url of the result: when the id you asked for is taken, the playground gets that id with a short suffix.`,
 
@@ -134,7 +134,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       next:
         build.status === "running"
           ? "The pricing pages are still being read. 1. Tell the person now, in a sentence, that the comparison is being built from the live pricing pages, and give them the url: it works already and each vendor appears as its page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Then fix what problems lists with revise_playground, and tell the person the page is ready and what you changed."
-          : "If problems lists a build error, fix it with revise_playground. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
+          : "If problems lists a build error or starts with BROKEN BUILD, fix it with revise_playground first. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
       note: WEB_TEXT_NOTE,
     });
   };

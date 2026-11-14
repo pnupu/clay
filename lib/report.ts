@@ -77,6 +77,19 @@ export function collectionReport(p: Playground) {
     for (const f of p.domain.features) if (!read.some((x) => x.features?.some((y) => y.feature === f.id))) problems.push(`feature ${f.id}: no page says whether a plan has it, so its checkbox is hidden. Rewrite its describe or drop it with remove_feature_ids.`);
   }
   const ranking = rankingReport(p, controlsNow(p));
+  // A page on which fewer than two vendors can be ranked compares nothing. That is a broken build, also when each single
+  // gap is "a fact about the page": the agent must change the space (a metric that these pages do not bill by, a starting
+  // value above every self-serve plan), not hand it over.
+  if (!pending.size && read.length && ranking.ranked_cheapest_first.length < 2) {
+    const gaps = p.domain.metrics.map((m) => ({ id: m.id, vendors: ranking.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => x.startsWith(`${m.id}:`))).length })).filter((g) => g.vendors > 0).sort((a, b) => b.vendors - a.vendors);
+    const custom = ranking.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => /custom pricing|base price not stated/.test(x))).length;
+    problems.unshift(
+      `BROKEN BUILD: only ${ranking.ranked_cheapest_first.length} of ${p.domain.vendors.length} vendors can be ranked at the starting values, so the person would open a page that compares nothing. Do not hand it over like this. Fix it with revise_playground (data.price_pages), then read the result again:` +
+        (gaps.length ? ` ${gaps.map((g) => `metric ${g.id} has no price on the pages of ${g.vendors} vendor(s)`).join("; ")}. Keep only the 1 or 2 metrics that these vendors really bill by: remove such a metric, or rewrite its describe in the words those pages use (with synonyms). When a vendor does not charge for it at all, say that in notes, for example "a plan that does not charge for bandwidth has no bandwidth entry".` : "") +
+        (custom ? ` ${custom} vendor(s) have only a custom or unstated base price at these values: lower the starting value into the range of their self-serve plans, or replace the vendor.` : "") +
+        ` If a vendor still cannot be priced after one repair, remove it and tell the person. A page that ranks at least two vendors is the goal.`,
+    );
+  }
   for (const u of ranking.cannot_be_ranked) if ("unknown" in u) problems.push(`${u.vendor}: cannot be ranked at the current values because the page does not state: ${u.unknown!.join("; ") || "a needed fact"}. The person sees this as "unknown"; it is a fact about the page, not an error, unless the page is the wrong one.`);
   return { vendors, ranking_at_current_values: ranking, problems };
 }
@@ -85,7 +98,8 @@ export function collectionReport(p: Playground) {
 export function buildReport(p: Playground) {
   const w = workStatus(p);
   const total = p.domain.vendors.length;
-  const read = p.domain.vendors.filter((v) => p.sources[v.id]?.snapshot).length;
+  const waiting = new Set(w?.status === "running" ? w.pending : []);
+  const read = p.domain.vendors.filter((v) => p.sources[v.id]?.snapshot && !waiting.has(v.id)).length;
   const pages = `${read} of ${total} pricing pages read`;
   if (w?.status === "running")
     return {

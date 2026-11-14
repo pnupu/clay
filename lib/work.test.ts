@@ -41,3 +41,20 @@ test("a rate-limited request waits as long as the API says, within 1 to 30 secon
   assert.equal(retryAfterMs("no hint", 0), 6000);
   assert.equal(retryAfterMs("Retry in 500 seconds.", 0), 30000);
 });
+
+test("a build on which fewer than two vendors can be ranked is reported as broken, with the metric to repair", () => {
+  const plan = (meter: object | null) => ({ name: "Pro", base_price: 10, custom_pricing: false, price_quote: null, meters: meter ? [{ metric: "emails", ...meter }] : [], features: [] });
+  const source = (id: string, meter: object | null) => ({ id, name: id, demo: false, url: `https://${id}.com/pricing`, foundVia: null, lastCheckedAt: null, error: null, monitor: null, snapshot: { url: "", fetchedAt: "", extractor: "context.dev" as const, model: { vendor: id, currency: "USD", plans: [plan(meter)] }, evidence: {}, quarantined: [], textHash: "", truncated: false, latencyMs: 0, requestId: null } });
+  const priced = { included: 100, overage_allowed: true, tiers: [{ up_to: null, price: 1, per_units: 100 }], quote: null };
+  const unstated = { included: null, overage_allowed: null, tiers: [], quote: "emails are billed" };
+  const broken = { ...playground(null), sources: { a: source("a", unstated), b: source("b", unstated) } } as unknown as Playground;
+  const first = collectionReport(broken).problems[0];
+  assert.match(first, /^BROKEN BUILD: only 0 of 2 vendors can be ranked/);
+  assert.match(first, /metric emails has no price on the pages of 2 vendor\(s\)/);
+  const fine = { ...playground(null), sources: { a: source("a", priced), b: source("b", priced) } } as unknown as Playground;
+  assert.equal(collectionReport(fine).problems.some((x) => x.startsWith("BROKEN BUILD")), false);
+  // While pages are still being read, the build is not judged yet.
+  const running = { ...playground(work({ pending: ["b"] })), sources: { a: source("a", unstated) } } as unknown as Playground;
+  assert.equal(collectionReport(running).problems.some((x) => x.startsWith("BROKEN BUILD")), false);
+  assert.equal(buildReport(running).pages, "1 of 2 pricing pages read");
+});
