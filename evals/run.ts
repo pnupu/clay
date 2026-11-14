@@ -13,7 +13,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, wri
 import { randomBytes } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { chromium, type Browser } from "playwright-core";
-import { MCP_PATH, TOOL, authHeader, dimensions, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, type Dimension } from "./adapter.ts";
+import { MCP_PATH, TOOL, authHeader, dimensions, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, vendorId, type Dimension } from "./adapter.ts";
 import { CAUSE, creation, directAnswer, fileMatches, lastBuild, namesChoice, ranges, readBack, toolUse, verdict, type Check } from "./check.ts";
 import { CHROME, checkPage, personSettles } from "./page.ts";
 import { CASES, type Case } from "./requests.ts";
@@ -169,7 +169,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
     return finish();
   }
   if (c.expect === "return") {
-    if (c.mustCall?.includes("read")) add(namesChoice(first.allText, prepared!.chosen));
+    if (c.mustCall?.includes("read")) add(namesChoice(first.allText, prepared!.chosen, vendorId([{ input: preparedPlayground(prepared!.id) }], prepared!.chosen)));
     const page = await checkPage(browser, { baseUrl, url: prepared!.url, key, dims: dimensions([{ tool: TOOL.create, mcp: true, input: preparedPlayground(prepared!.id), isError: false, result: JSON.stringify({ playground_id: prepared!.id }) }, ...first.calls], prepared!.id), shotPath: join(dir, "page.png") });
     add(...page.checks);
     r.shot = page.shot ? relative(runDir, page.shot) : null;
@@ -223,7 +223,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   if (second.error === "not run") return finish();
   add(readBack(second.calls, built.id));
   if (c.targetFile) add(fileMatches(original(c.targetFile) ?? "", read(join(ws, c.targetFile)), person.outputs));
-  else if (person.chosen) add(namesChoice(second.allText, person.chosen));
+  else if (person.chosen) add(namesChoice(second.allText, person.chosen, vendorId(first.calls, person.chosen)));
   return finish();
 }
 

@@ -1,7 +1,7 @@
 // Unit tests of the checker's pure parts. Run: node --test evals/check.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { creation, directAnswer, fileMatches, lastBuild, namesChoice, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
+import { creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
 import { dimensions } from "./adapter.ts";
 import { CASES } from "./requests.ts";
 
@@ -125,6 +125,12 @@ test("hand-back: the agent must read the playground and name the saved choice", 
   assert.equal(readBack([call("read_playground", {})], "p1").status, "fail");
   assert.equal(namesChoice("You settled on postmark at 45,000 emails.", "Postmark").status, "pass");
   assert.equal(namesChoice("You settled on the cheapest one.", "Postmark").status, "fail");
+  // The agent may use the vendor's id instead of the row's display name, as a whole word.
+  assert.equal(namesChoice("You saved **OpenAI** as your choice.", "OpenAI GPT", "openai").status, "pass");
+  assert.equal(namesChoice("You saved Amazon SES.", "Amazon Simple Email Service", "amazon-ses").status, "pass");
+  assert.equal(namesChoice("You saved Google.", "OpenAI GPT", "openai").status, "fail");
+  assert.equal(namesChoice("It is an open AIrline.", "OpenAI GPT", "ses").status, "fail");
+  assert.equal(namesChoice("It addresses your needs.", "Amazon", "ses").status, "fail");
 });
 
 test("hand-back comparison: the file must change and hold every settled output exactly", () => {
@@ -141,6 +147,12 @@ test("hand-back comparison: the file must change and hold every settled output e
   assert.match(fileMatches(before, good.replace("22.5", "225"), outputs).reason, /spring.damping/);
   assert.equal(fileMatches(before, good.replace("22.5", "22.50"), outputs).status, "pass");
   assert.match(fileMatches(before, good, {}).reason, /no outputs/);
+  // An output of several lines: every line must be in the file, but other code may sit between them.
+  const css = { rules: ".article {\n  font-size: 18px;\n  line-height: 1.6;\n}\n.article p { margin: 0 0 19px; }" };
+  const file = ".article {\n  font-size: 18px;\n  line-height: 1.6;\n}\n.article h1 { font-size: 22px; }\n.article p { margin: 0 0 19px; }";
+  assert.equal(fileMatches(".article { font-size: 14px; }", file, css).status, "pass");
+  assert.match(fileMatches(".article { font-size: 14px; }", file.replace("19px", "18px"), css).reason, /lacks the settled rules line 5/);
+  assert.match(fileMatches(".article { font-size: 14px; }", file.replace("line-height: 1.6", "line-height: 1.5"), css).reason, /rules line 3/);
   // Outputs as the page shows them: texts. A JSON text is compared value by value; other text may differ in line breaks only.
   const shown = { className: "bg-blue-600 px-4 py-2\n  rounded-lg shadow-sm", spring: '{"stiffness": 260, "damping": 22.5, "mass": 1}' };
   assert.equal(fileMatches(before, good, shown).status, "pass");
@@ -149,6 +161,13 @@ test("hand-back comparison: the file must change and hold every settled output e
   assert.equal(fileMatches("px-2 duration-100", "px-4 duration-150", { paddingX: 4, duration: "150" }).status, "pass");
   assert.match(fileMatches("gap: 8px", "gap: 120px", { gap: "12" }).reason, /lacks the settled gap/);
   assert.equal(fileMatches("y: 0", "y: -4", { y: -4 }).status, "pass");
+  // A wrong sign fails (security review of 7876ad2): -12 in the file is not the settled 12, and 12 is not the settled -12.
+  assert.match(fileMatches("const x = 0;", "const x = -12;", { value: 12 }).reason, /lacks the settled value/);
+  assert.match(fileMatches("const x = 0;", "const x = 12;", { value: -12 }).reason, /lacks the settled value/);
+  assert.equal(fileMatches("const x = 0;", "const x = -12;", { value: -12 }).status, "pass");
+  assert.deepEqual(numbersIn("px-4 duration-150 -translate-y-2 x = -12, y: -4 (-.5) [-3] 1e-3 a-1.5"), [4, 150, 2, -12, -4, -0.5, -3, 0.001, 1.5]);
+  // A separator is not a sign either way: px-4 does not hold -4.
+  assert.match(fileMatches("px-2", "px-4", { x: -4 }).reason, /lacks the settled x/);
 });
 
 test("no-playground cases: the direct answer or the direct edit", () => {

@@ -113,9 +113,14 @@ export function readBack(calls: Call[], id: string): Check {
   return hit ? pass("handback_read", `called ${TOOL.read} on ${id}`) : fail("handback_read", `the agent did not read ${id} back with ${TOOL.read} after the person settled`);
 }
 
-/** Price cases: the agent's answer must name what the person saved. */
-export function namesChoice(text: string, chosen: string): Check {
-  return text.toLowerCase().includes(chosen.toLowerCase()) ? pass("handback_match", `the answer names the saved choice (${chosen})`) : fail("handback_match", `the answer does not name the saved choice (${chosen})`);
+/**
+ * Price cases: the agent's answer must name what the person saved: by the display name of the vendor row, or by the
+ * vendor's id as a whole word ("OpenAI" for the row "OpenAI GPT" with id openai). Both are names the agent gave it.
+ */
+export function namesChoice(text: string, chosen: string, id: string | null = null): Check {
+  const said = text.toLowerCase();
+  const word = (w: string) => new RegExp(`(^|[^a-z0-9])${w.toLowerCase().replace(/[^a-z0-9]+/g, "[^a-z0-9]*")}($|[^a-z0-9])`).test(said);
+  return said.includes(chosen.toLowerCase()) || (id != null && id.length >= 3 && word(id)) ? pass("handback_match", `the answer names the saved choice (${chosen})`) : fail("handback_match", `the answer does not name the saved choice (${chosen}${id ? `, id ${id}` : ""})`);
 }
 
 /** Every leaf value of the settled outputs: strings as they are, numbers as numbers. An output whose text is JSON is opened up. */
@@ -127,12 +132,18 @@ export function leaves(v: unknown, path = ""): { path: string; value: string | n
   }
   // A text that is only a number is compared as a number, so "12" is not found inside "120".
   if (typeof v === "string" && /^\s*-?\d*\.?\d+\s*$/.test(v)) return [{ path, value: Number(v) }];
+  // A text of several lines (a CSS output with two rules, a whole component) is compared line by line: the lines may sit
+  // in different places of the file, between code that the playground did not touch. Lines without a letter or digit are skipped.
+  if (typeof v === "string" && v.includes("\n")) return v.split("\n").flatMap((line, i) => (/[a-z0-9]/i.test(line) ? [{ path: `${path} line ${i + 1}`, value: line }] : []));
   if (typeof v === "string" || typeof v === "number") return [{ path, value: v }];
   if (v && typeof v === "object") return Object.entries(v).flatMap(([k, x]) => leaves(x, path ? `${path}.${k}` : k));
   return [];
 }
-/** Every number in a text. A hyphen before a digit may be a minus or a separator (px-4), so both readings are kept. */
-const numbersIn = (text: string) => (text.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) ?? []).flatMap((n) => (n.startsWith("-") ? [Number(n), Number(n.slice(1))] : [Number(n)]));
+/**
+ * Every number in a text, with its sign. A hyphen is a minus sign unless it joins the number to a word before it: in
+ * "px-4" or "duration-150" it is a separator and the number is 4 or 150; in "x = -12" or "y: -4" the number is negative.
+ */
+export const numbersIn = (text: string) => [...text.matchAll(/(?<![\w\])])-?\d*\.?\d+(?:e[-+]?\d+)?|\d*\.?\d+(?:e[-+]?\d+)?/gi)].map((m) => Number(m[0]));
 
 /** Code cases: the file on disk must have changed and must hold every settled output exactly. */
 export function fileMatches(before: string, after: string | null, outputs: unknown): Check {
