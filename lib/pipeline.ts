@@ -6,7 +6,7 @@ import { extractionInstructions, extractionSchema, hasPrices, normalise, pricing
 import { brand, cd, ContextDevError, scrape, capturedAt } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
-import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState } from "./web";
+import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState, CACHED_FACTS, oldestCapture, staleCapture } from "./web";
 import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -424,6 +424,7 @@ export function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: st
 const webRechecks = new Map<string, { run: Promise<{ changes: WebChange[]; stop: string | null }>; startedAt: number }>();
 
 async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
+  const began = Date.now();
   const k = (await playground(pg)).kit;
   const sources = k?.kit.web ?? [];
   const changes: WebChange[] = [];
@@ -436,7 +437,8 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
           const r = await readWeb(src, was);
           // A first read that worked is today's page: it counts as re-checked. Its values went from unknown to known,
           // which can overturn what the person settled: that is recorded as a change of the whole source.
-          if (r.state.read) {
+          if (r.state.read && staleCapture(r.state.read.fetchedAt, began)) r.state.error = CACHED_FACTS;
+          else if (r.state.read) {
             r.state.recheckedAt = r.state.read.fetchedAt;
             const first: WebChange = { at: r.state.read.fetchedAt, source: src.id, path: "the whole source", before: "not read (its values were unknown)", after: "read now" };
             r.state.changes = [first, ...r.state.changes].slice(0, WEB_LIMITS.changes);
@@ -454,9 +456,14 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
           state.recheckedAt = capturedAt(page.cache_metadata);
           if (pageHash(page.markdown.data) !== was.read.textHash) {
             const first = await extractWeb(src, was.url);
-            if (!diffWeb(src, was.read, first).length) state.read = first;
+            const second = diffWeb(src, was.read, first).length ? await extractWeb(src, was.url) : null;
+            // The facts come from the structured reads, so the re-check is as old as the oldest capture among them and the
+            // text read. A structured answer from a cache (or of unknown age) is not today's page: nothing of it is stored.
+            state.recheckedAt = oldestCapture(state.recheckedAt, first.fetchedAt, ...(second ? [second.fetchedAt] : []));
+            if (staleCapture(state.recheckedAt, began)) throw new Error(CACHED_FACTS);
+            if (!second) state.read = first;
             else {
-              const c = confirmChanges(src, was.read, first, await extractWeb(src, was.url));
+              const c = confirmChanges(src, was.read, first, second);
               const at = new Date().toISOString();
               const found = c.changes.map((x) => ({ ...x, at, source: src.id }));
               changes.push(...found);
@@ -598,8 +605,9 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   let unconfirmed = 0;
   /** Shown on the source like an error, until a re-check settles it. */
   let note: string | null = null;
-  /** When the page of this re-check was captured: the text read, or the older extraction when the page was read in full. */
+  /** When the page of this re-check was captured: the oldest of the text read and the extraction or extractions (lib/web.ts). */
   let readAt: string | null = null;
+  const began = Date.now();
   try {
     const page = await readText(src, origin);
     readAt = page.at;
@@ -625,9 +633,11 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
         next = { ...second, model, evidence, quarantined, textHash: unconfirmed ? was.textHash : second.textHash };
         if (unconfirmed) note = `Two reads of this page disagreed on ${unconfirmed} ${unconfirmed === 1 ? "part" : "parts"} of the pricing. ${unconfirmed === 1 ? "It keeps its" : "They keep their"} earlier values, and the next re-check reads the page again.`;
       }
+      // As for a preview: an extraction from a cache is not today's page, so nothing of it is stored and no change is reported.
+      readAt = oldestCapture(readAt, first.fetchedAt, next.fetchedAt);
+      if (first.extractor === "context.dev" && staleCapture(readAt, began)) throw new Error(CACHED_FACTS);
       const changes = diffModels(src.snapshot.model, next.model);
       snapshot = next;
-      if (next.fetchedAt < readAt) readAt = next.fetchedAt;
       if (changes.length) {
         const models = (s: typeof before, own: PricingModel) => Object.fromEntries(Object.entries(s.sources).map(([k, x]) => [k, k === id ? own : (x.snapshot?.model ?? null)]));
         event = {

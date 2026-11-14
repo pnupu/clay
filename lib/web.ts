@@ -197,6 +197,20 @@ export function numberOnPage(n: number, pageText: string): boolean {
 
 /** The fingerprint of a page's text: a re-check extracts again only when it changed. */
 // Not a cryptographic hash: it only answers "is this the same text as last time". Two 32-bit FNV-1a sums, 16 hex digits.
+/**
+ * One re-check may use several captures of a page: the text read, and one or two structured reads when the text
+ * changed. The facts it stores are as old as the OLDEST of them, so that is the capture time of the re-check.
+ */
+export const oldestCapture = (...times: string[]): string => [...times].sort()[0];
+/**
+ * Is a capture from a cache, seen from the re-check that began at `began`? Clay asks for a fresh capture, so an honest
+ * answer is seconds old; one more than a minute older than the start of the re-check (or of unknown age, which is given
+ * as the epoch) is yesterday's page. Such a structured answer replaces no fact and reports no change.
+ */
+export const staleCapture = (capture: string, began: number): boolean => !(Date.parse(capture) >= began - 60_000);
+/** The stored error of a re-check whose structured answer came from a cache. */
+export const CACHED_FACTS = "The reader answered from a cache, not from a fresh capture of the page, so its facts were not used: they stay as they were, and nothing is known about today.";
+
 export function pageHash(text: string): string {
   let [a, b] = [0x811c9dc5, 0x01000193];
   for (let i = 0; i < text.length; i++) {

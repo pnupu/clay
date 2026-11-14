@@ -569,3 +569,27 @@ test("review 6: a cached capture is refused without a start time too, for prices
   st.recheckedAt = "2026-11-19T08:29:30.000Z";
   assert.match((recheckFile(k as never, URL, "2026-11-20T08:30:00.000Z", 0, false, SINCE) as { verdict: string }).verdict, /^NOT KNOWN/);
 });
+
+test("review 7: a preview whose structured answer came from a cache certifies nothing and dates no change", () => {
+  const check = (k: unknown) => recheckFile(k as never, URL, "2026-11-20T08:30:00.000Z", 0, false, SINCE) as unknown as { verdict: string; do_now?: string; decision_file: Record<string, string> };
+  type St = { lastCheckedAt: string; recheckedAt?: string | null; error: string | null; changes: object[]; read: { fetchedAt: string } };
+  const preview = () => webPreview({ ...SETTLED, at: "2026-11-17T08:00:00.000Z" }) as unknown as { kit: { web: Record<string, St> } };
+  // As the pipeline stores it now: the cached structured answer was refused, the facts are the settled ones, the error says why.
+  const refused = preview(); const a = Object.values(refused.kit.web)[0];
+  Object.assign(a, { lastCheckedAt: "2026-11-20T08:29:30.000Z", recheckedAt: null, error: "The reader answered from a cache, not from a fresh capture of the page, so its facts were not used: they stay as they were, and nothing is known about today." });
+  const r = check(refused);
+  assert.match(r.verdict, /^NOT KNOWN/);
+  assert.deepEqual(Object.keys(r.decision_file).sort(), ["keep", "path"]);
+  assert.equal(a.changes.length, 0);
+  // A state from before this fix: the facts were replaced by the cached answer (read.fetchedAt of the day before), and the
+  // re-check time is carried as the oldest capture. It is not of this check.
+  const old = preview(); const b = Object.values(old.kit.web)[0];
+  Object.assign(b, { lastCheckedAt: "2026-11-20T08:29:30.000Z", recheckedAt: "2026-11-19T08:29:30.000Z" });
+  assert.match(check(old).verdict, /^NOT KNOWN/);
+  // Unknown age: the epoch.
+  const unknown = preview(); Object.assign(Object.values(unknown.kit.web)[0], { lastCheckedAt: "2026-11-20T08:29:30.000Z", recheckedAt: "1970-01-01T00:00:00.000Z" });
+  assert.match(check(unknown).verdict, /^NOT KNOWN/);
+  // The fast path is kept: unchanged text, read fresh in this check, with facts extracted long ago, still holds.
+  const fast = preview(); Object.assign(Object.values(fast.kit.web)[0], { lastCheckedAt: "2026-11-20T08:29:30.000Z", recheckedAt: "2026-11-20T08:29:30.000Z" });
+  assert.match(check(fast).verdict, /^STILL HOLDS/);
+});

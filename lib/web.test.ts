@@ -1,7 +1,7 @@
 // data.web: what an agent may ask for, the guard on what comes back, and the confirmation of a change.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkWeb, confirmChanges, diffWeb, guard, numberOnPage, ROW_GONE, ROW_HERE, rowKeys, webData, webSchema, WEB_LIMITS, type WebRead, type WebSource } from "./web.ts";
+import { checkWeb, confirmChanges, diffWeb, guard, numberOnPage, ROW_GONE, ROW_HERE, rowKeys, webData, webSchema, WEB_LIMITS, type WebRead, type WebSource, CACHED_FACTS, oldestCapture, staleCapture } from "./web.ts";
 
 const prices: WebSource = { id: "anthropic", url: "https://www.anthropic.com/pricing", rows: { describe: "one row per model of the API", fields: [{ id: "model", type: "text", describe: "model name" }, { id: "input", type: "number", unit: "USD per 1M tokens", describe: "price of input tokens per million" }, { id: "output", type: "number", describe: "price of output tokens per million" }] } };
 const page = "Claude Opus 5.5: $5 / MTok input, $25 / MTok output. Claude Sonnet 5.5: $3.00 / MTok input, $15 / MTok output. Batch: 50% off. 1,000 requests.";
@@ -153,4 +153,24 @@ test("web: quotes are kept for the retained rows only, within the bounds, howeve
   assert.ok(Object.keys(old.quotes).length <= 60);
   assert.ok(Object.values(old.quotes).join("").length <= L.quoteBytes);
   assert.ok(Object.keys(old.quotes).every((k) => k.startsWith("rows.batch-50-")));
+});
+
+test("a re-check is as old as its oldest capture, and a structured answer from a cache is not today's page", () => {
+  const began = Date.parse("2026-11-14T08:06:20.000Z");
+  const fresh = "2026-11-14T08:06:20.700Z";
+  // The reviewer's case: the text read is fresh, the structured read is a capture of the day before.
+  const mixed = oldestCapture(fresh, "2026-11-13T08:06:20.727Z");
+  assert.equal(mixed, "2026-11-13T08:06:20.727Z");
+  assert.equal(staleCapture(mixed, began), true);
+  // A structured answer of unknown age (the epoch, lib/contextdev.ts) and a stale second read among fresh ones.
+  assert.equal(staleCapture(oldestCapture(fresh, "1970-01-01T00:00:00.000Z"), began), true);
+  assert.equal(staleCapture(oldestCapture(fresh, "2026-11-14T08:06:21.000Z", "2026-11-13T08:06:20.727Z"), began), true);
+  // Every capture is of this re-check: the oldest of them is its time. Up to a minute before its start still counts.
+  assert.equal(oldestCapture(fresh, "2026-11-14T08:06:21.100Z", "2026-11-14T08:06:22.000Z"), fresh);
+  assert.equal(staleCapture(fresh, began), false);
+  assert.equal(staleCapture("2026-11-14T08:05:25.000Z", began), false);
+  assert.equal(staleCapture("2026-11-14T08:05:15.000Z", began), true);
+  // A time that cannot be read is not fresh either.
+  assert.equal(staleCapture("not a time", began), true);
+  assert.match(CACHED_FACTS, /from a cache.*were not used.*nothing is known about today/);
 });
