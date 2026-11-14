@@ -90,7 +90,10 @@ summary { cursor: pointer; font-weight: 500; }
   table.stack tr + tr { margin-top: 8px; }
   table.stack td { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; border: 0; text-align: right; white-space: normal; background: none; box-shadow: none; }
   table.stack td::before { content: attr(data-label); color: var(--muted); font-weight: 400; text-align: left; }
-  table.stack td:first-child { font-weight: 600; text-align: left; }
+  /* The first cell is the name of the row, not a label with its value: plain text, so a badge after the name goes to
+     the next line when the card is narrow, and a long badge wraps in itself. */
+  table.stack td:first-child { display: block; font-weight: 600; text-align: left; }
+  .badge { white-space: normal; border-radius: 10px; }
   table.stack td:first-child::before, table.stack td:not([data-label])::before { content: none; }
   table.stack tr.pick { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-bg); }
   table.stack tr.pick > td, table.stack tr.pick > td:first-child { background: none; box-shadow: none; }

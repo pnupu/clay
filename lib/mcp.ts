@@ -120,7 +120,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       next:
         // A page of data in styles of its own is repaired before the person gets the link, also while the pages are
         // still being read: read_playground does not list the look of a page, so this result is where it is said.
-        (lead ? `First act on what problems says about the look of the page, which only a build or revise result lists: revise it with revise_playground now${reading.length ? " (the pages are read on meanwhile)" : ""}, and give the person the url only after that. When the problem itself says that the page may stay as it is, go on: ` : "") +
+        (lead ? `First act on what problems says about the look of the page, which only a build or revise result lists: revise it with revise_playground now${reading.length ? " (the pages are read on meanwhile)" : ""}, give the person no url before that, and then follow the next of that result. Only when the problem itself says that the page may stay as it is, do this: ` : "") +
         (reading.length
           ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
           : k.kit.web?.length

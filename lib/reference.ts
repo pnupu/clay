@@ -133,7 +133,7 @@ clay.onChange((v) => {
   // the person's own choice.
   // The sentence names the measure of the mark and gives its number first (cost per passed task), then the bill: a
   // model with a lower bill and more failed tasks is not "cheaper".
-  el("answer").textContent = pick ? pick.m.model + " costs the least per passed hard task inside your limits: " + usd(pick.perPassed) + ", " + month(pick) + " a month." : "No model inside your limits has a known price.";
+  el("answer").textContent = pick ? pick.m.model + " costs the least per passed hard task inside your limits: " + usd(pick.perPassed) + ", " + month(pick) + " a month." : list.some((r) => r.ok) ? "No model inside your limits has a known price." : "No model is inside your limits.";
   const own = list.find((r) => r.m.model === v.model);
   el("chosen").textContent = "Your limits: at least " + v.min_pass + "% of the hard tasks passed, within " + v.max_seconds + " s per task." + (!own ? "" : own === pick ? " It is the model you chose." : " You chose " + own.m.model + ": " + month(own) + " a month" + (own.ok ? "." : ", outside your limits."));
   body.textContent = "";
@@ -142,7 +142,8 @@ clay.onChange((v) => {
     // .pick: the model the person chose (the select). .out: outside their limits. The mark of the rule is a badge.
     tr.className = (r.m.model === v.model ? "pick " : "") + (r.ok ? "" : "out");
     const name = cell(tr, "", r.m.model + " ");
-    if (r === pick) badge(name, "Least per passed task inside your limits", "ok");
+    // A badge is two or three words: it stands next to a name in a narrow column.
+    if (r === pick) badge(name, "Least per passed task", "ok");
     if (!r.ok) badge(name, "Outside your limits", "warn");
     cell(tr, "Pass rate, hard tasks", Math.round(r.m.hard_pass_rate * 100) + "%", "num");
     cell(tr, "Median time", r.m.median_seconds + " s", "num");
@@ -292,7 +293,7 @@ The parts (class names):
 - p.lead: the answer, one sentence, first on the page. It changes with the controls.
 - table with th and td. Class "num" on a th or td of numbers: right-aligned, and a number in a td stays on one line (so "num" is for a number with its unit, not for a phrase); a th may wrap. tr.pick: the option the person chose (the value of their select). tr.out: an option outside their limits. Class "stack" on the table and data-label="<column name>" on each td: on a phone every row is then a card of its own. A table that must stay a table on a phone goes in <div class="scroll">.
 - div.cards with div.card in it, an h3 for the name of each: one card per option, when an option has more to say than a row holds. .card.pick and .card.out as for rows.
-- span.badge, plain or with "ok", "warn", "bad" or "pick": a mark next to a name ("Cheapest inside your limits").
+- span.badge, plain or with "ok", "warn", "bad" or "pick": a mark next to a name, in two or three words ("Cheapest in budget").
 - div.stat: one number with its label, <div class="stat"><span>Per month</span><b>$218</b></div>.
 - dl.kv: label and value pairs, <dt>Price per hour</dt><dd>$1.09</dd>.
 - p.note, and p.note.warn: what the numbers cannot support, in two or three lines.

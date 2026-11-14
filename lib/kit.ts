@@ -220,10 +220,10 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   const plain = (s: string) => `${s.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ")};`;
   const styles = [plain(preview.css), ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => plain(m[1] ?? m[2]))].join("\n");
   // A declaration, not a selector (".font:hover"), and not "font: inherit", which takes Clay's typeface.
-  if (/(?<![\w.#-])font(?:-family)?\s*:(?!\s*(?:inherit|unset|initial)\b)/i.test(styles)) out.push("view.css: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
+  if (/(?<![\w.#-])font(?:-family)?\s*:(?!\s*(?:inherit|unset|initial)\b)/i.test(styles)) out.push("view.css or a style attribute of view.html: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
   // The size of font-size and of the font shorthand, in px or rem (16 px).
   const small = [...new Set([...styles.matchAll(/(?<![\w.#-])font(?:-size)?\s*:[^;{}]*?(\d*\.?\d+)(px|rem)\b/gi)].map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
-  if (small.length) out.push(`view.css: font-size ${small.join(", ")} is under ${SMALLEST_TEXT} px, the smallest text of a data view. Text that small is a sign of too much text: use .small (13 px), and move the long part into <details>.`);
+  if (small.length) out.push(`view.css or a style attribute of view.html: font-size ${small.join(", ")} is under ${SMALLEST_TEXT} px, the smallest text of a data view. Text that small is a sign of too much text: use .small (13 px), and move the long part into <details>.`);
   // Colours in the values of declarations only (the text after a colon, up to ";" or "}"): "#add" in a selector is an id.
   // One colour written in two ways is one colour: #fff, #FFFFFF and #ffffffff.
   const hex = (c: string) => {
@@ -232,7 +232,7 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   };
   const values = [...styles.matchAll(/:([^;{}]*)(?=[;}])/g)].map((m) => m[1]).join("\n");
   const colours = [...new Set((values.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/gi) ?? []).map((c) => c.toLowerCase().replace(/\s*([,/()])\s*/g, "$1").replace(/\s+/g, " ")).map((c) => (c.startsWith("#") ? hex(c) : c)))];
-  if (colours.length > OWN_COLOURS) out.push(`view.css: ${colours.length} colours of its own (${colours.slice(0, 4).join(", ")}${colours.length > 4 ? ", ..." : ""}). A data view takes its colours from the variables: var(--ink), var(--muted), var(--line), var(--field), var(--accent), var(--ok), var(--warn), var(--bad), and --accent-bg, --ok-bg, --warn-bg, --bad-bg behind them; the parts .pick, .out, .badge and .note use them already. Keep a colour of your own only when it is data: a brand colour, a series in a chart.`);
+  if (colours.length > OWN_COLOURS) out.push(`view.css or a style attribute of view.html: ${colours.length} colours of its own (${colours.slice(0, 4).join(", ")}${colours.length > 4 ? ", ..." : ""}). A data view takes its colours from the variables: var(--ink), var(--muted), var(--line), var(--field), var(--accent), var(--ok), var(--warn), var(--bad), and --accent-bg, --ok-bg, --warn-bg, --bad-bg behind them; the parts .pick, .out, .badge and .note use them already. Keep a colour of your own only when it is data: a brand colour, a series in a chart.`);
   return out;
 }
 
