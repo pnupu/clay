@@ -281,7 +281,7 @@ export function webChanges(k: KitState) {
   const period = since ? `the person settled (${since})` : "the build";
   // "Nothing changed" may be said only when every page was read again after the settle and that read did not fail.
   // A build read is not a re-check: it is the state the person settled on.
-  const rechecked = states.length > 0 && states.every((s) => !!s?.read && !s.error && !!s.recheckedAt && (!since || s.recheckedAt > since));
+  const rechecked = states.length > 0 && states.every((s) => !!s?.read && !s.error && !s.read.quarantined?.length && !s.read.truncated && !!s.recheckedAt && (!since || s.recheckedAt > since));
   // A page whose re-read failed keeps its old facts: said in every answer, so "still holds" is never judged on it silently.
   // A source that was never read is not such a page: a re-check reads it for the first time, so it stays advised.
   const failed = states.some((s) => s?.error && s.read) ? " A page could not be read again (see data): its facts are as they were. Say so; do not call recheck_playground again now." : "";

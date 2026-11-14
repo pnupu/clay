@@ -22,11 +22,11 @@ export const CHECKED = "- Last checked:";
  * middle of a line that Clay starts, cut short, on one line, and without the characters that could end the quotes, open
  * markup or hide text (quotes, backticks, pipes, angle and square brackets, control and direction characters).
  */
-const HIDDEN = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\u{e0000}-\u{e007f}]/gu;
+const HIDDEN = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff\u{e0000}-\u{e01ef}]/gu;
 /** Every character that a reader can take for the end of a line: CR LF, LF, CR, vertical tab, form feed, NEL, LS, PS. */
 const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u0085\u2028\u2029]/;
 const cut = (s: string, n: number) => {
-  const t = s.replace(HIDDEN, " ").replace(/\s+/g, " ").replace(/["“”`|<>[\]]/g, "'").replace(/~{3,}/g, "~").trim();
+  const t = s.replace(HIDDEN, " ").replace(/\s+/g, " ").replace(/["“”„‟«»″‶＂❝❞〝〞〟`｀|｜<>＜＞[\]]/g, "'").replace(/~{3,}/g, "~").trim();
   return t.length > n ? t.slice(0, n - 1) + "…" : t;
 };
 const q = (s: string, n: number) => `"${cut(s, n)}"`;
@@ -63,7 +63,10 @@ const oldest = (times: (string | null | undefined)[]) => (times.length && times.
  * `since`: the read must also be from this re-check (its start time), so a page that was skipped or is stale is not full.
  */
 export function fullRead(p: Playground, since: string | null = null): boolean {
-  const now = (checked: string | null | undefined) => !since || (!!checked && checked >= since);
+  // A call can join a re-check that another call started moments ago (lib/pipeline.ts), so a page read up to a minute
+  // before this call began is of this check.
+  const from = since ? new Date(Date.parse(since) - 60_000).toISOString() : null;
+  const now = (checked: string | null | undefined) => !from || (!!checked && checked >= from);
   if (p.kit) {
     const sources = p.kit.kit.web ?? [];
     return sources.length > 0 && sources.every((s) => { const st = p.kit!.web?.[s.id]; return !!st?.read && !st.error && !st.read.quarantined?.length && !st.read.truncated && now(st.lastCheckedAt); });
@@ -81,15 +84,17 @@ export function checkedLine(p: Playground, at: string | null = null): string | n
     if (!k.settled || !k.kit.web?.length) return null;
     const states = k.kit.web.map((s) => k.web?.[s.id]);
     if (!fullRead(p)) return `${CHECKED} not known: at the last check not every page could be read in full.`;
-    const time = at ?? oldest(states.map((s) => s?.read?.fetchedAt));
+    // The last check that read the page again (a failed attempt is not one, and fullRead above excludes it); else the read.
+    const time = at ?? oldest(states.map((s) => s?.recheckedAt ?? s?.read?.fetchedAt));
     const changed = states.flatMap((s) => s?.changes ?? []).filter((c) => c.at > k.settled!.at).length;
     const rechecked = states.every((s) => !!s?.recheckedAt && s.recheckedAt > k.settled!.at);
     return `${CHECKED} ${when(time)}: ${changed ? `${changed} ${changed === 1 ? "fact" : "facts"} changed since it was settled; see the playground` : rechecked ? "no fact changed since it was settled" : "not re-checked since it was settled"}.`;
   }
   if (!p.decision) return null;
   if (!fullRead(p)) return `${CHECKED} not known: at the last check not every pricing page could be read in full.`;
-  // The time of the facts themselves (when the pages were captured), not of an attempt to read them.
-  const time = at ?? oldest(p.domain.vendors.map((v) => p.sources[v.id]?.snapshot?.fetchedAt));
+  // The last check of each page. A check that failed or disagreed stores an error, and fullRead above excludes it, so
+  // this is the time of a full read, never of an attempt.
+  const time = at ?? oldest(p.domain.vendors.map((v) => p.sources[v.id]?.lastCheckedAt ?? p.sources[v.id]?.snapshot?.fetchedAt));
   return `${CHECKED} ${when(time)}: ${standing(p.decision, models(p)).holds ? "holds" : "no longer holds; see the playground"}.`;
 }
 
@@ -183,7 +188,7 @@ function previewBody(p: Playground): { chosen: string[]; sections: string[] } | 
     const st = k.web?.[s.id];
     const head = `- ${bare(s.id)}: ${page(st?.url ?? s.url)}, read ${when(st?.read?.fetchedAt)}`;
     if (!st?.read) return [`${head}: not read.`];
-    if (s.fields) return [`${head}: ${s.fields.slice(0, 8).map((f) => `${f.id} ${st.read!.fields?.[f.id] == null ? "unknown" : value(st.read!.fields[f.id])}${unit(f.unit)}`.replace(f.id, bare(f.id))).join("; ")}.`];
+    if (s.fields) return [`${head}: ${s.fields.slice(0, 8).map((f) => `${bare(f.id)} ${st.read!.fields?.[f.id] == null ? "unknown" : value(st.read!.fields[f.id])}${unit(f.unit)}`).join("; ")}.`];
     const key = s.rows!.fields.find((f) => f.type === "text")?.id ?? null;
     const rows = st.read.rows ?? [];
     // The rows that the playground's own names match (lib/card.ts), as on the page: the facts the choice rests on.
@@ -253,6 +258,15 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
     do_now: RECORD.broken(url, !!best),
     decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, then: "After the person has agreed and saved the new choice on the playground page, call read_playground and replace the whole file with its decision_record." },
   };
+}
+
+/**
+ * A report of a saved price decision says "holds_on_data_as_last_read". Without a full read that is not known: the
+ * field then says so, in every answer that carries the report (read_playground, recheck_playground).
+ */
+export function guardDecision<T extends object>(report: T | string, p: Playground): T | string {
+  if (typeof report === "string" || fullRead(p)) return report;
+  return { ...report, holds_on_data_as_last_read: "not known: at the last check not every pricing page could be read in full" };
 }
 
 /** The same for a preview playground with web sources: Clay has no rule for it, so the agent judges and then acts. */

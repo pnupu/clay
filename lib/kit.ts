@@ -172,18 +172,18 @@ const ALL_FIELDS = [...new Set(Object.values(FIELDS).flat())];
  * Validate a preview kit. Returns the Kit, or every problem as a sentence that says how to fix it.
  * `warnings` are not errors: the playground is built, and the create result passes them on.
  */
-/** The three ways view.js can turn a string into markup. */
-const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML)\b/g;
+/** The common ways view.js can turn a string into markup. Not every way: code can hide a name, so this is a warning's net, not a guard. */
+const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML|setHTMLUnsafe|createContextualFragment|srcdoc)\b|\bdocument\s*\.\s*write(?:ln)?\b/g;
 /**
  * Text from a web page or a brand is not the agent's text: a page can change a price or a name into markup, and markup
  * that view.js writes with innerHTML, outerHTML or insertAdjacentHTML is then built in every visitor's preview. So a
- * preview that has such data and uses one of these gets a warning, for the agent (in problems) and for the operator
- * before a playground becomes an example. A warning, not a refusal: the string may be the agent's own, which no
+ * preview that has such data and uses one of these gets a warning in problems: in the build answer for the agent, and in
+ * read_playground for anyone who reads the playground before it becomes an example. A warning, not a refusal: the string may be the agent's own, which no
  * pattern can see for certain. Null: no web or brand data, or none of the three in view.js.
  */
 export function markupWarning(kit: { preview: { js: string }; web?: unknown[] | null; brand: unknown | null }): string | null {
   if (!kit.web?.length && !kit.brand) return null;
-  const used = [...new Set(kit.preview.js.match(MARKUP_SINK) ?? [])];
+  const used = [...new Set((kit.preview.js.match(MARKUP_SINK) ?? []).map((x) => x.replace(/\s+/g, "")))];
   if (!used.length) return null;
   return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this playground reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup; revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
 }

@@ -285,6 +285,8 @@ test("a preview that reads web pages or a brand and builds markup from a string 
   assert.deepEqual(kit('document.getElementById("out").textContent = clay.data.web.prices.map((r) => r.model).join(", ");', { web }).warnings!.filter((x) => /markup/.test(x)), []);
   assert.deepEqual(kit('document.getElementById("out").innerHTML = "<b>" + clay.values.size + "</b>";', {}).warnings!.filter((x) => /markup/.test(x)), []);
   assert.equal(markupWarning({ preview: { js: "el.innerHTML = s;" }, web: [], brand: null }), null);
+  // Other common ways to build markup from a string are named too.
+  assert.match(markupWarning({ preview: { js: "document . write(x); el.setHTMLUnsafe(y); range.createContextualFragment(z); frame.srcdoc = w;" }, web, brand: null })!, /^view\.js: document\.write, setHTMLUnsafe, createContextualFragment, srcdoc build markup/);
   // The rule is in the texts an agent reads before it writes view.js.
   for (const text of [TOOLS.create_playground, KIT_REFERENCE]) assert.match(text, /Text from clay\.data\.web and clay\.data\.brand[^.]*is copied from web pages/);
   assert.match(TOOLS.create_playground, /with textContent, never as markup \(no innerHTML, outerHTML or insertAdjacentHTML with it\)/);

@@ -12,7 +12,7 @@ import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } fr
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
 import { EXAMPLE_CLEARED, canRead, canWrite, currentActor, publishedRefusal } from "./accounts";
-import { decisionRecord, recheckFile, recheckVerdict } from "./record";
+import { decisionRecord, guardDecision, recheckFile, recheckVerdict } from "./record";
 
 /**
  * How long a tool call waits for web reads before it answers. An agent's client cuts a tool call at about 60 seconds
@@ -101,7 +101,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k, reading),
       problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null)],
-      warnings,
+      warnings: warnings.filter((x) => x !== markupWarning(k.kit)),
       next:
         reading.length
           ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
@@ -163,7 +163,10 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const view = own ? p : nonOwnerView(p);
       // A standing decision of the caller's own person: the record to write into their repository (lib/record.ts).
       const record = own ? decisionRecord(p, url(playground_id)) : null;
-      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...(view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t)), ...(own || !view.kit ? {} : { preview: { status: "not shown", detail: "Whether this preview runs, and any error it reported, is not shown to non-owners." } }), ...(record ? { decision_record: record } : {}), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
+      const report = view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t);
+      // A saved decision is said to hold only on a full read of every pricing page (lib/record.ts).
+      if ("saved_decision" in report) report.saved_decision = guardDecision(report.saved_decision, view) as typeof report.saved_decision;
+      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...report, ...(own || !view.kit ? {} : { preview: { status: "not shown", detail: "Whether this preview runs, and any error it reported, is not shown to non-owners." } }), ...(record ? { decision_record: record } : {}), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
     },
   );
 
@@ -181,6 +184,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         const now = (await load()).playgrounds[playground_id];
         if (!w.done) return text({ playground_id, url: url(playground_id), status: "running", still_reading: webReading(now), next: "The pages are still being re-read. Tell the person that today's facts are being read. Then call read_playground: it waits up to 20 seconds; repeat until build.status is \"done\". Its web_changes are what changed." });
         const { verdict, ...file } = recheckFile(now, url(playground_id), new Date().toISOString(), webChanges(now.kit!).changes.length, !!w.value?.stop, began) as { verdict?: string };
+        const unknown = /^NOT KNOWN/.test(verdict ?? "");
         return text({
           playground_id,
           url: url(playground_id),
@@ -189,12 +193,12 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           // A settled result is a standing decision: the verdict first, then what changed, then what to do with its file (lib/record.ts).
           ...(verdict ? { verdict } : {}),
           changed_now: w.value?.changes.length ?? 0,
-          web_changes: webChanges(now.kit!),
+          web_changes: unknown ? { ...webChanges(now.kit!), judge: "Not known: not every page was read again in full (see verdict). Do not say that the settled result holds or that nothing changed." } : webChanges(now.kit!),
           ...file,
           data: dataReport(now.kit!, webReading(now)),
           problems: webProblems(now.kit!, webReading(now)),
           // One statement, taken from web_changes, so the two cannot disagree. After a stop (rate limit, cap) it is the stop.
-          tell_person: w.value?.stop ? "Not every page could be read again: say so, and do not say that nothing changed. Do not retry now." : (w.value?.changes.length ?? 0) > 0 ? `The page shows the new values after a reload, with what changed since they settled. ${webChanges(now.kit!).judge}` : `Nothing new to show on the page. ${webChanges(now.kit!).judge}`,
+          tell_person: w.value?.stop || unknown ? "Not every page could be read again in full: say so, and do not say that nothing changed. Do not retry now." : (w.value?.changes.length ?? 0) > 0 ? `The page shows the new values after a reload, with what changed since they settled. ${webChanges(now.kit!).judge}` : `Nothing new to show on the page. ${webChanges(now.kit!).judge}`,
           note: WEB_NOTE,
         });
       }
@@ -223,7 +227,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         ...recheckVerdict(p, url(playground_id), new Date().toISOString(), !!stop, started),
         sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
         changes: changed,
-        saved_decision: decisionReport(p) ?? "none: the person has not saved a decision yet",
+        saved_decision: guardDecision(decisionReport(p) ?? "none: the person has not saved a decision yet", p),
         ...(p.decision ? { ranking_under_saved_assumptions: rankingReport(p, p.decision) } : {}),
         // The controls may have moved since the decision was saved. When they have not, one ranking says it all.
         ...(p.decision && JSON.stringify(controlsNow(p)) === JSON.stringify({ usage: p.decision.usage, required: p.decision.required }) ? {} : { ranking_at_current_values: rankingReport(p, controlsNow(p)) }),

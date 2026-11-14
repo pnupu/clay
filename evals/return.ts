@@ -183,7 +183,7 @@ function judge(c: ReturnCase, x: Evidence): Check[] {
       check("it names what the saved rule now picks: Postmark at $25", /postmark/i.test(answer) && dollars(25).test(answer), answer.slice(0, 300));
       check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
       check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
-      check("the file keeps the saved choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter) && /("Resend"|\*\*Resend\*\*) \(chosen\)/.test(fileAfter), lineNow);
+      check("the file keeps the saved choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter) && (x.recordText == null ? /("Resend"|\*\*Resend\*\*) \(chosen\)/ : /"Resend" \(chosen\)/).test(fileAfter), lineNow);
     }
   }
   return checks;
@@ -271,11 +271,12 @@ if (from) {
     const saved = (JSON.parse(readFileSync(join(dir, "results.json"), "utf8")) as { results: Result[] }).results;
     for (const r of saved) {
       const c = RETURN_CASES.find((x) => x.id === r.id);
-      if (!c || r.playground === "?") continue;
+      // A run that could not be prepared has nothing to judge: it stays a failure in the count.
+      if (!c || r.playground === "?" || r.fileBefore == null && r.id !== "write") { failed++; again.push({ run: dir.split("/").at(-1)!, id: r.id, memory: r.memory, saved: r.result, now: "fail", firstFail: "the saved run holds nothing to judge" }); continue; }
       const raw = read(join(dir, r.id, "leg1.jsonl")) ?? "";
       const run = parseClaude(raw);
       const carried = Object.fromEntries(r.checks.map((x) => [x.name, x.pass]));
-      const checks = judge(c, { id: r.playground, error: r.error, calls: run.calls, answer: r.answer, allText: run.allText, raw, fileBefore: r.fileBefore, fileAfter: r.fileAfter, recordPath: `.clay/decisions/${r.playground}.md`, recordText: null, codeUnchanged: carried["it changed no code"] ?? true, carried });
+      const checks = judge(c, { id: r.playground, error: r.error, calls: run.calls, answer: r.answer, allText: run.allText, raw, fileBefore: r.fileBefore, fileAfter: r.fileAfter, recordPath: `.clay/decisions/${r.playground}.md`, recordText: null, codeUnchanged: carried["it changed no code"] ?? false, carried });
       const fail = checks.find((x) => !x.pass) ?? null;
       if (fail) failed++;
       again.push({ run: dir.split("/").at(-1)!, id: r.id, memory: r.memory, saved: r.result, now: fail ? "fail" : "pass", firstFail: fail ? `${fail.name}: ${fail.detail}` : null });
@@ -284,9 +285,9 @@ if (from) {
   }
   const outDir = join(HERE, "out", `${stamp()}-return-rejudged-${randomBytes(3).toString("hex")}`);
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "results.json"), JSON.stringify({ meta: { kind: "return, judged again from saved runs", from, command: `node evals/return.ts ${argv.join(" ")}` }, results: again }, null, 1));
+  writeFileSync(join(outDir, "results.json"), JSON.stringify({ meta: { kind: "return, judged again from saved runs", from, checksOfCommit: (() => { try { return execFileSync("git", ["-C", HERE, "rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim(); } catch { return "unknown"; } })(), command: `node evals/return.ts ${argv.join(" ")}` }, results: again }, null, 1));
   console.log(`${again.length - failed} of ${again.length} saved runs pass the checks as they are now. ${join(outDir, "results.json")}`);
-  process.exit(failed ? 1 : 0);
+  process.exit(failed || !again.length ? 1 : 0);
 }
 const runId = `${stamp()}-return-${randomBytes(3).toString("hex")}`;
 const runDir = join(HERE, "out", runId);
