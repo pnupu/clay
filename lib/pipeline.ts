@@ -3,7 +3,7 @@ import { currentActor, unpublishOnRevision } from "./accounts.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, hasPrices, normalise, pricingCandidates, type Domain, type PricingModel, type RawModel } from "./domain";
-import { brand, cd, ContextDevError, scrape } from "./contextdev";
+import { brand, cd, ContextDevError, scrape, capturedAt } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState } from "./web";
@@ -76,7 +76,7 @@ async function readText(src: Source, origin: string): Promise<{ text: string; at
   if (src.demo && demoIsLocal()) return { text: await (await fetch(demoUrl(origin), { cache: "no-store" })).text(), at: new Date().toISOString() };
   const r = await scrape(src.url!);
   if (!r.markdown.success || r.markdown.data == null) throw new Error(`Page text not readable: ${r.markdown.error_code ?? "unknown"} ${r.markdown.message ?? ""}`);
-  return { text: r.markdown.data, at: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString() };
+  return { text: r.markdown.data, at: capturedAt(r.cache_metadata) };
 }
 
 /** Full read: structured extraction plus the page text of the same capture. */
@@ -102,7 +102,7 @@ async function readModel(d: Domain, src: Source, origin: string): Promise<Snapsh
   } catch {}
   return {
     url: r.url,
-    fetchedAt: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString(),
+    fetchedAt: capturedAt(r.cache_metadata),
     extractor: "context.dev",
     ...verify(model, text),
     textHash: hash(text),
@@ -161,19 +161,22 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
       src.readAt = src.snapshot.fetchedAt;
     } else {
       const tried: { url: string; why: string }[] = [];
+      /** A page of this vendor could not be read at all: then "no price" is not known, whatever another page says. */
+      let failedRead = false;
       let best: { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null = null;
       /** Read one page. True when it gives prices; else the page and the reason are noted. */
       const attempt = async (url: string, via: Source["foundVia"]): Promise<boolean> => {
         try {
           const snapshot = await readModel(p.domain, { ...src, url }, origin);
           if (hasPrices(snapshot.model)) {
-            Object.assign(src, { url, foundVia: via, snapshot, error: null, readAt: snapshot.fetchedAt });
+            Object.assign(src, { url, foundVia: via, snapshot, error: null, readAt: snapshot.fetchedAt, unpricedSince: null });
             return true;
           }
           tried.push({ url, why: emptyReason(snapshot.model) });
           if (!best || (snapshot.model.plans?.length ?? 0) > (best.snapshot.model.plans?.length ?? 0)) best = { snapshot, url, via };
         } catch (e) {
           if (e instanceof ContextDevError && e.stop) throw e;
+          failedRead = true;
           tried.push({ url, why: message(e).slice(0, 120) });
         }
         return false;
@@ -199,7 +202,8 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         // The best read is kept, so the page can show the plan names it did find; the source says what is missing.
         const kept = best as { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null;
         // That page was read; it states no price. This is a fact of the page, kept apart from a failed read (unpriced).
-        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, readAt: kept.snapshot.fetchedAt, unpriced: true });
+        // Only when every page that was tried could be read: a failed read of the real pricing page is not "no price".
+        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, readAt: kept.snapshot.fetchedAt, unpriced: !failedRead, unpricedSince: prev?.unpricedSince ?? (prev?.snapshot ? prev.snapshot.fetchedAt : kept.snapshot.fetchedAt) });
         src.error = hadPrices ? `${v.name}'s pricing page could not be read again (${tried[0]?.why ?? "unknown reason"}). The earlier read is kept.` : said;
       }
     }
@@ -355,7 +359,7 @@ async function extractWeb(src: WebSource, url: string): Promise<WebRead> {
     mkdirSync(".data/pages", { recursive: true });
     writeFileSync(`.data/pages/web--${src.id}--${new URL(url).hostname}.md`, text);
   } catch {}
-  return guard(src, r.json.data, text, { url, fetchedAt: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString(), truncated: r.json.isTruncated === true });
+  return guard(src, r.json.data, text, { url, fetchedAt: capturedAt(r.cache_metadata), truncated: r.json.isTruncated === true });
 }
 
 /** Read one web source: find its page (the spec's URL, else Search on its domain), then extract. An error is stored, not thrown, except a stop (rate limit, cap). */
@@ -447,7 +451,7 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
           const page = await scrape(was.url);
           if (!page.markdown.success || !page.markdown.data) throw new Error("Page text not readable: the page was not re-checked.");
           // The time of the capture, not of this call: a capture from the reader's cache may be older than the settle.
-          state.recheckedAt = new Date(Date.now() - (page.cache_metadata?.age_ms ?? 0)).toISOString();
+          state.recheckedAt = capturedAt(page.cache_metadata);
           if (pageHash(page.markdown.data) !== was.read.textHash) {
             const first = await extractWeb(src, was.url);
             if (!diffWeb(src, was.read, first).length) state.read = first;
@@ -650,7 +654,15 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       if (cur?.textHash !== src.snapshot!.textHash || cur?.fetchedAt !== src.snapshot!.fetchedAt) return void (event = null);
       // The demo page lives on this app's origin, which changes with the port.
       // A read that gives no price keeps its explanation (collect(): what was tried and why) until a read gives one.
-      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? (hasPrices(snapshot.model) ? null : p.sources[id].error), unpriced: error == null && note == null && !hasPrices(snapshot.model), ...(error == null && readAt ? { readAt } : {}), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      // The page states no price: `error` holds the explanation of that (collect(): what was tried), and the source is
+      // marked unpriced, apart from a failed read. A failure text of an earlier check is not an explanation: it is replaced.
+      const stored = p.sources[id];
+      const noPrice = !hasPrices(snapshot.model);
+      const read = error == null && note == null;
+      const why = noPrice ? (stored.unpriced ? stored.error : `No price is stated on the pricing page of ${stored.name} (${emptyReason(snapshot.model)}).`) : null;
+      // Since when it has had no price: as stored, else since the read before this one when that had none either.
+      const since = !noPrice ? null : (stored.unpricedSince ?? (hasPrices(src.snapshot!.model) ? new Date().toISOString() : src.snapshot!.fetchedAt));
+      Object.assign(stored, { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? why, unpriced: read && noPrice, ...(read ? { unpricedSince: since } : {}), ...(error == null && readAt ? { readAt } : {}), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
     });
   }

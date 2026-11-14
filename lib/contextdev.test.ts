@@ -26,3 +26,14 @@ test("caps count requests sent: a retry after a 429 is reserved too, and none is
     api.close();
   }
 });
+
+test("the capture time of an answer fails closed: a cache hit of unknown age is never a fresh read", async () => {
+  const { capturedAt } = await import("./contextdev.ts");
+  const now = Date.parse("2026-11-20T08:30:00.000Z");
+  assert.equal(capturedAt({ status: "miss", age_ms: 0 }, now), "2026-11-20T08:30:00.000Z");
+  assert.equal(capturedAt({ status: "hit", age_ms: 86_400_000 }, now), "2026-11-19T08:30:00.000Z");
+  // No metadata at all is an answer that was not served from a cache as far as it says: the time of the call.
+  assert.equal(capturedAt(undefined, now), "2026-11-20T08:30:00.000Z");
+  // A hit without an age, an age that is no number, and a negative age: unknown, so as old as can be.
+  for (const meta of [{ status: "hit" }, { status: "hit", age_ms: "86400000" }, { status: "miss", age_ms: -5 }, { status: "hit", age_ms: Number.NaN }]) assert.equal(capturedAt(meta, now), "1970-01-01T00:00:00.000Z", JSON.stringify(meta));
+});

@@ -5,7 +5,7 @@
 // a second way. Only a playground that rests on live data (price pages or web sources) gets a record.
 import { joinNames, recordPath, rowNamed } from "./card.ts";
 import { standing } from "./diff.ts";
-import type { PricingModel } from "./domain.ts";
+import { hasPrices, type PricingModel } from "./domain.ts";
 import { rank } from "./pricing.ts";
 import type { Playground } from "./store.ts";
 import { RECORD } from "./texts.ts";
@@ -76,34 +76,51 @@ export function fullRead(p: Playground, since: string | null = null): boolean {
   return p.kit ? fullReadKit(p, since) : priceGaps(p, since).length === 0;
 }
 
-/** Why the pages of a price playground are not a full read: one entry per vendor, in Clay's words. Empty: a full read. */
-export function priceGaps(p: Playground, since: string | null = null): { vendor: string; reason: string }[] {
-  const from = since ? new Date(Date.parse(since) - 60_000).toISOString() : null;
+/** A page read up to a minute before a check began is of that check: a call can join a re-check begun moments ago (lib/pipeline.ts). */
+const startOf = (since: string | null) => (since ? new Date(Date.parse(since) - 60_000).toISOString() : null);
+/**
+ * A capture that is much older than the attempt that stored it came from a cache. Ten minutes: a read with its two
+ * extractions takes at most a few. This test needs no start time, so it also guards read_playground and the record.
+ */
+const fromCache = (capture: string | null | undefined, attempt: string | null | undefined) => !!capture && !!attempt && Date.parse(capture) < Date.parse(attempt) - 600_000;
+
+/**
+ * Why the pages of a price playground are not a full read: one entry per vendor, in Clay's words. Empty: a full read.
+ * A vendor without a price is left out of the comparison only when all of this holds: the page was read in this check
+ * (unpriced), its model has no price, it had none already when the person saved the decision (unpricedSince), and no
+ * change of it was confirmed since. So a page that turns into a bot wall or loses its prices after the decision is not
+ * waved through: the person chose knowing that this vendor had no price, and that is still all Clay knows.
+ */
+export function priceGaps(p: Playground, since: string | null = null): { id: string; vendor: string; reason: string }[] {
+  const from = startOf(since);
   const inCheck = (t: string | null | undefined) => !from || (!!t && t >= from);
+  const d = p.decision;
   const gaps = p.domain.vendors.flatMap((v) => {
     const src = p.sources[v.id];
+    const noPrice = !!src?.snapshot && src.unpriced === true && !hasPrices(src.snapshot.model);
+    const asSaved = noPrice && (!d || (!!src!.unpricedSince && src!.unpricedSince <= d.savedAt && !p.events.some((e) => e.sourceId === v.id && e.at > d.savedAt)));
     const reason = !src?.snapshot ? "its pricing page was never read"
-      : src.error && src.unpriced !== true ? "the read of its pricing page failed, or two reads of it disagreed; its facts are the earlier ones"
+      : noPrice && !asSaved ? "its pricing page states no price now, and that was not so, or not the same, when the decision was saved"
+      : src.error && !noPrice ? "the read of its pricing page failed, or two reads of it disagreed; its facts are the earlier ones"
       : src.snapshot.quarantined?.length ? "a number that was read is not on its page"
       : src.snapshot.truncated ? "its pricing page was cut for length"
       : !inCheck(src.lastCheckedAt) ? "its pricing page was not read in this check"
-      // Only a re-check has a start time; the capture time is kept since this rule exists, so an older store has none.
-      : from && !inCheck(src.readAt) ? "its pricing page came from a cache: the capture is older than this check"
+      // In a re-check the capture itself must be of this check; a source stored before the capture time was kept has none.
+      : (from && !inCheck(src.readAt)) || fromCache(src.readAt, src.lastCheckedAt) ? "its pricing page came from a cache: the capture is older than this check"
       : null;
-    return reason ? [{ vendor: quoted(p, v.id), reason }] : [];
+    return reason ? [{ id: v.id, vendor: quoted(p, v.id), reason }] : [];
   });
-  return p.domain.vendors.length ? gaps : [{ vendor: "none", reason: "the playground has no vendor" }];
+  return p.domain.vendors.length ? gaps : [{ id: "", vendor: "none", reason: "the playground has no vendor" }];
 }
-/** The vendors whose page was read and states no price: they are left out of the comparison, and every answer says so. */
-const notCompared = (p: Playground) => p.domain.vendors.filter((v) => p.sources[v.id]?.unpriced === true && !p.sources[v.id]?.snapshot?.quarantined?.length).map((v) => ({ vendor: quoted(p, v.id), reason: "its pricing page was read and states no price that fits the saved values, so it is left out of the comparison", source: page(p.sources[v.id]?.url) }));
+/** The vendors whose page was read and states no price, as when the decision was saved: left out of the comparison, and every answer says so. */
+const notCompared = (p: Playground) => p.domain.vendors.filter((v) => p.sources[v.id]?.unpriced === true && !hasPrices(p.sources[v.id]?.snapshot?.model)).map((v) => ({ vendor: quoted(p, v.id), reason: "its pricing page was read and states no price, as when the decision was saved, so it is left out of the comparison", source: page(p.sources[v.id]?.url) }));
 
 function fullReadKit(p: Playground, since: string | null = null): boolean {
-  // A call can join a re-check that another call started moments ago (lib/pipeline.ts), so a page read up to a minute
-  // before this call began is of this check.
-  const from = since ? new Date(Date.parse(since) - 60_000).toISOString() : null;
+  const from = startOf(since);
   const now = (checked: string | null | undefined) => !from || (!!checked && checked >= from);
   const sources = p.kit!.kit.web ?? [];
-  return sources.length > 0 && sources.every((s) => { const st = p.kit!.web?.[s.id]; return !!st?.read && !st.error && !st.read.quarantined?.length && !st.read.truncated && now(st.lastCheckedAt); });
+  // As for prices: in a re-check the capture (recheckedAt) must be of this check, and a capture far older than its attempt is a cache.
+  return sources.length > 0 && sources.every((s) => { const st = p.kit!.web?.[s.id]; return !!st?.read && !st.error && !st.read.quarantined?.length && !st.read.truncated && now(st.lastCheckedAt) && (!from || now(st.recheckedAt ?? st.read.fetchedAt)) && !fromCache(st.recheckedAt ?? st.read.fetchedAt, st.lastCheckedAt); });
 }
 
 /**
@@ -186,6 +203,7 @@ function priceBody(p: Playground): { chosen: string[]; sections: string[] } | nu
   const chosen = r.ranked.find((v) => v.id === d.chosen);
   const usage = p.domain.metrics.map((m) => `- ${q(m.label, 60)}: ${(d.usage[m.id] ?? m.initial).toLocaleString("en-US")}${unit(m.unit)}`);
   const must = p.domain.features.filter((f) => d.required.includes(f.id)).map((f) => q(f.label, 60));
+  const left = priceGaps(p).length ? [] : notCompared(p);
   const row = (id: string, plan: string, cost: string) => `| ${quoted(p, id)}${id === d.chosen ? " (chosen)" : ""} | ${plan} | ${cost} | ${page(p.sources[id]?.url)} | ${when(p.sources[id]?.snapshot?.fetchedAt)} |`;
   return {
     chosen: [`Chosen on ${d.savedAt.slice(0, 10)}: ${quoted(p, d.chosen)}${chosen?.best ? `, plan ${q(chosen.best.plan, 60)}, ${usd(chosen.best.cost)} per month at the values below` : ", which cannot be priced at the values below"}.`],
@@ -206,7 +224,7 @@ function priceBody(p: Playground): { chosen: string[]; sections: string[] } | nu
       ...r.ranked.slice(0, 8).map((v) => row(v.id, q(v.best!.plan, 60), usd(v.best!.cost))),
       ...r.unranked.slice(0, 8).map((v) => row(v.id, v.best ? q(v.best.plan, 60) : "no plan fits", "unknown")),
       "",
-      ...(notCompared(p).length ? [`Not compared: ${notCompared(p).slice(0, 8).map((x) => x.vendor).join(", ")}. The page was read and states no price for these values, so the rule is judged over the vendors that have one.`, ""] : []),
+      ...(left.length ? [`Not compared: ${left.slice(0, 8).map((x) => x.vendor).join(", ")}. The page was read and states no price, so the rule is judged over the vendors that have one.`, ""] : []),
       ...leftOutLines(p),
     ],
   };
@@ -268,7 +286,7 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
   const path = recordPath(p.domain.id);
   // Without a full read of every page in this re-check (fullRead), the prices are not today's: nothing is said about holding.
   const gaps = priceGaps(p, since);
-  if (stopped || gaps.length) return { verdict: RECORD.notKnown("pricing page", "decision"), ...(gaps.length ? { not_read_in_full: gaps.slice(0, 8), if_this_repeats: NOT_FULL_WAY_OUT } : {}), do_now: RECORD.notKnownDo, decision_file: { path, keep: "Leave the file as it is: its check line is changed only after a full read." } };
+  if (stopped || gaps.length) return { verdict: RECORD.notKnown("pricing page", "decision"), ...(gaps.length ? { not_read_in_full: gaps.slice(0, 8).map(({ vendor, reason }) => ({ vendor, reason })), if_this_repeats: NOT_FULL_WAY_OUT } : {}), do_now: RECORD.notKnownDo, decision_file: { path, keep: "Leave the file as it is: its check line is changed only after a full read." } };
   const out = notCompared(p);
   const left = out.length ? { not_compared: out.slice(0, 8) } : {};
   const st = standing(d, models(p));
@@ -301,8 +319,8 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
  * A report of a saved price decision says "holds_on_data_as_last_read". Without a full read that is not known: the
  * field then says so, in every answer that carries the report (read_playground, recheck_playground).
  */
-export function guardDecision<T extends object>(report: T | string, p: Playground): T | string {
-  if (typeof report === "string" || fullRead(p)) return report;
+export function guardDecision<T extends object>(report: T | string, p: Playground, since: string | null = null): T | string {
+  if (typeof report === "string" || fullRead(p, since)) return report;
   return { ...report, holds_on_data_as_last_read: "not known: at the last check not every pricing page could be read in full" };
 }
 

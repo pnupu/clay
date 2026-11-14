@@ -296,7 +296,7 @@ test("review 5, finding 3: in the re-check answer foreign text is quoted data, a
 /** A price playground whose re-check began at SINCE and read every page again in full. */
 const SINCE = "2026-11-20T08:29:00.000Z";
 const rechecked = (bases: Record<string, number>, extra: object = {}) => {
-  const p = price(bases, extra) as unknown as { sources: Record<string, { lastCheckedAt: string; readAt?: string | null; unpriced?: boolean; error: string | null; snapshot: { fetchedAt: string; model: unknown; quarantined: object[]; truncated: boolean } | null }> };
+  const p = price(bases, extra) as unknown as { sources: Record<string, { lastCheckedAt: string; readAt?: string | null; unpriced?: boolean; unpricedSince?: string | null; error: string | null; snapshot: { fetchedAt: string; model: unknown; quarantined: object[]; truncated: boolean } | null }> };
   // Every page was read in this check, and the capture of each read is of this check too (readAt).
   for (const s of Object.values(p.sources)) { s.lastCheckedAt = "2026-11-20T08:29:30.000Z"; s.readAt = "2026-11-20T08:29:30.000Z"; s.snapshot!.fetchedAt = "2026-11-20T08:29:30.000Z"; }
   return p;
@@ -476,6 +476,8 @@ const withUnpriced = (chosen = "resend") => {
   s.snapshot!.model = { vendor: "V", currency: "USD", plans: [{ name: "Enterprise", base_price: null, custom_pricing: true, price_quote: "contact sales", meters: [], features: [] }] };
   s.error = "No price could be read for Stytch. Tried: https://stytch.example/pricing (plans were found, but no price or included quantity is stated for them).";
   s.unpriced = true;
+  // It had no price already when the person saved (10:05), and nothing of it changed since.
+  s.unpricedSince = "2026-11-14T10:00:00.000Z";
   return p;
 };
 
@@ -483,13 +485,13 @@ test("review 6: a vendor whose page was read and states no price does not make e
   // Read in full today, one vendor states no price: the rule is judged over the vendors that have one, and the answer says who was left out and why.
   const a = answerOf(withUnpriced());
   assert.match(a.verdict, /^STILL HOLDS: "Resend" is the cheapest at the saved values, at \$20 per month/);
-  assert.deepEqual(a.not_compared, [{ vendor: '"Stytch"', reason: "its pricing page was read and states no price that fits the saved values, so it is left out of the comparison", source: "https://stytch.example/pricing" }]);
+  assert.deepEqual(a.not_compared, [{ vendor: '"Stytch"', reason: "its pricing page was read and states no price, as when the decision was saved, so it is left out of the comparison", source: "https://stytch.example/pricing" }]);
   assert.equal(a.decision_file.with, "- Last checked: 2026-11-20 08:30 UTC: holds.");
   // The record says the same, and its check line certifies: the list can hold.
   const record = decisionRecord(withUnpriced() as never, URL)!.text;
   assert.match(record, /^- Last checked: 2026-11-20 08:29 UTC: holds\.$/m);
   assert.match(record, /^\| "Stytch" \| [^|]+ \| unknown \| /m);
-  assert.match(record, /^Not compared: "Stytch"\. The page was read and states no price for these values, so the rule is judged over the vendors that have one\.$/m);
+  assert.match(record, /^Not compared: "Stytch"\. The page was read and states no price, so the rule is judged over the vendors that have one\.$/m);
   // A price that rises is still found with such a vendor in the list.
   const risen = withUnpriced(); (risen.sources.resend.snapshot!.model as { plans: { base_price: number }[] }).plans[0].base_price = 45;
   assert.match(answerOf(risen).verdict, /^NO LONGER HOLDS: "Resend" now costs \$45/);
@@ -501,6 +503,11 @@ test("review 6: a vendor whose page was read and states no price does not make e
 test("review 6: the reviewers' rule stands beside it: a failed, stale, cut or doubtful read still certifies nothing", () => {
   const shapes: Record<string, [(p: ReturnType<typeof withUnpriced>) => void, RegExp]> = {
     "today's read of the unpriced vendor failed (the pipeline clears the mark and stores the failure)": [(p) => { p.sources.stytch.unpriced = false; p.sources.stytch.error = "Context.dev POST /web/scrape -> 500"; }, /"Stytch".*the read of its pricing page failed/],
+    // Review of this change: "no price" is waved through only as the person saw it when they saved.
+    "the vendor had a price when the decision was saved and its page states none now (a bot wall, a soft 404)": [(p) => (p.sources.stytch.unpricedSince = "2026-11-18T09:00:00.000Z"), /"Stytch".*states no price now, and that was not so, or not the same, when the decision was saved/],
+    "the unpriced page changed after the decision was saved (a confirmed change of it)": [(p) => ((p as unknown as { events: object[] }).events = [{ id: "e", at: "2026-11-18T09:00:00.000Z", sourceId: "stytch", trigger: "manual", changes: [{ path: "plans", before: 1, after: 0 }], verdict: null }]), /"Stytch".*states no price now, and that was not so/],
+    "a store from before this rule: no time since when it has had no price": [(p) => delete p.sources.stytch.unpricedSince, /"Stytch".*states no price now/],
+    "the mark says no price, but the model has one and an error is stored": [(p) => { (p.sources.stytch.snapshot!.model as { plans: { base_price: number | null; custom_pricing: boolean }[] }).plans[0] = { ...(p.sources.resend.snapshot!.model as { plans: { base_price: number; custom_pricing: boolean }[] }).plans[0] }; }, /"Stytch".*the read of its pricing page failed/],
     "the unpriced vendor was not read in this check": [(p) => (p.sources.stytch.lastCheckedAt = "2026-11-14T10:00:00.000Z"), /"Stytch".*was not read in this check/],
     "a number of the unpriced vendor is not on its page": [(p) => p.sources.stytch.snapshot!.quarantined.push({ path: "Enterprise/base", value: 3 }), /"Stytch".*a number that was read is not on its page/],
     "a priced vendor's read failed": [(p) => (p.sources.postmark.error = "HTTP 500"), /"Postmark".*the read of its pricing page failed/],
@@ -542,4 +549,23 @@ test("review 6: a capture from a cache is not today's read, whatever the time of
   // The check line of a record is the time of the oldest capture, not of the attempt.
   const rec = rechecked({ resend: 20, postmark: 25 }); rec.sources.postmark.readAt = "2026-11-20T08:28:10.000Z";
   assert.match(decisionRecord(rec as never, URL)!.text, /^- Last checked: 2026-11-20 08:28 UTC: holds\.$/m);
+});
+
+test("review 6: a cached capture is refused without a start time too, for prices and for a preview", () => {
+  // read_playground after a re-check that timed out has no start time. A capture far older than its own attempt is a cache.
+  const cached = rechecked({ resend: 20, postmark: 25 }); cached.sources.postmark.readAt = "2026-11-19T08:29:30.000Z";
+  assert.ok(decisionRecord(cached as never, URL)!.text.includes("- Last checked: not known: at the last check not every pricing page could be read in full."));
+  const report = { vendor: "resend", holds_on_data_as_last_read: true };
+  assert.equal((guardDecision(report, cached as never) as { holds_on_data_as_last_read: unknown }).holds_on_data_as_last_read, "not known: at the last check not every pricing page could be read in full");
+  // With the start time that read_playground gets ("since"), a page that was not read in that check is refused as well.
+  const skipped = rechecked({ resend: 20, postmark: 25 }); skipped.sources.postmark.lastCheckedAt = skipped.sources.postmark.readAt = "2026-11-20T07:00:00.000Z";
+  assert.deepEqual(guardDecision(report, skipped as never), report);
+  assert.equal((guardDecision(report, skipped as never, SINCE) as { holds_on_data_as_last_read: unknown }).holds_on_data_as_last_read, "not known: at the last check not every pricing page could be read in full");
+  // A preview: settled three days ago, the re-check is answered from a capture of yesterday. The capture is after the settle, and still not today's.
+  const k = webPreview({ ...SETTLED, at: "2026-11-17T08:00:00.000Z" }) as unknown as { kit: { web: Record<string, { lastCheckedAt: string; recheckedAt?: string; read: { fetchedAt: string } }> } };
+  const st = Object.values(k.kit.web)[0];
+  st.lastCheckedAt = "2026-11-20T08:29:30.000Z"; st.recheckedAt = "2026-11-20T08:29:30.000Z";
+  assert.match((recheckFile(k as never, URL, "2026-11-20T08:30:00.000Z", 0, false, SINCE) as { verdict: string }).verdict, /^STILL HOLDS/);
+  st.recheckedAt = "2026-11-19T08:29:30.000Z";
+  assert.match((recheckFile(k as never, URL, "2026-11-20T08:30:00.000Z", 0, false, SINCE) as { verdict: string }).verdict, /^NOT KNOWN/);
 });

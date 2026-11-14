@@ -38,6 +38,8 @@ export type Source = {
   readAt?: string | null;
   /** The last read succeeded and the page states no price: `error` is then the explanation of that, not a failed read (fullRead() in lib/record.ts). */
   unpriced?: boolean;
+  /** Since when the page has been read without a price. Kept over a failed read; cleared when a read finds a price. */
+  unpricedSince?: string | null;
   monitor: { id: string; secret: string; webhookUrl: string } | null;
 };
 

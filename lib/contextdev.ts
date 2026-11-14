@@ -186,6 +186,17 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
 }
 
 type Output<T> = { requested: boolean; success: boolean | null; data: T | null; error_code?: string; message?: string; isTruncated?: true };
+/**
+ * When the page of a scrape answer was captured. Clay asks for a fresh capture (maxAgeMs 0), so the age is normally 0.
+ * It fails closed: an answer that says it came from a cache without a usable age is of unknown age, which is given as
+ * the epoch, so it never counts as read "in this check" (lib/record.ts, fullRead).
+ */
+export function capturedAt(meta: { status?: string; age_ms?: unknown } | null | undefined, now = Date.now()): string {
+  const age = meta?.age_ms;
+  if (typeof age === "number" && Number.isFinite(age) && age >= 0) return new Date(now - age).toISOString();
+  return meta?.status === "hit" || age != null ? new Date(0).toISOString() : new Date(now).toISOString();
+}
+
 export type ScrapeResult = {
   url: string;
   markdown: Output<string>;

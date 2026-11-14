@@ -12,7 +12,7 @@ import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } fr
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
 import { EXAMPLE_CLEARED, canRead, canWrite, currentActor, publishedRefusal } from "./accounts";
-import { decisionRecord, guardDecision, recheckFile, recheckVerdict } from "./record";
+import { decisionRecord, guardDecision, priceGaps, recheckFile, recheckVerdict } from "./record";
 
 /**
  * How long a tool call waits for web reads before it answers. An agent's client cuts a tool call at about 60 seconds
@@ -170,7 +170,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const record = own ? decisionRecord(p, url(playground_id)) : null;
       const report = view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t);
       // A saved decision is said to hold only on a full read of every pricing page (lib/record.ts).
-      if ("saved_decision" in report) report.saved_decision = guardDecision(report.saved_decision, view) as typeof report.saved_decision;
+      if ("saved_decision" in report) report.saved_decision = guardDecision(report.saved_decision, view, t == null ? null : new Date(t).toISOString()) as typeof report.saved_decision;
       return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...report, ...(own || !view.kit ? {} : { preview: { status: "not shown", detail: "Whether this preview runs, and any error it reported, is not shown to non-owners." } }), ...(record ? { decision_record: record } : {}), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
     },
   );
@@ -223,6 +223,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const results = w.value!;
       const stop = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
       const changed = results.flatMap((r) => (r.status === "fulfilled" && r.value ? [eventReport(r.value)] : []));
+      // The same per-vendor judgement as the verdict, so the source list cannot contradict it.
+      const gaps = priceGaps(p, started);
       return text({
         playground_id,
         url: url(playground_id),
@@ -230,7 +232,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         ...(stop ? { stopped: `The re-check stopped early: ${message(stop.reason)}. Do not retry now; tell the person.` } : {}),
         // First the verdict, what changed, what the saved rule now picks and what to do (lib/record.ts); the detail follows.
         ...recheckVerdict(p, url(playground_id), new Date().toISOString(), !!stop, started),
-        sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.unpriced ? "read; the page states no price, so this vendor is not compared" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
+        sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : gaps.some((g) => g.id === id) ? `not read in full: ${gaps.find((g) => g.id === id)!.reason}` : p.sources[id]?.unpriced ? "read; the page states no price, so this vendor is not compared" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
         changes: changed,
         saved_decision: guardDecision(decisionReport(p) ?? "none: the person has not saved a decision yet", p),
         ...(p.decision ? { ranking_under_saved_assumptions: rankingReport(p, p.decision) } : {}),
