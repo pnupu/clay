@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import type { MetricDef, PricingModel } from "@/lib/domain";
 import { crossovers, rank } from "@/lib/pricing";
+import { changesAt, sayMetric, sayRange } from "@/lib/quantity";
 import { useFlip } from "@/app/flip";
 import { toPos, toValue } from "@/app/scale";
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const num = (n: number) => n.toLocaleString("en-US");
-const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /**
  * The landing page's hero when the featured example is a price decision: its real ranking, small. One slider (the metric
@@ -54,31 +54,35 @@ export default function HeroRanking({ id, question, metric, usage, models, names
   const behind = cheapestFlips.filter((c) => c.at <= value);
   const leadBehind = behind[behind.length - 1];
   const before = behind[behind.length - 2];
+  // Every value of the metric is said by lib/quantity.ts, as on the price page: "30 GB of database storage", "about 360
+  // million input tokens". A value that was found (a change of place) is said to three figures, with "about" when cut.
+  const vendors = Object.values(names);
+  const at = (n: number) => sayMetric(metric, n, { approx: true, names: vendors });
   const flipLine = leadAhead
-    ? `The cheapest changes at ${num(leadAhead.at)} ${metric.unit}: ${name(leadAhead.to)} takes over from ${name(leadAhead.from)}.`
+    ? `${changesAt(metric, leadAhead.at, vendors)}: ${name(leadAhead.to)} takes over from ${name(leadAhead.from)}.`
     : leadBehind
-      ? (before ? `From ${num(before.at)} to ${num(leadBehind.at)} ${metric.unit} the cheapest is ${name(leadBehind.from)}.` : `Below ${num(leadBehind.at)} ${metric.unit} the cheapest is ${name(leadBehind.from)}.`)
+      ? (before ? `From ${sayRange(metric, before.at, leadBehind.at, { approx: true, names: vendors })} the cheapest is ${name(leadBehind.from)}.` : `Below ${at(leadBehind.at)} the cheapest is ${name(leadBehind.from)}.`)
       : flips.length === 0
-        ? `The order stays the same from ${num(metric.min)} to ${num(metric.max)} ${metric.unit}.`
+        ? `The order stays the same from ${sayRange(metric, metric.min, metric.max, { names: vendors })}.`
         : next
-          ? `The order changes at about ${num(next.at)} ${metric.unit}: ${name(next.up)} becomes cheaper than ${name(next.down)}.`
-          : `Below about ${num(flips[flips.length - 1].at)} ${metric.unit} the order is another: ${name(flips[flips.length - 1].down)} is cheaper than ${name(flips[flips.length - 1].up)} there.`;
-  const unit = lower(metric.label);
+          ? `The order changes at ${at(next.at)}: ${name(next.up)} becomes cheaper than ${name(next.down)}.`
+          : `Below ${at(flips[flips.length - 1].at)} the order is another: ${name(flips[flips.length - 1].down)} is cheaper than ${name(flips[flips.length - 1].up)} there.`;
+  const here = sayMetric(metric, value, { names: vendors });
   return (
     <div className="rank2" data-price-hero={id}>
       <p className="rank2__label">{byTeam ? "An example by the Clay team" : "An example"} · prices read from the web by Context.dev</p>
       <p className="rank2__question">{question}</p>
       <p className="rank2__answer" aria-live="polite">
-        {first ? <>At {num(value)} {unit} the cheapest is <b>{names[first.id] ?? first.id}</b>, {money(first.best!.cost)} a month.</> : <>At {num(value)} {unit} no vendor can be ranked.</>}
+        {first ? <>At {here} the cheapest is <b>{names[first.id] ?? first.id}</b>, {money(first.best!.cost)} a month.</> : <>At {here} no vendor can be ranked.</>}
       </p>
       <div className="rank2__control">
         <label htmlFor={`hero-${metric.id}`}>{metric.label}</label>
         <output htmlFor={`hero-${metric.id}`}>{num(value)}</output>
         <div className="rank2__track">
-          <input id={`hero-${metric.id}`} type="range" min={0} max={1000} value={pos} aria-valuetext={`${num(value)} ${metric.unit}`} onChange={(e) => { setPos(Number(e.target.value)); setTouched(true); }} />
+          <input id={`hero-${metric.id}`} type="range" min={0} max={1000} value={pos} aria-valuetext={here} onChange={(e) => { setPos(Number(e.target.value)); setTouched(true); }} />
           {/* Marks on the track: a strong one where the cheapest vendor changes, a light one where two others change places. */}
-          {cheapestFlips.map((c) => <i key={`lead-${c.at}`} data-lead style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The cheapest changes at ${num(c.at)} ${metric.unit}`} />)}
-          {flips.map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at about ${num(c.at)} ${metric.unit}`} />)}
+          {cheapestFlips.map((c) => <i key={`lead-${c.at}`} data-lead style={{ left: `${toPos(metric, c.at) / 10}%` }} title={changesAt(metric, c.at, vendors)} />)}
+          {flips.map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at ${at(c.at)}`} />)}
         </div>
         <p className="rank2__flip">{flipLine}</p>
       </div>

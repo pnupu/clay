@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
 import { cents, crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
 import { reasonOf, recordPath } from "@/lib/card";
+import { changesAt, sayMetric, sayNumber } from "@/lib/quantity";
 import { changeSentence, effectSentence, fold, sourceWords } from "@/lib/history";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { commitNumber, liveNumber } from "@/lib/numberbox";
@@ -200,11 +201,12 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     setTolerance(decision.tolerance ?? 0);
   };
   const nameOf = (id: string | null) => (id ? (state?.sources[id]?.name ?? domain.vendors.find((v) => v.id === id)?.name ?? id) : null);
-  /** A quantity in words: "120,000 emails per month", "5 team members", "50 GB bandwidth per month" (a short unit such as GB is said). */
+  /** Names that keep their capital at the start of a metric's label ("Neon compute"). */
+  const vendorNames = domain.vendors.map((v) => v.name);
+  /** A quantity in words, as the landing page's hero says it (lib/quantity.ts): "120,000 emails", "5 team members", "50 GB of bandwidth". */
   const qty = (k: string, n: number) => {
     const m = domain.metrics.find((x) => x.id === k);
-    const label = lower(h.label(k));
-    return m && m.unit.length <= 3 && !label.toLowerCase().includes(m.unit.toLowerCase()) ? `${num(n)} ${m.unit} ${label}` : `${num(n)} ${label}`;
+    return m ? sayMetric(m, n, { names: vendorNames }) : `${num(n)} ${lower(h.label(k))}`;
   };
   /** Assumptions in words: "120,000 emails per month; must have SSO". */
   const wordsOf = (x: Assumptions) => [Object.entries(x.usage).filter(([, n]) => n > 0).map(([k, n]) => qty(k, n)).join(", "), x.required.length ? `must have ${x.required.map((f) => lower(h.label(f))).join(", ")}` : ""].filter(Boolean).join("; ");
@@ -285,8 +287,17 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               At these numbers the cheapest{maybeCheaper.length ? " of the fully priced vendors" : ""} is <b>{sources[ranking.ranked[0].id]?.name}</b>, <b>{money(ranking.ranked[0].best!.cost)}</b> a month
               {ranking.ranked[1] ? (cents(gap) === 0 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${amount(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
               {maybeCheaper.length > 0 && <span className="warn"> {maybeCheaper.map((v) => sources[v.id]?.name).join(", ")} could be cheaper: a price is unknown.</span>}
-              {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {lower(axisDef.label)}.</span>}
+              {nextCross && <span className="muted"> {changesAt(axisDef, nextCross.at, vendorNames)}.</span>}
             </p>
+          )}
+          {/* The fact in one sentence, where the answer is read; the reasons are one press away. */}
+          {productVendors.length > 0 && (
+            <details className="small" data-not-like-for-like>
+              <summary className="muted">Each row is that vendor’s cheapest product that fits: the products differ.</summary>
+              <p className="small warn">
+                Not like-for-like: {productVendors.map((x) => x.name).join(", ")} {productVendors.length === 1 ? "lists" : "list"} separate products on {productVendors.length === 1 ? "its" : "their"} page (for example different GPU models), not tiers of one product. Each row shows the cheapest product of that vendor that fits your values, so the ranking does not compare the same thing. Each row names the product its price is for.
+              </p>
+            </details>
           )}
         <div className="pgrid">
           {/* The owner's saved decision in one line (screens where its block is far below). A visitor of an example gets no
@@ -323,11 +334,6 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           <section className="results">
             <div className="pane">
               <h2>Monthly cost at these numbers</h2>
-              {productVendors.length > 0 && (
-                <p className="small warn" data-not-like-for-like>
-                  Not like-for-like: {productVendors.map((x) => x.name).join(", ")} {productVendors.length === 1 ? "lists" : "list"} separate products on {productVendors.length === 1 ? "its" : "their"} page (for example different GPU models), not tiers of one product. Each row shows the cheapest product of that vendor that fits your values, so the ranking does not compare the same thing. Each row names the product its price is for.
-                </p>
-              )}
               <ol className="rank" ref={rankList}>
                 {ranking.ranked.map((v, i) => (
                   <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={() => setChosen(pick === v.id ? null : v.id)} next={pick === v.id ? selectedNext : null} />
@@ -356,12 +362,12 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               </div>
               <Chart models={models} a={a} axis={axisDef} cross={cross} names={Object.fromEntries(Object.values(sources).map((s) => [s.id, s.name]))} />
               {cross.length === 0 ? (
-                <p className="muted small">The cheapest vendor does not change anywhere between {num(axisDef.min)} and {num(axisDef.max)} {axisDef.unit}.</p>
+                <p className="muted small">The cheapest vendor does not change anywhere between {sayNumber(axisDef.min)} and {sayMetric(axisDef, axisDef.max, { names: vendorNames })}.</p>
               ) : (
                 <ul className="cross">
                   {cross.map((c, ci) => (
                     <li key={`${ci}:${c.at}`}>
-                      At <button className="linkbtn" onClick={() => setUsage({ ...usage, [axisDef.id]: c.at })}>{num(c.at)} {axisDef.unit}</button> the cheapest changes from <b>{c.from ? sources[c.from]?.name : "none"}</b> to <b>{c.to ? sources[c.to]?.name : "none"}</b>.
+                      At <button className="linkbtn" onClick={() => setUsage({ ...usage, [axisDef.id]: c.at })}>{sayMetric(axisDef, c.at, { approx: true, names: vendorNames })}</button> the cheapest changes from <b>{c.from ? sources[c.from]?.name : "none"}</b> to <b>{c.to ? sources[c.to]?.name : "none"}</b>.
                     </li>
                   ))}
                 </ul>
