@@ -64,3 +64,6 @@ ul.plain { display: grid; gap: 6px; }
 .command.copyable { position: relative; margin: 6px 0 8px; }
 .command.copyable pre.code { padding-right: 72px; margin: 0; }
 .command.copyable button { position: absolute; top: 6px; right: 6px; }
+/* Price page: the note of a typed number box spans the control's row; the prompt under a selected vendor. */
+.control .number-note, .tolerance .number-note { grid-column: 1 / -1; display: block; }
+.select-next { margin: 6px 0 0 18px; padding: 6px 10px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 0 6px 6px 0; }

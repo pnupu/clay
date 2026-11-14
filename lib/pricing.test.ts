@@ -168,3 +168,16 @@ test("plans that are separate products are told apart from tiers of one product"
   assert.equal(productLike(["Foundation 50k", "Foundation 100k", "Flex"]), false);
   assert.equal(productLike(["Tier 10", "Tier 25", "Tier 100"]), false);
 });
+
+test("ties: one rule for the ranking and the verdict (cost to the cent, then id)", () => {
+  // Beta is listed first; both cost $20 (no usage beyond the included amount), so Alpha (id order) leads, in the ranking and in the verdict.
+  const models = { beta: model(20, meter(1_000_000, [])), alpha: model(20, meter(1_000_000, [])) };
+  const a = { usage: { mau: 100 }, required: [] };
+  assert.deepEqual(rank(models, a).ranked.map((v) => v.id), ["alpha", "beta"]);
+  const st = stand(models, a, "beta", 0);
+  assert.equal(st.state, "cheapest");
+  assert.equal(st.holds, true);
+  assert.equal(st.cheapest, "alpha");
+  assert.match(standSentence(st, "Beta Post", "Alpha Mail"), /Beta Post is level with Alpha Mail, the cheapest/);
+  assert.match(standSentence(stand(models, a, "alpha", 0), "Alpha Mail", "Alpha Mail"), /^Alpha Mail is the cheapest/);
+});

@@ -1,11 +1,12 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
 import { crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
 import { becauseOf } from "@/lib/card";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
+import { commitNumber, liveNumber } from "@/lib/numberbox";
 import type { Exploration, PublicState } from "@/lib/store";
 
 type Src = PublicState["sources"][string];
@@ -147,9 +148,9 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   const gap = (ranking.ranked[1]?.best?.cost ?? 0) - topCost;
   /** Vendors that cannot be fully priced and whose known cost is below the cheapest ranked vendor. */
   const maybeCheaper = ranking.unranked.filter((v) => v.best && v.best.cost < topCost);
-  /** The header states the oldest check, so a fresh demo check cannot make old real data look fresh. */
+  /** The header states the oldest read, in the same word as the rows ("read"), so fresh demo data cannot make old real data look fresh. */
   const healthy = collected.filter((x) => !x.error);
-  const oldestCheck = healthy.map((x) => x.lastCheckedAt ?? "").sort()[0];
+  const oldestRead = healthy.map((x) => x.snapshot?.fetchedAt ?? "").sort()[0];
   /** The vendor the person clicked, while it can still be ranked. Nothing is selected by default: the cheapest row is a fact, not a choice. */
   const pick = chosen && ranking.ranked.some((v) => v.id === chosen) ? chosen : null;
 
@@ -222,6 +223,24 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   /** Vendors whose rows on the page are separate products, not tiers: their price is for the cheapest product that fits. */
   const productVendors = Object.values(sources).filter((x) => productLike((x.snapshot?.model.plans ?? []).map((p) => p.name)));
 
+  /** The save panel: on a phone it is far below the ranking, so the selected row brings the person to it. */
+  const saveBox = useRef<HTMLDivElement>(null);
+  const toSave = () => {
+    saveBox.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    saveBox.current?.querySelector<HTMLButtonElement>("button.primary")?.focus({ preventScroll: true });
+  };
+  /** What a Select means, said at the selected row: where to save it, or that an example saves nothing. */
+  const selectedNext: ReactNode = !canWrite ? (
+    <p className="small select-next" data-select-next>This is an example, so a choice is not saved here. <Link href="/connect">Connect your agent</Link> to build your own and save it.</p>
+  ) : unsaved ? (
+    <p className="small select-next" data-select-next>Not saved yet. <button className="link" onClick={toSave}>Save this choice ↓</button></p>
+  ) : null;
+  /**
+   * When the tolerance box corrected a typed value: the tap on Save that left the box (and so caused the correction) only
+   * shows it, so nothing is saved that the person did not see. A later tap saves.
+   */
+  const toleranceCorrectedAt = useRef(0);
+
   if (!state) return <Shell className={shell}><p className="muted">Loading…</p></Shell>;
 
   const collectedAll = domain.vendors.every((v) => sources[v.id]?.snapshot || sources[v.id]?.error);
@@ -243,7 +262,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           {busy ? <span className="muted">{busy}…</span> : reading ? (
             <span className="live" data-building><i />{work.kind === "recheck" ? `Re-reading the pricing pages: ${work.pending.length} to go…` : `Reading the pricing pages: ${collected.length} of ${domain.vendors.length} read…`}</span>
           ) : collected.length > 0 && (
-            <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
+            <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest read {ago(oldestRead, now)}</span>
           )}
           {!collectedAll && !reading && canWrite && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
           {collected.length > 0 && canWrite && <button disabled={!!busy} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
@@ -269,7 +288,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               panel comes after the ranking and the chart, long after the "Saved choice" badge in the ranking. */}
           {decision && savedStand && (
             <p className={`verdict-bar ${savedStand.holds ? "ok" : "bad"}`} data-verdict-bar>
-              {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values.{" "}
+              {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values: {why(savedStand, canWrite, decision.chosen)}.{" "}
               {/* A button, not a hash link: the screen is also embedded in the landing page, whose URL must not change. */}
               <button className="link" onClick={() => standingPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Details</button>
             </p>
@@ -281,8 +300,9 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
             {metrics.map((m) => (
               <div className="control" key={m.id}>
                 <label htmlFor={m.id}>{m.label}</label>
-                <input className="value" type="number" min={0} value={usage[m.id]} onChange={(e) => setUsage({ ...usage, [m.id]: Math.max(0, Number(e.target.value) || 0) })} aria-label={`${m.label}, exact value`} />
-                <input id={m.id} type="range" min={0} max={1000} value={toPos(m, usage[m.id])} onChange={(e) => setUsage({ ...usage, [m.id]: toValue(m, Number(e.target.value)) })} />
+                <NumberBox className="value" value={usage[m.id]} min={m.min} max={m.max} label={`${m.label}, exact value`} onChange={(v) => setUsage((u) => ({ ...u, [m.id]: v }))} />
+                {/* The slider moves on an internal 0 to 1000 scale; a screen reader hears the value and its unit. */}
+                <input id={m.id} type="range" min={0} max={1000} value={toPos(m, usage[m.id])} aria-valuetext={`${num(usage[m.id])} ${m.unit}`} onChange={(e) => setUsage({ ...usage, [m.id]: toValue(m, Number(e.target.value)) })} />
               </div>
             ))}
             {features.length > 0 && <h3>Must have</h3>}
@@ -307,7 +327,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {ranking.ranked[0] && (
                 <p className="answer">
                   {maybeCheaper.length ? "Cheapest of the fully priced vendors" : "Cheapest"}: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month
-                  {ranking.ranked[1] ? (gap < 0.5 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${money(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
+                  {ranking.ranked[1] ? (Math.round(gap * 100) === 0 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${money(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
                   {maybeCheaper.length > 0 && <span className="warn"> {maybeCheaper.map((v) => sources[v.id]?.name).join(", ")} could be cheaper: a price is unknown.</span>}
                   {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {lower(axisDef.label)}.</span>}
                 </p>
@@ -319,7 +339,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               )}
               <ol className="rank">
                 {ranking.ranked.map((v, i) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={() => setChosen(pick === v.id ? null : v.id)} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={() => setChosen(pick === v.id ? null : v.id)} next={pick === v.id ? selectedNext : null} />
                 ))}
               </ol>
               {ranking.unranked.length > 0 && <h3>Cannot be ranked</h3>}
@@ -369,14 +389,17 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
               {pick && unsaved && canWrite && (
-                <div className="save">
+                <div className="save" ref={saveBox}>
                   <p className="small">You selected <b>{sources[pick]?.name}</b> for {wordsOf(a)}. {decision ? "It is not saved: your saved decision is still as shown above." : "It is not saved yet."}</p>
                   <label className="small tolerance">
                     Still fine if within $
-                    <input type="number" min={0} step={10} value={tolerance} onChange={(e) => setTolerance(Math.max(0, Number(e.target.value) || 0))} aria-label="Tolerance in dollars per month" />
+                    <NumberBox value={tolerance} min={0} label="Tolerance in dollars per month" onChange={setTolerance} onCorrected={() => (toleranceCorrectedAt.current = Date.now())} />
                     per month of the cheapest
                   </label>
-                  <button className="primary" disabled={!!busy} onClick={() => run("Saving", `${api}/decision`, "POST", { usage, required, chosen: pick, tolerance })}>
+                  <button className="primary" disabled={!!busy} onClick={() => {
+                    if (Date.now() - toleranceCorrectedAt.current < 1000) return;
+                    run("Saving", `${api}/decision`, "POST", { usage, required, chosen: pick, tolerance });
+                  }}>
                     {!decision ? "Save decision:" : decision.chosen === pick ? "Update saved decision:" : "Replace saved decision with"} {sources[pick]?.name}
                   </button>
                 </div>
@@ -458,12 +481,71 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   );
 }
 
+/** Why the saved choice holds or not, in a few words (the full rule is in the Standing decision panel). */
+function why(st: Stand, own: boolean, chosen: string): string {
+  const tol = `${own ? "your" : "the saved"} tolerance of ${money(st.tolerance)}`;
+  switch (st.state) {
+    case "cheapest":
+      // In a tie the ranking names another vendor first (the tie rule of lib/pricing.ts).
+      return st.cheapest && st.cheapest !== chosen ? "it is level with the cheapest" : "it is the cheapest";
+    case "within":
+      return `${money(st.gap ?? 0)} above the cheapest, inside ${tol}`;
+    case "outside":
+      return st.tolerance > 0 ? `${money(st.gap ?? 0)} above the cheapest, more than ${tol}` : `${money(st.gap ?? 0)} above the cheapest, and it was saved with no tolerance`;
+    case "unknown":
+      return "a price of it is unknown";
+    case "ineligible":
+      return "no plan of it fits";
+    default:
+      return "it has no pricing data";
+  }
+}
+
+/**
+ * A typed number (lib/numberbox.ts). The text is the person's while they type: the box can be empty, and "3" on the way
+ * to "300000" is not pulled into the range. A complete number inside the range takes effect at once; Enter or leaving the
+ * box commits any other text, and a short note says when the value is not what was typed.
+ */
+function NumberBox({ value, min, max, label, className, onChange, onCorrected }: { value: number; min: number; max?: number; label: string; className?: string; onChange: (v: number) => void; onCorrected?: () => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const commit = () => {
+    if (text == null) return;
+    const r = commitNumber(text, { min, max, prev: value });
+    onChange(r.value);
+    setNote(r.note);
+    if (r.note) onCorrected?.();
+    setText(null);
+  };
+  return (
+    <>
+      <input
+        className={className}
+        type="text"
+        inputMode="decimal"
+        value={text ?? String(value)}
+        aria-label={label}
+        aria-invalid={note ? true : undefined}
+        onChange={(e) => {
+          setText(e.target.value);
+          setNote(null);
+          const live = liveNumber(e.target.value, { min, max });
+          if (live != null) onChange(live);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+      {note && <span className="small warn number-note" role="status">{note}</span>}
+    </>
+  );
+}
+
 /**
  * One vendor. `cheapest`: the first row of the ranking, which is a fact about the values on the page. `chosen`: the person
  * clicked Select on this row. `saved`: the vendor of the saved decision. The three are shown apart, so that neither the
  * cheapest row nor the saved vendor looks like a recommendation.
  */
-function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own, onChoose, effect }: { v: VendorCost; src: Src; required: string[]; now: number; place?: number; cheapest?: boolean; chosen?: boolean; saved?: boolean; own?: boolean; onChoose?: () => void; effect?: string }) {
+function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own, onChoose, effect, next }: { v: VendorCost; src: Src; required: string[]; now: number; place?: number; cheapest?: boolean; chosen?: boolean; saved?: boolean; own?: boolean; onChoose?: () => void; effect?: string; next?: ReactNode }) {
   const { label, humanize, color } = useContext(Dom);
   const p = v.best;
   const snap = src?.snapshot;
@@ -487,10 +569,12 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
         <span className="plan" title={p?.plan}>{p ? <>{products ? "product" : "plan"}: <b>{p.plan}</b></> : <span className="muted">no eligible plan</span>}</span>
         {/* The cost and its button are one unit: on a narrow screen they take a line of their own (globals.css). */}
         <span className="buy">
-          <span className="cost">{p ? (place ? money(p.cost) : `≥ ${money(p.cost)}`) : "—"}<span className="muted small"> / month</span></span>
+          {/* A row that cannot be ranked shows its known costs as a lower bound; with none known it says the price is unknown. */}
+          <span className="cost">{p ? (place ? money(p.cost) : Math.round(p.cost) > 0 ? `≥ ${money(p.cost)}` : <span className="small warn">price unknown</span>) : "—"}{p && (place || Math.round(p.cost) > 0) ? <span className="muted small"> / month</span> : null}</span>
           {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
         </span>
       </div>
+      {next}
       {effect && <p className="small warn">{effect}</p>}
       {products && p && <p className="small warn" data-products>This price is for <b>{p.plan}</b>, the cheapest of {names.length} separate products on this page that fits your values. Also there: {others.slice(0, 4).join(", ")}{others.length > 4 ? ` and ${others.length - 4} more` : ""}.</p>}
       {meets.length > 0 && <p className="small ok">Includes {meets.map((f) => lower(label(f))).join(", ")}.</p>}
@@ -609,9 +693,9 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
   const H = 250, L = 56, R = 12, T = 10, B = 28;
   const v = a.usage[axis.id] ?? axis.initial;
   const log = isLog(axis);
-  // Window around the current value, so nearby crossovers stay readable.
-  const lo = log ? Math.max(axis.min, v / 10) : axis.min;
-  const hi = log ? Math.min(axis.max, Math.max(v * 10, axis.min * 100)) : Math.min(axis.max, Math.max(v * 2.5, axis.max / 20));
+  // The control's own range, as the sentence under the chart and the slider: one range everywhere.
+  const lo = axis.min;
+  const hi = axis.max;
   const N = 96;
   const xs = useMemo(() => Array.from({ length: N + 1 }, (_, i) => (log ? lo * Math.pow(hi / lo, i / N) : lo + ((hi - lo) * i) / N)), [log, lo, hi]);
   const series = useMemo(

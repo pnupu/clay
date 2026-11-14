@@ -103,15 +103,22 @@ export type Ranking = {
   cheapest: string | null;
 };
 
+/**
+ * The tie rule, used by the ranking and by every verdict: costs are compared to the cent, and vendors that cost the same
+ * are ordered by id. So "the cheapest" is the same vendor everywhere, also in a tie.
+ */
+export const cents = (n: number) => Math.round(n * 100);
 export function rank(models: Record<string, PricingModel | null>, a: Assumptions): Ranking {
   const all = Object.entries(models).map(([id, m]) => vendorCost(id, m, a));
-  const ranked = all.filter((v) => v.complete).sort((x, y) => x.best!.cost - y.best!.cost);
+  const ranked = all.filter((v) => v.complete).sort((x, y) => cents(x.best!.cost) - cents(y.best!.cost) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
   const top = ranked[0]?.best?.cost;
   const unranked = all
     .filter((v) => !v.complete)
     .map((v) => {
       let effect: string;
       if (!v.best) effect = "No plan meets these requirements, so it is out of the ranking.";
+      // No known cost at all: say the price is not stated, not "costs at least $0".
+      else if (cents(v.best.cost) === 0) effect = top == null ? "Its price is not stated; nothing else can be ranked either." : `Its price is not stated. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top))} per month. The winner depends on this.`;
       else if (top == null) effect = `Costs at least $${fmtN(Math.round(v.best.cost))}; nothing else can be ranked either.`;
       else if (v.best.cost >= top) effect = `Costs at least $${fmtN(Math.round(v.best.cost))}, which is already above the cheapest. The missing facts cannot change the winner.`;
       else effect = `Costs at least $${fmtN(Math.round(v.best.cost))}. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top - v.best.cost))} per month. The winner depends on this.`;
@@ -178,8 +185,8 @@ export function stand(models: Record<string, PricingModel | null>, a: Assumption
   if (v) {
     const cost = v.best!.cost;
     const gap = cost - base.cheapestCost!;
-    // A vendor level with the first row is also the cheapest.
-    const state = r.cheapest === chosen || gap <= 0 ? "cheapest" : gap <= base.tolerance ? "within" : "outside";
+    // A vendor level with the first row (the same cost to the cent, the tie rule of rank()) is also the cheapest.
+    const state = r.cheapest === chosen || cents(cost) <= cents(base.cheapestCost!) ? "cheapest" : gap <= base.tolerance ? "within" : "outside";
     return { ...base, state, cost, plan: v.best!.plan, gap, why: null, holds: state !== "outside" };
   }
   const u = r.unranked.find((x) => x.id === chosen);
@@ -219,13 +226,14 @@ export function standSentence(s: Stand, name: string, cheapestName: string | nul
   const more = `${name} ${costs} ${usd(s.cost ?? 0)} per month, ${usd(s.gap ?? 0)} more than ${cheapestName ?? "the cheapest vendor"}, the cheapest.`;
   switch (s.state) {
     case "cheapest":
-      return `${name} ${tried ? "would be" : "is"} the cheapest at ${usd(s.cost!)} per month.`;
+      // In a tie the ranking names the first vendor by the tie rule: the verdict says "level with" it, not "the cheapest".
+      return cheapestName && cheapestName !== name ? `${name} ${tried ? "would be" : "is"} level with ${cheapestName}, the cheapest, at ${usd(s.cost!)} per month.` : `${name} ${tried ? "would be" : "is"} the cheapest at ${usd(s.cost!)} per month.`;
     case "within":
       return `${more} That is within ${own ? "your" : "the saved"} tolerance of ${usd(s.tolerance)}.`;
     case "outside":
       return `${more} ${s.tolerance > 0 ? `That is above ${own ? "your" : "the saved"} tolerance of ${usd(s.tolerance)}.` : `${own ? "You saved it" : "It was saved"} with no tolerance, so it holds only while it is the cheapest.`}`;
     case "unknown":
-      return `${name} cannot be fully priced${s.why ? `: ${words(s.why)}` : ""}. Its known costs are at least ${usd(s.cost ?? 0)} per month.`;
+      return `${name} cannot be fully priced${s.why ? `: ${words(s.why)}` : ""}.${Math.round(s.cost ?? 0) > 0 ? ` Its known costs are at least ${usd(s.cost ?? 0)} per month.` : ""}`;
     case "ineligible":
       return `no ${name} plan fits${s.why ? `: ${words(s.why)}` : ""}.`;
     default:

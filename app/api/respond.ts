@@ -124,11 +124,13 @@ export async function access(req: Request, pg: string): Promise<{ read: boolean;
 }
 
 /** The answer to a bearer token that did not identify anyone, or null. Also for the read routes, so an agent learns that its key failed. */
-export function badKey(bad: Bad): Response | null {
-  if (bad === "blocked") return Response.json({ error: "Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from the Connect your agent page." }, { status: 429 });
-  if (bad === "revoked") return Response.json({ error: "This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in on Clay and create a new key on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+export function badKey(bad: Bad, req: Request): Response | null {
+  // The full address, so an agent can give the person a link instead of a page name.
+  const connect = `${publicBase() ?? new URL(req.url).origin}/connect`;
+  if (bad === "blocked") return Response.json({ error: `Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from ${connect}` }, { status: 429 });
+  if (bad === "revoked") return Response.json({ error: `This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in and create a new key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   if (bad === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
-  if (bad === "key") return Response.json({ error: "This key is not valid. It may have been regenerated or revoked. Get a new agent key on the Connect your agent page of Clay." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  if (bad === "key") return Response.json({ error: `This key is not valid. It may have been regenerated or revoked. Get a new agent key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   return null;
 }
 
@@ -177,9 +179,9 @@ export async function refused(req: Request): Promise<Response | null> {
   }
   const { actor, bad } = await identify(req.headers, req);
   holder.actor = actor;
-  const badAnswer = badKey(bad);
+  const badAnswer = badKey(bad, req);
   if (badAnswer) return badAnswer;
-  if (actor.kind === "visitor") return Response.json({ error: "Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  if (actor.kind === "visitor") return Response.json({ error: `Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one at ${publicBase() ?? new URL(req.url).origin}/connect` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   // Decoded, so an encoded form of an admin-only path (for example /api/p/x/%77atch) is recognised too.
   let path: string;
   try {

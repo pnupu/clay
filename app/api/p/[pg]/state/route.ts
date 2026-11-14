@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request, { params }: Ctx) {
   const { pg } = await params;
   const a = await access(req, pg);
-  const bad = badKey(a.bad);
+  const bad = badKey(a.bad, req);
   if (bad) return bad;
   if (!a.read) return Response.json({ error: "Playground not found, or it is private." }, { status: 404 });
   return stateResponse(pg, null, 200, a.write);
