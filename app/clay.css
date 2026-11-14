@@ -1,11 +1,239 @@
-/* Clay's own components (the playground, its controls and outputs), on the tokens that Taste Skill dealt (app/tokens.ts).
-   Loaded on every page: the website pages run a live playground in the hero. Class names here never match the kit's. */
+/* Clay's own components (the playground, its controls, results and outputs, the key page's blocks), on the system that
+   Taste Skill dealt for the website (app/tokens.ts): the stone ground, one blue for the action, Gabarito for headings,
+   Figtree for text, DM Mono for values and code, sharp corners, tonal buttons, one hairline.
+   Loaded on every page. Everything is under `.clay`, and no class name here is one the kit uses, so the two never meet:
+   an app page's <body> is `.clay`; a website page marks the block that holds Clay's own UI. */
 :root {
-  --c-ink: var(--p-ink); --c-muted: var(--p-muted); --c-page: var(--p-bg); --c-sunk: var(--p-surface);
-  --c-pane: #eceBe8; --c-line: color-mix(in oklab, var(--p-ink) 13%, transparent); --c-line-2: color-mix(in oklab, var(--p-ink) 28%, transparent);
-  --c-action: var(--p-action); --c-action-ink: var(--p-action-ink);
-  --ok: #1d5e2a; --warn: #7a4a00; --bad: #9c241c; --ok-bg: #d3e2cf; --bad-bg: #ecd3cf;
-  /* The names the playground components already use. */
-  --ink-2: var(--p-muted); --axis: var(--c-line-2); --mat: var(--p-surface); --accent: var(--p-action); --page: var(--p-bg);
+  --c-pane: #ecebe8;                                                   /* a pane: one step lighter than the ground */
+  --c-field: #f5f4f2;                                                  /* a field in a pane */
+  --c-line: color-mix(in oklab, var(--p-ink) 13%, transparent);        /* the one hairline */
+  --c-line-2: color-mix(in oklab, var(--p-ink) 30%, transparent);      /* a control's edge */
+  --c-tone: color-mix(in oklab, var(--p-ink) 9%, var(--c-pane));       /* the tonal button */
+  --c-tone-2: color-mix(in oklab, var(--p-ink) 16%, var(--c-pane));
+  --c-r-sm: 4px; --c-r-md: 6px; --c-r-lg: 8px; --c-r-btn: 4px;         /* radius "sharp" */
+  --ok: #1d5e2a; --warn: #744500; --bad: #9c241c; --ok-bg: #d5e3d0; --warn-bg: #ecdcc0; --bad-bg: #edd5d1;
+  /* Names the components already use. */
+  --ink: var(--p-ink); --ink-2: var(--p-muted); --muted: var(--p-muted); --line: var(--c-line); --axis: var(--c-line-2);
+  --surface: var(--c-pane); --page: var(--p-bg); --mat: var(--p-surface); --accent: var(--p-action);
+  /* Categorical series, fixed order by vendor (dataviz reference palette, validated on a light surface). */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #7a5cc4;
 }
 .k-value { display: none; }
+
+.clay { color: var(--p-ink); font: 16px/1.5 var(--font-text); }
+.clay *, .clay *::before, .clay *::after { box-sizing: border-box; }
+.clay h1 { font: var(--display-weight) clamp(30px, 2.4vw + 20px, 48px)/1.08 var(--font-display); letter-spacing: var(--display-tracking); margin: 0; text-wrap: balance; }
+.clay h2 { font: 500 18px/1.3 var(--font-text); letter-spacing: -0.01em; margin: 0 0 12px; }
+.clay h3 { font: 500 13px/1.4 var(--font-text); letter-spacing: 0.01em; text-transform: none; color: var(--p-muted); margin: 20px 0 8px; }
+.clay p { margin: 0 0 8px; text-wrap: pretty; }
+.clay ul, .clay ol { list-style: none; margin: 0; padding: 0; }
+.clay a:not(.button) { color: inherit; text-decoration: underline; text-decoration-color: var(--c-line-2); text-underline-offset: 3px; transition: text-decoration-color 0.15s; }
+.clay a:not(.button):hover { text-decoration-color: currentColor; }
+.clay code { font: 0.92em var(--font-mono); }
+.clay .muted { color: var(--p-muted); }
+.clay .small { font-size: 14px; line-height: 1.45; }
+.clay .ok { color: var(--ok); }
+.clay .warn { color: var(--warn); }
+.clay .bad { color: var(--bad); }
+.clay .eyebrow { font: 500 13px/1.4 var(--font-text); letter-spacing: 0.01em; text-transform: none; color: var(--p-muted); margin: 0 0 8px; }
+.clay .eyebrow a { color: inherit; }
+.clay :focus-visible { outline: 2px solid var(--p-action); outline-offset: 2px; }
+
+/* Buttons: one pair. The filled one marks the main action of a view; every other is tonal. They step on hover and press on click. */
+.clay button:not([class*="cl-"]), .clay a.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px;
+  font: 500 15px/1.1 var(--font-text); color: var(--p-ink); text-decoration: none; white-space: nowrap;
+  background: var(--c-tone); border: 1px solid transparent; border-radius: var(--c-r-btn); cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.clay button:not([class*="cl-"]):hover:not(:disabled), .clay a.button:hover { background: var(--c-tone-2); }
+.clay button:not([class*="cl-"]):active:not(:disabled), .clay a.button:active { transform: translateY(1px); }
+.clay button:not([class*="cl-"]):disabled { opacity: 0.5; cursor: default; }
+.clay button.primary, .clay a.button.primary { background: var(--p-action); color: var(--p-action-ink); }
+.clay button.primary:hover:not(:disabled), .clay a.button.primary:hover { background: color-mix(in oklab, var(--p-action) 86%, #000); }
+.clay button.small-btn { min-height: 36px; padding: 0 12px; font-size: 14px; }
+.clay button[aria-pressed="true"] { background: var(--p-ink); color: var(--p-bg); }
+.clay button[aria-pressed="true"]:hover:not(:disabled) { background: color-mix(in oklab, var(--p-ink) 86%, var(--p-bg)); }
+.clay button.linkbtn { display: inline; min-height: 0; padding: 0; background: none; border: 0; font: inherit; color: inherit; white-space: normal; text-decoration: underline; text-decoration-color: var(--c-line-2); text-underline-offset: 3px; }
+.clay button.linkbtn:hover:not(:disabled) { background: none; text-decoration-color: currentColor; }
+.clay button.linkbtn:active:not(:disabled) { transform: none; }
+/* Fields. */
+.clay input[type="number"], .clay input[type="text"], .clay select {
+  min-height: 40px; padding: 0 10px; font: 15px/1 var(--font-mono); color: var(--p-ink);
+  background: var(--c-field); border: 1px solid var(--c-line-2); border-radius: var(--c-r-sm);
+}
+.clay select { font-family: var(--font-text); }
+.clay input[type="range"] { accent-color: var(--p-action); width: 100%; min-height: 28px; margin: 0; cursor: pointer; }
+.clay input[type="checkbox"] { accent-color: var(--p-action); width: 18px; height: 18px; margin: 0; flex: none; }
+.clay summary { cursor: pointer; }
+/* A finger needs 44 px: buttons, fields, sliders and the rows that open. */
+@media (pointer: coarse), (max-width: 700px) {
+  .clay button:not([class*="cl-"]):not(.linkbtn), .clay a.button, .clay button.small-btn { min-height: 44px; }
+  .clay input[type="number"], .clay input[type="text"], .clay select { min-height: 44px; font-size: 16px; }
+  .clay input[type="range"] { min-height: 44px; }
+  .clay summary { min-height: 44px; display: flex; align-items: center; }
+  .clay summary::-webkit-details-marker { display: none; }
+  .clay summary::before { content: "+"; display: inline-block; width: 1.2em; font-family: var(--font-mono); }
+  .clay details[open] > summary::before { content: "−"; }
+  .clay button.linkbtn { min-height: 44px; display: inline-flex; align-items: center; }
+  .clay .check { min-height: 44px; }
+}
+
+/* Page frame of an app page. */
+.clay .shell { width: min(100% - 2 * var(--c-gut), 1280px); margin: 0 auto; padding: 32px 0 96px; }
+.clay .top { display: flex; justify-content: space-between; align-items: end; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 24px; }
+.clay .top h1 { max-width: 22ch; }
+.clay .actions { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; }
+.clay .alert { background: var(--bad-bg); color: var(--bad); border-radius: var(--c-r-md); padding: 10px 14px; }
+.clay .operator-bar { width: min(100% - 2 * var(--c-gut), 1280px); margin: 16px auto 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.clay .pane { background: var(--c-pane); border: 1px solid var(--c-line); border-radius: var(--c-r-lg); padding: 20px; min-width: 0; }
+.clay .pane.empty { max-width: 640px; }
+.clay .row { display: flex; gap: 8px 12px; }
+.clay .row.wrap { flex-wrap: wrap; align-items: center; }
+.clay .tag { display: inline-block; font: 500 13px/1.5 var(--font-text); color: var(--warn); background: var(--warn-bg); border-radius: var(--c-r-sm); padding: 0 6px; margin-left: 6px; vertical-align: 1px; }
+.clay .tag.saved { color: var(--ok); background: var(--ok-bg); }
+.clay .dot, .clay .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* The price playground: the person's situation, the ranking, the standing decision. */
+.clay .pgrid { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+.clay .results, .clay .side { display: grid; gap: 24px; min-width: 0; }
+.clay .controls { position: sticky; top: 16px; }
+.clay .control { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 2px 8px; align-items: center; margin-bottom: 16px; }
+.clay .control label { font-size: 15px; color: var(--p-ink); }
+.clay .control .value { width: 112px; text-align: right; font-variant-numeric: tabular-nums; }
+.clay .control input[type="range"] { grid-column: 1 / -1; }
+.clay .control .number-note, .clay .tolerance .number-note { grid-column: 1 / -1; display: block; }
+.clay .check { display: flex; gap: 10px; align-items: center; padding: 4px 0; font-size: 15px; }
+.clay .answer { font: var(--display-weight) 24px/1.25 var(--font-display); letter-spacing: -0.02em; margin: 0 0 16px; text-wrap: balance; }
+.clay .answer .muted, .clay .answer .warn { display: block; margin-top: 6px; font: 15px/1.45 var(--font-text); letter-spacing: 0; }
+.clay .vendor { border-top: 1px solid var(--c-line); padding: 14px 0; }
+.clay .vendor:first-child { border-top: 0; }
+.clay .vendor.chosen { margin: 0 -12px; padding: 14px 12px; background: color-mix(in oklab, var(--p-action) 8%, transparent); border-radius: var(--c-r-md); border-top-color: transparent; }
+.clay .vendor.chosen + .vendor { border-top-color: transparent; }
+.clay .vendor-head { display: flex; align-items: center; gap: 4px 10px; }
+.clay .vendor-head .name, .clay .vendor-head .cost { white-space: nowrap; }
+.clay .vendor-head .plan { min-width: 0; overflow-wrap: anywhere; font-size: 14px; color: var(--p-muted); }
+.clay .vendor .name { font-weight: 500; font-size: 17px; }
+.clay .vendor .cost { font: 500 20px/1.2 var(--font-mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.clay ol.rank .vendor:first-child .cost { font-size: 26px; }
+.clay ol.rank .vendor:first-child .name { font-size: 20px; }
+.clay .vendor-head .buy { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.clay .vendor details { margin: 6px 0 0 20px; }
+.clay .vendor > p { margin: 4px 0 0 20px; }
+.clay .standing-fact { color: var(--p-ink); font-weight: 500; }
+.clay .select-next { margin: 8px 0 0 20px; padding: 8px 12px; background: color-mix(in oklab, var(--p-action) 8%, transparent); border-radius: var(--c-r-md); }
+.clay .lines { border-collapse: collapse; width: 100%; margin: 6px 0; }
+.clay .lines td { border-top: 1px solid var(--c-line); padding: 6px 8px 6px 0; vertical-align: top; }
+.clay .lines .amt { text-align: right; font: 14px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.clay .lines q { color: var(--p-muted); }
+.clay .live { font-size: 14px; color: var(--p-muted); display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.clay .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: clay-pulse 2s ease-in-out infinite; }
+@keyframes clay-pulse { 50% { opacity: 0.35; } }
+@keyframes clay-arrive { from { background: var(--warn-bg); } to { background: transparent; } }
+
+.clay .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.clay .chart-head label { white-space: nowrap; }
+.clay .chart-head select { max-width: 220px; margin-left: 6px; }
+.clay .chart { margin: 0; }
+.clay .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; color: var(--p-muted); margin-bottom: 4px; }
+.clay .legend li { display: flex; align-items: center; gap: 6px; }
+.clay .plot { position: relative; }
+.clay .plot svg { width: 100%; height: auto; display: block; }
+.clay .grid-line, .clay svg .pgrid { stroke: var(--c-line); stroke-width: 1; }
+.clay svg .tick { fill: var(--p-muted); font: 11px var(--font-mono); font-variant-numeric: tabular-nums; }
+.clay svg .here { stroke: var(--p-ink); stroke-width: 1.5; }
+.clay svg .cross-line { stroke: var(--p-muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.clay svg .crosshair { stroke: var(--c-line-2); stroke-width: 1; }
+.clay svg .marker { stroke: var(--c-pane); stroke-width: 2; }
+.clay .tip { position: absolute; top: 8px; pointer-events: none; background: var(--p-bg); border: 1px solid var(--c-line-2); border-radius: var(--c-r-md); padding: 8px 10px; font-size: 13px; display: grid; gap: 2px; white-space: nowrap; }
+.clay .tip span { display: flex; align-items: center; gap: 6px; }
+.clay .tip em { font-style: normal; margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
+.clay .cross li { padding: 4px 0; }
+
+/* The state now: one verdict. The history under it is plain text: what changed, and what it did then. */
+.clay .verdict { border-radius: var(--c-r-md); padding: 12px 14px; font: 500 16px/1.4 var(--font-text); }
+.clay .verdict.ok, .clay .verdict-bar.ok { background: var(--ok-bg); color: var(--ok); }
+.clay .verdict.bad, .clay .verdict-bar.bad { background: var(--bad-bg); color: var(--bad); }
+.clay .events li { border-top: 1px solid var(--c-line); padding: 14px 0; border-radius: var(--c-r-sm); }
+.clay .events li.new { animation: clay-arrive 2.5s ease-out; }
+.clay .events .what { margin: 0 0 2px; font-size: 15px; }
+.clay .events .effect { margin: 0 0 4px; font-size: 15px; color: var(--p-muted); }
+.clay .events .when { margin: 0; }
+.clay .events details { margin-top: 2px; }
+.clay .events .change { font-size: 14px; margin: 0 0 3px; overflow-wrap: anywhere; }
+.clay .events s { color: var(--p-muted); }
+.clay .history-lead { margin: 0 0 6px; }
+.clay .sources li { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--c-line); }
+.clay .sources li:first-child { border-top: 0; }
+.clay .sources .dot { margin-top: 7px; }
+.clay .sources p { margin: 0; overflow-wrap: anywhere; }
+.clay .demo { border-style: dashed; border-color: var(--warn); }
+.clay .demo-field { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 8px; }
+.clay .demo-field input { width: 120px; text-align: right; }
+.clay .demo-page { max-width: 640px; margin: 40px auto; padding: 0 24px; }
+.clay .demo-page ul { list-style: disc; padding-left: 20px; }
+.clay .demo-banner { border: 1px dashed var(--warn); color: var(--warn); border-radius: var(--c-r-md); padding: 10px 14px; }
+.clay .demo-price { font: 500 28px var(--font-mono); }
+.clay .save { margin-top: 12px; display: grid; gap: 10px; justify-items: start; }
+.clay .save p { margin: 0; }
+.clay .tolerance input { width: 84px; margin: 0 6px 0 2px; }
+.clay .standing { scroll-margin-top: 72px; }
+/* The price screen on a narrow screen: one line says the cheapest, and stays in view while the controls are moved. */
+.clay .answer-bar, .clay .verdict-bar { display: none; }
+.clay .verdict-bar { grid-column: 1 / -1; order: -2; margin: 0; padding: 10px 14px; border-radius: var(--c-r-md); font-size: 15px; }
+.clay .verdict-bar button.linkbtn { color: inherit; font: inherit; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .clay .pgrid { grid-template-columns: 280px minmax(0, 1fr); }
+  .clay .side { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .clay .verdict-bar { display: block; }
+}
+.clay .embedded-playground .verdict-bar { display: block; }
+@media (max-width: 700px) {
+  .clay .pgrid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .clay .results, .clay .side { gap: 16px; }
+  .clay .controls { position: static; }
+  .clay .pane { padding: 16px; }
+  .clay .answer-bar { display: block; order: -1; position: sticky; top: 0; z-index: 5; margin: 0 calc(-1 * var(--c-gut)); padding: 12px var(--c-gut); background: var(--p-bg); border-bottom: 1px solid var(--c-line); font-size: 15px; }
+  .clay .vendor-head { flex-wrap: wrap; }
+  .clay .vendor-head .plan { flex-basis: 100%; margin-left: 20px; }
+  .clay .vendor-head .buy { flex-basis: 100%; margin-left: 20px; justify-content: space-between; }
+  .clay .vendor .cost, .clay ol.rank .vendor:first-child .cost { font-size: 22px; }
+  .clay .top { margin-bottom: 16px; }
+  .clay .top .actions { flex-wrap: wrap; }
+  .clay .answer { font-size: 21px; }
+}
+/* A playground shown inside another page brings no page frame of its own. */
+.clay .embedded-playground .top { margin-bottom: 12px; }
+@media (min-width: 701px) {
+  .clay .embedded-playground .pgrid { grid-template-columns: 280px minmax(0, 1fr); }
+  .clay .embedded-playground .side { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+}
+.clay .embedded-playground .question { font: var(--display-weight) 28px/1.15 var(--font-display); letter-spacing: var(--display-tracking); margin: 0; }
+
+/* Short pages: not found, the owner link, sign-in. */
+.clay .narrow { max-width: 760px; display: grid; gap: 20px; justify-items: start; }
+.clay .narrow > * { margin: 0; }
+.clay .lede { font-size: 18px; line-height: 1.5; max-width: 60ch; }
+.clay .auth-page { display: grid; justify-items: center; gap: 16px; padding-top: 48px; }
+.clay .auth-page > p { max-width: 400px; text-align: center; }
+
+/* The key page: a command with its Copy button. */
+.clay pre.code { margin: 8px 0; padding: 12px 14px; font: 14px/1.55 var(--font-mono); color: var(--p-ink); background: var(--p-surface); border-radius: var(--c-r-md); white-space: pre-wrap; overflow-wrap: anywhere; }
+.clay .command { margin: 8px 0 12px; }
+.clay .command.copyable { position: relative; }
+.clay .command.copyable pre.code { margin: 0; padding-right: 92px; min-height: 52px; }
+.clay .command.copyable button { position: absolute; top: 6px; right: 6px; background: var(--c-pane); }
+.clay .command.copyable button:hover:not(:disabled) { background: var(--p-bg); }
+.clay .command.copyable button.primary { background: var(--p-action); }
+.clay ul.plain { display: grid; gap: 12px; }
+.clay .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.clay .account { display: inline-flex; align-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .clay .live i, .clay .events li { animation: none; }
+  .clay button, .clay a.button, .clay a { transition: none; }
+  .clay button:active, .clay a.button:active { transform: none !important; }
+}
+:root { --c-gut: 80px; }
+@media (max-width: 1023px) { :root { --c-gut: 48px; } }
+@media (max-width: 639px) { :root { --c-gut: 24px; } }

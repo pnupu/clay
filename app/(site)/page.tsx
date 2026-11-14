@@ -50,7 +50,7 @@ export default async function Home() {
       <div className="wrap">
         <div className="section-head"><h2 id="yours-h">{me.kind === "admin" ? "All playgrounds" : "Your playgrounds"}</h2></div>
         {yours.length ? (
-          <ul className="rows mine">
+          <ul className="rows mine clay">
             {yours.map(([id, p]) => (
               <li key={id}>
                 <a href={`/p/${id}`} className="rows__name">{titleOf(p, id)}</a>
@@ -99,7 +99,7 @@ export default async function Home() {
             <div className="grid">
               <article className="card card--row card--open span-4">
                 <h3>1. Ask for a playground</h3>
-                <p>Tell your agent what feels off or what you have to choose. It builds the page from your real code and gives you the link.</p>
+                <p>Type “build me a playground for …” to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p>
                 <div className="panel"><div className="shot shot--term" role="img" aria-label="A terminal: the sentence a person types, the Clay tool the agent calls, and the link it returns">
                   <p><b>&gt;</b> build me a playground for …</p>
                   <p className="muted">clay · create_playground</p>

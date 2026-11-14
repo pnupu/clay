@@ -65,16 +65,36 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   /** The height of the preview's content, as the frame reports it (lib/frame.ts, bounded). Null until the first report. */
   const [contentHeight, setContentHeight] = useState<number | null>(null);
   /**
-   * The frame follows its content, up to a share of the screen: 65% where the preview stays in view above the controls
-   * (narrow screens), 80% elsewhere. Taller content scrolls inside the frame.
+   * The frame is as tall as its content (the frame reports it, at most MAX_FRAME_HEIGHT), so the page is the only thing
+   * that scrolls: there is no scroll inside the preview. A preview taller than half the screen is "tall": on a narrow
+   * screen the controls then come first and the preview follows them (kit.module.css); a short one comes first.
    */
   const [screenH, setScreenH] = useState<number | null>(null);
   useEffect(() => {
-    const on = () => setScreenH(window.innerHeight * (window.matchMedia("(max-width: 800px)").matches ? 0.65 : 0.8));
+    const on = () => setScreenH(window.innerHeight);
     on();
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
+  /**
+   * After a move the person must see what changed. When the preview is outside the screen at that moment (a narrow
+   * screen with many controls and a tall preview), a line under the controls says that it changed and leads to it.
+   */
+  const stage = useRef<HTMLElement>(null);
+  const stageSeen = useRef(true);
+  const [unseenChange, setUnseenChange] = useState(false);
+  useEffect(() => {
+    const el = stage.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => {
+      stageSeen.current = e.isIntersecting;
+      if (e.isIntersecting) setUnseenChange(false);
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const frameHeight = Math.max(120, contentHeight ?? kit.preview.height);
+  const tall = screenH != null && frameHeight > screenH * 0.5;
   /** The frame is created in the browser only, after this page listens: no message and no load event of it is missed. */
   const inBrowser = useSyncExternalStore(noSubscription, () => true, () => false);
   const ready = useRef(false);
@@ -140,6 +160,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     moved.current = true;
   };
   const set = (c: Control, raw: unknown) => {
+    if (!stageSeen.current) setUnseenChange(true);
     const v = cleanValue(c, raw);
     if (v === undefined || v === values[c.id]) return;
     note(c, v);
@@ -191,7 +212,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   // Inside another page (the landing page's hero) the parts are named by labels: that page owns the headings.
   const Head = embedded ? "p" : "h2";
   return (
-    <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"}>
+    <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"} data-tall={tall || undefined}>
       <header className="top k-head">
         <div>
           <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · a playground built by your agent</> : "An example · built by someone's own agent"}</p>
@@ -208,13 +229,14 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           <Head className="k-label">Controls</Head>
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
+          {unseenChange && <button className={`primary ${css.jump}`} data-preview-changed onClick={() => stage.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>The preview changed. Show it</button>}
           <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. {canWrite ? "A short summary of what you tried is kept for your agent." : "Nothing you try here is saved."}</p>
         </section>
 
         <div className={`${css.main} k-main`}>
           {/* The stage: the person's real component on a neutral mat, as a design tool shows an artboard. On a narrow screen it
               comes first and stays in view while the controls below it are moved (kit.module.css). */}
-          <section className={`pane ${css.stage} k-stage`} aria-label="Preview">
+          <section className={`pane ${css.stage} k-stage`} aria-label="Preview" ref={stage}>
             <div className={css.stageHead}>
               <Head className="k-label">Preview</Head>
             </div>
@@ -224,7 +246,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               </p>
             )}
             <div className={css.mat}>
-              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: Math.max(120, Math.min(contentHeight ?? kit.preview.height, Math.round(screenH ?? Infinity))) }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
+              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: frameHeight }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
           {/* What the sandbox guarantees, and what it does not, said in one line that opens to the full statement. On the

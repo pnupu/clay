@@ -1,0 +1,32 @@
+/* The app pages (a playground, sign-in, the short pages): the page ground and the header, in the system of the website.
+   The header is the website's bar in the app: the same mark, name, words and button, but it scrolls with the page, so
+   a playground has the whole screen. Components: app/clay.css. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; color-scheme: light; }
+html, body { margin: 0; }
+body { background: var(--p-bg); min-height: 100svh; -webkit-font-smoothing: antialiased; }
+img, svg { max-width: 100%; }
+
+header.bar { border-bottom: 1px solid var(--c-line); background: var(--p-bg); }
+.bar__in { width: min(100% - 2 * var(--c-gut), 1280px); margin: 0 auto; height: 72px; display: flex; align-items: center; gap: 32px; }
+.clay a.bar__logo { display: inline-flex; align-items: center; gap: 8px; font: 500 22px/1 var(--font-display); letter-spacing: -0.02em; text-decoration: none; flex: none; }
+.bar__mark { width: 24px; height: 24px; flex: none; background: var(--p-action); -webkit-mask: var(--bar-mark) center / contain no-repeat; mask: var(--bar-mark) center / contain no-repeat;
+  --bar-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2.5' width='20' height='5.5' rx='2.75'/%3E%3Crect x='2' y='9.25' width='14' height='5.5' rx='2.75'/%3E%3Crect x='2' y='16' width='8' height='5.5' rx='2.75'/%3E%3C/svg%3E"); }
+.bar__links { display: flex; align-items: center; gap: 4px; margin-right: auto; }
+.clay .bar__links a, .clay a.bar__word { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font: 500 15px/1 var(--font-text); text-decoration: none; border-radius: var(--c-r-btn); white-space: nowrap; }
+.clay .bar__links a:hover, .clay a.bar__word:hover { background: var(--c-tone); }
+.bar__actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.clay .bar__actions a.button { min-height: 44px; }
+.narrow-only { display: none; }
+@media (max-width: 639px) {
+  .bar__in { height: 56px; gap: 8px; }
+  .clay a.bar__logo { font-size: 20px; }
+  .wide-only { display: none; }
+  .narrow-only { display: inline; }
+  .clay .bar__links a, .clay a.bar__word { padding: 0 8px; }
+  .clay .shell { padding: 20px 0 72px; }
+}
+/* Inside another page's frame the header would show twice. */
+.embedded header.bar { display: none; }
+/* Projector and large displays: scale the one screen up instead of leaving wide empty margins. */
+@media (min-width: 2200px) { .clay .shell, header.bar { zoom: 1.3; } }

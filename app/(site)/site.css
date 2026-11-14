@@ -98,3 +98,17 @@ html[data-type] .hero--triptych .hero__cta .btn { height: var(--btn-h); font-siz
 /* The sentence a person types, set as they type it. */
 .say { display: block; margin: var(--s-3) 0; font: 500 17px/1.4 var(--font-mono); letter-spacing: -0.01em; color: var(--ink); }
 @media (min-width: 640px) and (max-width: 1023px) { .live .k-root { align-content: start; } }
+
+/* /connect: a task page. One section, as tall as its steps; Clay's own blocks on the right. */
+main > .section.doc { height: auto; min-height: calc(100svh - 96px); padding-bottom: var(--s-9); }
+main > .section.doc > .wrap { height: auto; }
+.doc__head { display: grid; gap: var(--s-5); align-content: start; }
+.doc__head > p:not(.t-lead) { max-width: 52ch; }
+.doc__limits { margin-top: var(--s-5); }
+.doc__limits .rows__value { font: 500 20px/1.2 var(--font-mono); }
+.doc__steps { display: grid; gap: var(--s-5); min-width: 0; }
+.doc__steps .pane > :last-child { margin-bottom: 0; }
+.doc__steps details > summary { font-size: 16px; }
+.doc__steps details > p { margin-top: 12px; }
+.doc-foot { padding: var(--s-5) 0 var(--s-7); }
+@media (max-width: 1023px) { .doc__steps { margin-top: var(--s-7); } }
