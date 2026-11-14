@@ -107,8 +107,9 @@ const SAY: Record<string, (request: string) => string> = {
   play: (request) => `${request} ... let me play with it first`,
   slash: (request) => `/mcp__clay__playground ${request}`,
 };
-const say = flag("say") ?? null;
-if (say && !SAY[say]) throw new Error("--say is build, play or slash.");
+// A --say without a value must not run as the unprompted path under an explicit label.
+const say = argv.includes("--say") ? (flag("say") ?? "") : null;
+if (say != null && !Object.hasOwn(SAY, say)) throw new Error("--say is build, play or slash.");
 if (say === "slash" && flag("subject") === "codex") throw new Error("--say slash is Claude Code's command form; Codex has no commands for MCP prompts.");
 const asked = (c: Case) => (say && c.expect === "build" ? SAY[say](c.request) : c.request);
 if (memory != null && toolSet !== "normal") throw new Error("--memory needs --tools normal: the files-only mode loads no project instructions.");
@@ -344,7 +345,7 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
     "",
     "## Every check",
     "",
-    ...ran.flatMap((r) => [`### ${r.id}: ${r.result.toUpperCase()}`, "", `> ${r.request}`, "", ...(r.note ? [`Note: ${r.note}`, ""] : []), ...(r.playground ? [`Playground: ${r.playground}${r.person?.chosen ? `. The person saved: ${r.person.chosen}.` : ""}`, ""] : []), ...r.checks.map((c) => `- ${c.status === "pass" ? "pass" : c.status === "fail" ? "**fail**" : "n/a"} \`${c.id}\`: ${c.reason}`), ""]),
+    ...ran.flatMap((r) => [`### ${r.id}: ${r.result.toUpperCase()}`, "", `> ${r.asked ?? r.request}`, "", ...(r.note ? [`Note: ${r.note}`, ""] : []), ...(r.playground ? [`Playground: ${r.playground}${r.person?.chosen ? `. The person saved: ${r.person.chosen}.` : ""}`, ""] : []), ...r.checks.map((c) => `- ${c.status === "pass" ? "pass" : c.status === "fail" ? "**fail**" : "n/a"} \`${c.id}\`: ${c.reason}`), ""]),
     "## Contact sheet",
     "",
     shots.length ? "One screenshot per built playground, as the person first sees it. Open `contact.html` for all of them on one screen." : "No playground was built.",
@@ -390,7 +391,7 @@ await Promise.all(Array.from({ length: Math.max(1, concurrency) }, async () => {
       results[i] = await runCase(c, browser, kit);
     } catch (e) {
       const check: Check = { id: "agent_run", status: "fail", reason: `harness error: ${String(e instanceof Error ? e.message : e).slice(0, 200)}` };
-      results[i] = { id: c.id, kind: c.kind, request: c.request, result: "fail", firstFail: check, checks: [check], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
+      results[i] = { id: c.id, kind: c.kind, request: c.request, ...(say ? { asked: asked(c) } : {}), result: "fail", firstFail: check, checks: [check], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
     }
     results[i] = redact(results[i]); // an error text (a browser error with the owner link, say) may hold the key
     console.error(`${c.id}: ${results[i].result}${results[i].firstFail ? ` (${results[i].firstFail!.id}: ${results[i].firstFail!.reason})` : ""}`);
