@@ -260,11 +260,13 @@ export async function settle(page: Page, dims: Dimension[]): Promise<{ chosen: s
     }
     else if (await c.locator('input[type="checkbox"]').count()) await c.locator('input[type="checkbox"]').click();
     else if (await c.locator("select").count()) {
-      // A dropdown (a select with many options): the first option that is not the one shown.
+      // A dropdown (a select with many options).
       const sel = c.locator("select");
       const now = await sel.inputValue();
-      const other = (await sel.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))).find((v) => v !== now);
-      if (other !== undefined) await sel.selectOption(other);
+      // As with option buttons: the first other option whose name no earlier control took, else the first other one.
+      const others = (await sel.locator("option").evaluateAll((os) => os.map((o) => ({ value: (o as HTMLOptionElement).value, name: (o.textContent ?? "").trim() })))).filter((o) => o.value !== now);
+      const pick = others.find((o) => !taken.has(o.name)) ?? others[0];
+      if (pick) { taken.add(pick.name); await sel.selectOption(pick.value); }
     }
     await page.waitForTimeout(150);
   }

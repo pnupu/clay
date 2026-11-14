@@ -26,8 +26,9 @@ for (const [id, values] of Object.entries(steps.set ?? {})) {
   for (const v of values) {
     if (typeof v === "number") await field.locator('input[type="number"]').fill(String(v));
     else if (typeof v === "boolean") await field.locator('input[type="checkbox"]').setChecked(v);
-    else if (/^#[0-9a-f]{6}$/.test(v) && !(await field.locator(`[data-color="${v}"]`).count())) await field.locator('input[type="color"]').fill(v);
+    // A dropdown first: its option values can look like a colour, and it has no colour box.
     else if (await field.locator("select").count()) await field.locator("select").selectOption(v);
+    else if (/^#[0-9a-f]{6}$/.test(v) && !(await field.locator(`[data-color="${v}"]`).count())) await field.locator('input[type="color"]').fill(v);
     else await field.locator(`[data-color="${v}"], [data-value="${v}"]`).first().click();
     await page.waitForTimeout(250);
   }

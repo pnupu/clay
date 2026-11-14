@@ -11,8 +11,9 @@
 .slider input[type="number"] { text-align: right; font-variant-numeric: tabular-nums; width: 84px; }
 .slider > label { margin: 0; }
 .options { display: flex; flex-wrap: wrap; gap: 6px; }
-/* A long option label wraps inside the panel; it never pushes the button out of it. */
-.options button { max-width: 100%; height: auto; padding-block: 8px !important; white-space: normal; text-align: left; line-height: 1.25; overflow-wrap: anywhere; }
+/* A long option label wraps inside the panel; it never pushes the button out of it.
+   !important: the shared button rule (app/clay.css) has the heavier selector, with one line and no wrap. */
+.options button { max-width: 100%; height: auto; padding-block: 8px !important; white-space: normal !important; justify-content: flex-start !important; text-align: left; line-height: 1.25 !important; overflow-wrap: anywhere; }
 .field > select { display: block; width: 100%; max-width: 100%; }
 .swatches { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .swatches button { width: 36px; height: 36px; min-height: 0 !important; padding: 0 !important; border-radius: 50% !important; border: 2px solid var(--c-pane) !important; outline: 1px solid var(--c-line-2); }

@@ -447,7 +447,7 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
           <>
             <label htmlFor={c.id}>{c.label}</label>
             <select id={c.id} value={value as string} onChange={(e) => onChange(e.target.value)}>
-              {c.options.map((o) => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
+              {c.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </>
         ) : (
