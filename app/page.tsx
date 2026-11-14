@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { viewer } from "@/app/api/respond";
 import { canWrite, isExample, orderExamples } from "@/lib/accounts";
-import { cardText } from "@/lib/card";
+import { cardText, hostsOf, kindLabel } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
 import { nonOwnerView } from "@/lib/report";
 import { load, type Playground } from "@/lib/store";
@@ -15,8 +15,16 @@ export const dynamic = "force-dynamic";
 // kind shows without a change here; only its label falls back to "Playground".
 type AnyPlayground = Playground;
 const titleOf = (p: AnyPlayground, id: string) => p.domain?.question ?? id;
-const kindOf = (p: AnyPlayground) => (p.kit ? "Preview, tuned by hand" : p.domain?.vendors?.length ? "Price decision" : "Playground");
-const detailOf = (p: AnyPlayground) => (!p.kit && p.domain?.vendors?.length ? p.domain.vendors.map((v) => v.name).join(", ") : null);
+/** The label of a card, from what the playground is built on (lib/card.ts): live web data, a brand, the real thing tuned by hand, or prices. */
+const kindOf = (p: AnyPlayground, whose: "yours" | "theirs" = "theirs") => kindLabel({ price: !p.kit && !!p.domain?.vendors?.length, preview: !!p.kit, web: p.kit?.kit.web?.length ?? 0, brand: !!p.kit?.kit.brand, inline: !!p.kit?.kit.inline }, whose);
+/** Where the facts of a playground come from, in one short line: the vendors of a price playground, the hosts of a preview's web pages, its brand. */
+function detailOf(p: AnyPlayground): string | null {
+  if (!p.kit) return p.domain?.vendors?.length ? p.domain.vendors.map((v) => v.name).join(", ") : null;
+  const hosts = hostsOf((p.kit.kit.web ?? []).map((s) => p.kit!.web?.[s.id]?.url ?? s.url ?? s.domain));
+  const read = hosts.length ? `Read from ${hosts.slice(0, 4).join(", ")}${hosts.length > 4 ? ` and ${hosts.length - 4} more` : ""}` : null;
+  const brand = p.kit.kit.brand ? `${read ? "brand colours of" : "Brand colours of"} ${hostsOf([p.kit.kit.brand.domain])[0] ?? p.kit.kit.brand.domain}` : null;
+  return [read, brand].filter(Boolean).join("; ") || null;
+}
 
 // What a gallery card says about an example. All of it is optional, so an example of any kind, with any note, gets a card.
 const noteOf = (p: AnyPlayground) => (p.kit?.kit.notes ?? p.domain?.note ?? "").trim();
@@ -51,7 +59,7 @@ export default async function Home() {
                 <li key={id} className="card">
                   <div>
                     <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
-                    <p className="small muted">{kindOf(p)} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
+                    <p className="small muted">{kindOf(p, me.kind === "admin" && p.owner ? "theirs" : "yours")} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
                   </div>
                   <Manage id={id} title={titleOf(p, id)} example={isExample(p, id)} featured={p.featured === true} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
                 </li>
@@ -116,7 +124,7 @@ export default async function Home() {
                   <p className="eyebrow">{kindOf(p)}</p>
                   {said && ("quote" in said ? <blockquote>“{said.quote}”</blockquote> : <p className="blurb">{said.blurb}</p>)}
                   <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
-                  {detailOf(p) && <p className="small muted">{detailOf(p)}</p>}
+                  {detailOf(p) && <p className="small muted" data-sources>{detailOf(p)}</p>}
                   {controls.length > 0 && <p className="small muted">You move: {controls.slice(0, 6).join(", ")}{controls.length > 6 ? ` and ${controls.length - 6} more` : ""}</p>}
                 </li>
               );

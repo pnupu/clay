@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { atWord, blurbOf, cardText, reasonOf, requestOf } from "./card.ts";
+import { atWord, blurbOf, cardText, hostsOf, joinNames, kindLabel, reasonOf, requestOf, rowNamed } from "./card.ts";
 import { DOMAIN } from "./domain.ts";
 
 // The notes of the seven examples that are live, as their agents wrote them.
@@ -71,4 +71,40 @@ test("a left-out reason stays as the agent wrote it; only a missing full stop is
   assert.equal(reasonOf("npm package has no public price"), "npm package has no public price.");
   assert.equal(reasonOf("AWS lists it per region, not as one price!"), "AWS lists it per region, not as one price!");
   assert.equal(reasonOf('Its page says "contact sales."'), 'Its page says "contact sales."');
+});
+
+test("a card is labelled by what the playground is built on, for any mix", () => {
+  const preview = { price: false, preview: true, web: 0, brand: false, inline: false };
+  assert.equal(kindLabel(preview), "Preview, tuned by hand");
+  assert.equal(kindLabel({ ...preview, inline: true }), "Preview, tuned by hand");
+  assert.equal(kindLabel({ ...preview, brand: true }), "Real brand colours");
+  assert.equal(kindLabel({ ...preview, web: 2 }), "Live web data");
+  assert.equal(kindLabel({ ...preview, web: 2, inline: true }), "Live web data × their numbers");
+  assert.equal(kindLabel({ ...preview, web: 2, inline: true }, "yours"), "Live web data × your numbers");
+  assert.equal(kindLabel({ ...preview, web: 1, brand: true, inline: true }), "Live web data and brand colours × their numbers");
+  assert.equal(kindLabel({ price: true, preview: false, web: 0, brand: false, inline: false }), "Price decision");
+  assert.equal(kindLabel({ price: false, preview: false, web: 0, brand: false, inline: false }), "Playground");
+});
+
+test("a card names the hosts of its sources once each, without www", () => {
+  assert.deepEqual(hostsOf(["https://www.runpod.io/pricing", "https://lambda.ai/pricing", "https://lambda.ai/pricing#terms", null, "modal.com", "", "Stripe.com"]), ["runpod.io", "lambda.ai", "modal.com", "stripe.com"]);
+});
+
+test("the rows a preview names: its own data and its options, never a common word or a longer look-alike", () => {
+  const models = joinNames({ measured: "bench.json, measured by the team on 2026-11-14.", models: [{ model: "claude-opus-5-5", agent: "claude", effort: "low" }, { model: "gpt-6.1-sol", agent: "codex" }] }, ["claude-opus-5-5", "claude-opus-5-5 (in use now)"]);
+  assert.equal(rowNamed("Claude Opus 5.5", models), true);
+  assert.equal(rowNamed("gpt-6.1-sol", models), true);
+  // "claude" (the agent) names no row, and "Claude Opus 5" is another model than "claude-opus-5-5".
+  assert.equal(rowNamed("Claude Opus 5", models), false);
+  assert.equal(rowNamed("Claude Fable 5.2", models), false);
+  assert.equal(rowNamed(null, models), false);
+  const gpus = joinNames(null, ["H100 SXM", "A10", "L4", "RTX A6000"]);
+  assert.equal(rowNamed("NVIDIA H100 SXM", gpus), true);
+  assert.equal(rowNamed("Nvidia L4", gpus), true);
+  assert.equal(rowNamed("NVIDIA A10", gpus), true);
+  assert.equal(rowNamed("NVIDIA A100 PCIe", gpus), false);
+  assert.equal(rowNamed("NVIDIA A6000", gpus), true);
+  assert.equal(rowNamed("RTX 6000 Ada", gpus), false);
+  // A date or a count in the person's data names no row.
+  assert.equal(rowNamed("B200", joinNames({ hours: "200 GPU hours", date: "2026-11-14", size: "24 GB" })), false);
 });

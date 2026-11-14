@@ -75,3 +75,80 @@ export function reasonOf(reason: string): string {
   const text = reason.trim();
   return /[.!?]["”')\]]?$/.test(text) ? text : `${text}.`;
 }
+
+/**
+ * The label of a playground on a card, from what it is built on: a preview with web sources or a brand is about live web
+ * data, a plain preview is the real thing tuned by hand, a price playground keeps its own label. `whose` words the
+ * person's own data: "your numbers" in a person's own list, "their numbers" on an example card.
+ */
+export function kindLabel(p: { price: boolean; preview: boolean; web: number; brand: boolean; inline: boolean }, whose: "yours" | "theirs" = "theirs"): string {
+  if (!p.preview) return p.price ? "Price decision" : "Playground";
+  const numbers = p.inline ? ` × ${whose === "yours" ? "your" : "their"} numbers` : "";
+  if (p.web > 0) return `Live web data${p.brand ? " and brand colours" : ""}${numbers}`;
+  if (p.brand) return "Real brand colours";
+  return "Preview, tuned by hand";
+}
+
+/** The hosts of a list of page addresses or domains, as a card names them: no "www.", each one once, in order. */
+export function hostsOf(pages: (string | null | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const page of pages) {
+    if (!page?.trim()) continue;
+    let host = page.trim();
+    try {
+      host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(host) ? host : `https://${host}`).hostname;
+    } catch {
+      // Not an address: the text stands as it is.
+    }
+    host = host.replace(/^www\./i, "").toLowerCase();
+    if (host && !out.includes(host)) out.push(host);
+  }
+  return out;
+}
+
+const plain = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const wordsOf = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+/** A word that names one thing by itself: a model number such as "a6000", "l4", "4090"; not "5", "24" or "gpu". */
+const isCode = (w: string) => /\d/.test(w) && (w.length >= 4 || (w.length >= 2 && /[a-z]/.test(w)));
+export type JoinNames = { exact: Set<string>; partial: string[]; codes: Set<string> };
+
+/**
+ * The names a preview can join its page rows on: the short texts of its own data (a model id from a measurements file)
+ * and the values and labels of its select options, in plain form (lower case, letters and digits only).
+ * - `exact`: a row whose whole name is one of them.
+ * - `partial`: a name with a digit or several words names one thing, so it also matches inside a longer row name:
+ *   "h100sxm" in "NVIDIA H100 SXM". "claude" alone does not.
+ * - `codes`: a model number in a name ("a6000" in "RTX A6000") matches a row that has it as a whole word ("NVIDIA A6000"),
+ *   so "a10" does not take "A100".
+ * The preview's own code decides what it uses; this is the page's best reading of it, for what to show first.
+ */
+export function joinNames(inline: unknown, options: string[] = []): JoinNames {
+  const exact = new Set<string>();
+  const partial = new Set<string>();
+  const codes = new Set<string>();
+  const add = (text: string) => {
+    if (text.length > 60) return;
+    const p = plain(text);
+    if (p.length < 2) return;
+    exact.add(p);
+    const words = wordsOf(text);
+    if (p.length >= 4 && (/\d/.test(p) || words.length > 1)) partial.add(p);
+    words.filter(isCode).forEach((w) => codes.add(w));
+  };
+  const walk = (x: unknown, depth: number) => {
+    if (typeof x === "string") add(x);
+    else if (depth < 6 && Array.isArray(x)) x.slice(0, 200).forEach((y) => walk(y, depth + 1));
+    else if (depth < 6 && x && typeof x === "object") Object.values(x).slice(0, 200).forEach((y) => walk(y, depth + 1));
+  };
+  walk(inline, 0);
+  options.forEach(add);
+  return { exact, partial: [...partial], codes };
+}
+
+/** Whether a row read from a page (by its name) is one that the preview's own names match. */
+export function rowNamed(name: unknown, names: JoinNames): boolean {
+  if (typeof name !== "string") return false;
+  const n = plain(name);
+  if (!n) return false;
+  return names.exact.has(n) || names.partial.some((p) => n.includes(p)) || wordsOf(name).some((w) => names.codes.has(w));
+}

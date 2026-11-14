@@ -26,6 +26,9 @@
 .output { margin-bottom: 12px; }
 .outputHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
 .output pre { margin: 0; padding: 10px 12px; background: color-mix(in srgb, var(--ink) 5%, transparent); border-radius: 8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A long output shows its first lines; the button under it opens the rest. Copy always copies all of it. */
+.output pre.folded { max-height: 9.6em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.more { margin-top: 4px; }
 .settle { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px; }
 .data li { padding: 6px 0; border-top: 1px solid var(--line); }
 .data li:first-child { border-top: 0; }
@@ -53,8 +56,15 @@
   .notes { order: -1; margin: 0; }
   .stage { order: -2; }
   .caption { order: 9; margin: 0 2px; }
+  /* The data panel is for reading, not for moving controls: it slides over the preview that stays in view above it. */
+  .dataCard { position: relative; z-index: 6; }
 }
-.webScroll { max-height: 260px; overflow: auto; margin-top: 6px; }
+/* Folded, a table is at most about nine rows high; opened, it scrolls inside a taller box. Never wider than its card. */
+.webScroll { max-height: 236px; max-width: 100%; overflow: auto; margin-top: 6px; }
+.webScroll.webOpen { max-height: 420px; }
+.web th small { display: block; font-size: 11px; font-weight: 400; }
+.rowsNote { margin: 6px 0 0; }
+.rowsNote button { margin-left: 2px; }
 .web { border-collapse: collapse; font-size: 12px; margin-top: 6px; }
 .web th, .web td { text-align: left; padding: 2px 10px 2px 0; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
 .web th { color: var(--ink-2); font-weight: 500; }

@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { fromFrame, limiter } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
-import { reasonOf } from "@/lib/card";
+import { hostsOf, joinNames, reasonOf, rowNamed, type JoinNames } from "@/lib/card";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
@@ -59,6 +59,8 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  /** The names this preview can join page rows on: its own data and its select options (lib/card.ts). */
+  const names = useMemo(() => joinNames(kit.inline, kit.controls.flatMap((c) => (c.type === "select" ? c.options.flatMap((o) => [o.value, o.label ?? ""]) : []))), [kit]);
   const iframe = useRef<HTMLIFrameElement>(null);
   /** The height of the preview's content, as the frame reports it (lib/frame.ts, bounded). Null until the first report. */
   const [contentHeight, setContentHeight] = useState<number | null>(null);
@@ -238,7 +240,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
                   <span className="small muted">{o.label}</span>
                   <button className="small-btn" onClick={() => copy(o.id, outputs[o.id])}>{copied === o.id ? "Copied" : "Copy"}</button>
                 </div>
-                <pre data-output={o.id}>{outputs[o.id]}</pre>
+                <OutputText id={o.id} text={outputs[o.id]} />
               </div>
             ))}
             {canWrite ? (
@@ -258,7 +260,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
           </section>
 
           {(kit.brand || kit.inline || kit.web?.length || leftOut.length > 0) && (
-            <section className="card">
+            <section className={`card ${css.dataCard}`}>
               <h2>Where the data comes from</h2>
               <ul className={css.data}>
                 {kit.brand && (
@@ -273,8 +275,8 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
                     )}
                   </li>
                 )}
-                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} />)}
-                {kit.inline && <li><p className="small">Provided by your agent, not checked: {Object.keys(kit.inline).join(", ")}.</p></li>}
+                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
+                {kit.inline && <li data-inline><p className="small">{canWrite ? "Provided by your agent, not checked" : "Provided by the author's agent from their own files, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
                 {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b> — {reasonOf(x.reason)}</p></li>)}
               </ul>
@@ -283,6 +285,40 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
         </div>
       </div>
     </Shell>
+  );
+}
+
+/** An output is folded when it is taller than this; folded, it shows its first lines (kit.module.css, .folded). */
+const FOLD_TALLER_THAN = 220;
+
+/**
+ * The text of one output. A long one (a rule in words, a block of CSS) shows its first lines and opens on request, so it
+ * does not push the rest of the page away; "Copy" above it always copies all of it. Long is measured, not guessed: the
+ * same text is a few lines on a wide screen and many on a phone.
+ */
+function OutputText({ id, text }: { id: string; text: string }) {
+  const pre = useRef<HTMLPreElement>(null);
+  const [tall, setTall] = useState(() => text.length > 600);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const el = pre.current;
+    if (!el) return;
+    // scrollHeight is the height of the whole text, also while it is folded.
+    const measure = () => setTall(el.scrollHeight > FOLD_TALLER_THAN);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [text]);
+  return (
+    <>
+      <pre ref={pre} data-output={id} id={`output-${id}`} className={tall && !open ? css.folded : undefined}>{text}</pre>
+      {tall && (
+        <button className={`small-btn ${css.more}`} aria-expanded={open} aria-controls={`output-${id}`} onClick={() => setOpen(!open)}>
+          {open ? "Show less" : `Show all of it (${text.split(/\s+/).filter(Boolean).length} words)`}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -388,17 +424,35 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
 const shown = (v: WebValue | undefined) => (v == null ? <span className="warn">unknown</span> : v === true ? "yes" : v === false ? "no" : typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 6 }) : v);
 const when = (iso: string) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
 
+/** More rows than this are folded: the rows the preview names are shown, the rest opens on request. */
+const FOLD_OVER = 8;
+
 /**
  * One web source in "Where the data comes from": the page (a link), when it was read, every value that was read, what was
  * quarantined, and what changed since the person settled. So a person can check any number against its page.
+ * A long table shows first the rows that the preview's own names match (`names`), and the rest on request. A row whose
+ * name the read did not find cannot be matched to anything: it is listed last, as such, and counted in a line of its own.
  */
-function WebSourceItem({ source: s, state: st, reading, since }: { source: WebSource; state: WebState | undefined; reading: boolean; since: string | null }) {
+function WebSourceItem({ source: s, state: st, reading, since, names }: { source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
+  const [all, setAll] = useState(false);
   const read = st?.read;
   const link = st?.url && /^https:\/\//.test(st.url) ? st.url : null;
   const host = (() => { try { return new URL(st?.url ?? "").hostname; } catch { return s.domain ?? s.id; } })();
   const changes = (st?.changes ?? []).filter((c) => !since || c.at > since);
   const fields = s.fields ?? s.rows!.fields;
   const fact = (v: WebValue) => (v === true ? "yes" : v === false ? "no" : v == null ? "unknown" : String(v));
+  // The first text field of a row is its name (lib/reference.ts says so to the agent).
+  const key = fields[0]?.type === "text" ? fields[0].id : null;
+  const rows = read?.rows ?? [];
+  const named = key ? rows.filter((r) => r[key] != null) : rows;
+  const nameless = key ? rows.filter((r) => r[key] == null) : [];
+  const used = key ? named.filter((r) => rowNamed(r[key], names)) : [];
+  const foldable = rows.length > FOLD_OVER;
+  // Folded: the rows this playground names, or the first few when it names none.
+  const first = used.length ? used : named.slice(0, 5);
+  const visible = foldable && !all ? first : [...named, ...nameless];
+  const tableId = `rows-${s.id}`;
+  const site = hostsOf([host])[0] ?? host;
   return (
     <li data-web-source={s.id}>
       <p className="small">
@@ -416,15 +470,29 @@ function WebSourceItem({ source: s, state: st, reading, since }: { source: WebSo
         </table>
       )}
       {read && s.rows && (
-        <div className={css.webScroll}>
-          <table className={css.web}>
-            <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe}>{f.id}{f.unit ? ` (${f.unit})` : ""}</th>)}</tr></thead>
-            <tbody>
-              {(read.rows ?? []).map((r, i) => <tr key={i}>{fields.map((f) => <td key={f.id}>{shown(r[f.id])}</td>)}</tr>)}
-              {!read.rows?.length && <tr><td colSpan={fields.length}><span className="warn">No row was found on this page.</span></td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className={`${css.webScroll} ${all ? css.webOpen : ""}`} id={tableId}>
+            <table className={css.web}>
+              <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe}>{f.id}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
+              <tbody>
+                {visible.map((r, i) => <tr key={i}>{fields.map((f) => <td key={f.id}>{f.id === key && r[f.id] == null ? <span className="muted">no name read</span> : shown(r[f.id])}</td>)}</tr>)}
+                {!rows.length && <tr><td colSpan={fields.length}><span className="warn">No row was found on this page.</span></td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {foldable && (
+            <p className={`small muted ${css.rowsNote}`} data-rows-note>
+              {all ? `All ${rows.length} rows read from ${site}.` : used.length ? `Shown: ${used.length === 1 ? "the 1 row that matches" : `the ${used.length} rows that match`} the names this playground uses, of ${rows.length} read.` : `Shown: the first ${first.length} of ${rows.length} rows read.`}{" "}
+              <button className="small-btn" aria-expanded={all} aria-controls={tableId} onClick={() => setAll(!all)}>{all ? "Show fewer rows" : `Show all ${rows.length} rows read from ${site}`}</button>
+            </p>
+          )}
+          {nameless.length > 0 && (
+            <p className="small muted" data-nameless>
+              {nameless.length === 1 ? "1 row has" : `${nameless.length} rows have`} values but no name: the read did not find {nameless.length === 1 ? "its" : "their"} name on the page, so nothing can be matched to {nameless.length === 1 ? "it" : "them"} and the preview does not use {nameless.length === 1 ? "it" : "them"}.
+              {foldable && !all ? ` ${nameless.length === 1 ? "It is" : "They are"} listed last under “Show all”.` : ` ${nameless.length === 1 ? "It is" : "They are"} listed last, marked “no name read”.`}
+            </p>
+          )}
+        </>
       )}
       {read?.truncated && <p className="small warn">The page was too long to read in full. Rows may be missing.</p>}
       {read?.quarantined.map((q, i) => <p className="small warn" key={i}>Not used: the extraction returned {q.value} for {q.path}, but that number is not in the page text. It is shown as unknown.</p>)}
