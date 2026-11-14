@@ -252,3 +252,41 @@ test("view.html: elements that can send requests outside the sandbox are refused
   assert.equal(kit('<p style="font-size:{{size}}px">Linked text, meta data, a base layer</p>').ok, true); // words are fine, only tags are refused
   assert.equal(kit("<base-button>{{size}}</base-button><link-card></link-card><meta-chip>x < meta y</meta-chip>").ok, true); // custom elements and text are fine
 });
+
+// ---- The first Claude security review (review-20261114T062532Z), finding 1: web text written as markup.
+
+test("a preview that reads web pages or a brand and builds markup from a string gets a warning, not a refusal", async () => {
+  const { checkKit: check, markupWarning } = await import("./kit.ts");
+  const { TOOLS } = await import("./texts.ts");
+  const { KIT_REFERENCE } = await import("./reference.ts");
+  const base = { controls: [{ id: "size", type: "slider", label: "Size", meaning: "font size in px", min: 8, max: 20, initial: 12 }], outputs: [{ id: "result", label: "Result", template: "{{size}}px" }] };
+  const web = [{ id: "prices", url: "https://prices.example.org/pricing", rows: { describe: "one row per model", fields: [{ id: "model", type: "text", describe: "model name" }, { id: "price", type: "number", describe: "price" }] } }];
+  const kit = (js: string, data: object) => check({ ...base, ...data, view: { type: "preview", html: '<p id="out" style="font-size:{{size}}px">x</p>', js } } as never) as { ok: boolean; warnings?: string[]; errors?: string[] };
+  const sinks = {
+    innerHTML: 'document.getElementById("out").innerHTML = clay.data.web.prices.map((r) => "<b>" + r.model + "</b>").join("");',
+    outerHTML: 'const r = clay.data.web.prices[0]; document.getElementById("out").outerHTML = "<p>" + r.model + "</p>";',
+    insertAdjacentHTML: 'for (const r of clay.data.web.prices) document.getElementById("out").insertAdjacentHTML("beforeend", r.model);',
+  };
+  for (const [name, js] of Object.entries(sinks)) {
+    const r = kit(js, { web });
+    assert.equal(r.ok, true, `${name}: a warning, the playground is still built (${JSON.stringify(r.errors)})`);
+    const w = r.warnings!.filter((x) => x.startsWith("view.js: " + name));
+    assert.equal(w.length, 1, name);
+    assert.match(w[0], /this playground reads web pages \(data\.web\)/);
+    assert.match(w[0], /textContent/);
+  }
+  // A brand counts the same: its title and colour names are text from the web.
+  const brand = kit('document.getElementById("out").innerHTML = "<i>" + clay.data.brand.title + "</i>";', { brand: { domain: "stripe.com" } });
+  assert.equal(brand.ok, true);
+  assert.ok(brand.warnings!.some((x) => /^view\.js: innerHTML builds markup from a string, and this playground reads a brand \(data\.brand\)/.test(x)));
+  // Both sinks are named once each; bracket access is seen too.
+  assert.match(markupWarning({ preview: { js: 'a.innerHTML = x; b["insertAdjacentHTML"]("beforeend", y); c.innerHTML = z;' }, web, brand: null })!, /^view\.js: innerHTML, insertAdjacentHTML build markup/);
+  // No warning: the same data written as text; or markup built in a playground that reads nothing from the web.
+  assert.deepEqual(kit('document.getElementById("out").textContent = clay.data.web.prices.map((r) => r.model).join(", ");', { web }).warnings!.filter((x) => /markup/.test(x)), []);
+  assert.deepEqual(kit('document.getElementById("out").innerHTML = "<b>" + clay.values.size + "</b>";', {}).warnings!.filter((x) => /markup/.test(x)), []);
+  assert.equal(markupWarning({ preview: { js: "el.innerHTML = s;" }, web: [], brand: null }), null);
+  // The rule is in the texts an agent reads before it writes view.js.
+  for (const text of [TOOLS.create_playground, KIT_REFERENCE]) assert.match(text, /Text from clay\.data\.web and clay\.data\.brand[^.]*is copied from web pages/);
+  assert.match(TOOLS.create_playground, /with textContent, never as markup \(no innerHTML, outerHTML or insertAdjacentHTML with it\)/);
+  assert.match(KIT_REFERENCE, /no innerHTML, outerHTML or insertAdjacentHTML with a string that holds it/);
+});

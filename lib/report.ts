@@ -2,7 +2,7 @@
 // Text that came from web pages (plan names, quotes) is cut short and labelled, because the reader is another model.
 import { standing } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
-import { BRAND_PENDING, brandPending, explorationWords, renderOutputs, valuesNow, type KitState } from "./kit.ts";
+import { BRAND_PENDING, brandPending, explorationWords, markupWarning, renderOutputs, valuesNow, type KitState } from "./kit.ts";
 import { rank, type Assumptions } from "./pricing.ts";
 import { workStatus, type ChangeEvent, type Playground } from "./store.ts";
 import { rowKeys, type WebChange } from "./web.ts";
@@ -314,10 +314,12 @@ export function previewReport(p: Playground, url: string) {
       ? {
           // The same shape as a price playground's build report, so an agent waits and repairs the same way.
           build: webReading(p).length ? { status: "running", still_reading: webReading(p), next: "Call read_playground again: it waits up to 20 seconds for the web sources." } : { status: workStatus(p)?.status === "stalled" ? "stalled" : "done" },
-          problems: webProblems(k, webReading(p)),
+          problems: [...webProblems(k, webReading(p)), ...[markupWarning(k.kit)].filter((x) => x != null)],
           web_changes: webReading(p).length ? { ...webChanges(k), judge: "The pages are still being re-read: call read_playground again before you judge whether anything changed." } : webChanges(k),
         }
       : {}),
+    // A preview with a brand only has no build to report, but the same warning about web text written as markup (lib/kit.ts).
+    ...(!k.kit.web?.length && markupWarning(k.kit) ? { problems: [markupWarning(k.kit)] } : {}),
     ...(k.kit.web?.length || k.kit.brand ? { note: [k.kit.web?.length ? WEB_NOTE : "", k.kit.brand ? BRAND_NOTE : ""].filter(Boolean).join(" ") } : {}),
   };
 }

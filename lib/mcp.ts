@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { INSTRUCTIONS, TOOLS } from "./texts";
 import { DOMAIN } from "./domain";
-import { BRAND_PENDING, brandPending, initialValues, renderOutputs } from "./kit";
+import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutputs } from "./kit";
 import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
 import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
@@ -100,7 +100,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k, reading),
-      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [])],
+      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null)],
       warnings,
       next:
         reading.length

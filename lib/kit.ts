@@ -172,6 +172,22 @@ const ALL_FIELDS = [...new Set(Object.values(FIELDS).flat())];
  * Validate a preview kit. Returns the Kit, or every problem as a sentence that says how to fix it.
  * `warnings` are not errors: the playground is built, and the create result passes them on.
  */
+/** The three ways view.js can turn a string into markup. */
+const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML)\b/g;
+/**
+ * Text from a web page or a brand is not the agent's text: a page can change a price or a name into markup, and markup
+ * that view.js writes with innerHTML, outerHTML or insertAdjacentHTML is then built in every visitor's preview. So a
+ * preview that has such data and uses one of these gets a warning, for the agent (in problems) and for the operator
+ * before a playground becomes an example. A warning, not a refusal: the string may be the agent's own, which no
+ * pattern can see for certain. Null: no web or brand data, or none of the three in view.js.
+ */
+export function markupWarning(kit: { preview: { js: string }; web?: unknown[] | null; brand: unknown | null }): string | null {
+  if (!kit.web?.length && !kit.brand) return null;
+  const used = [...new Set(kit.preview.js.match(MARKUP_SINK) ?? [])];
+  if (!used.length) return null;
+  return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this playground reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup; revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
+}
+
 export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -311,6 +327,9 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
       for (const s of web) if (!new RegExp(`(?<![\\w$])${s.id}(?![\\w$])`).test(js) && !/(?<![\w$])web(?![\w$])\s*(?![.[\w$])/.test(js)) warnings.push(`data.web.${s.id}: view.js does not seem to read clay.data.web.${s.id}. A source that the preview does not use is read for nothing: use it, or remove it.`);
     }
   }
+  // Web text written as markup: a warning (markupWarning below), so the agent sees it and repairs it.
+  const sink = markupWarning({ preview: { js }, web, brand: raw.brand ?? null });
+  if (sink && !errors.length) warnings.push(sink);
   for (const m of js.matchAll(/clay\s*\.\s*data\s*\.\s*web\s*\.\s*([A-Za-z_$][\w$]*)/g)) if (!(web ?? []).some((s) => s.id === m[1])) errors.push(`view.js: clay.data.web.${m[1]} reads a web source that does not exist. Sources: ${(web ?? []).map((s) => s.id).join(", ") || "none (add data.web)"}.`);
   if (errors.length) return { ok: false, errors };
   return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
