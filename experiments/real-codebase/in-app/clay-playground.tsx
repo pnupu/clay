@@ -25,7 +25,7 @@ export type ClayControl = {
 );
 export type ClayValues = Record<string, number | boolean | string>;
 /** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props. */
-export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean; /** The chosen level. */ level?: ClayLevel["id"] };
+export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean };
 /** One real place where the component is used, with the props and the markup around it copied from that call site. */
 export type ClayUse = { id: string; /** Path from the repository root with the line: "src/app/x/page.tsx:42". */ file: string; label?: string; /** The style properties that this call site sets itself with its own class, named as the `css` of the scale controls ("borderRadius" for a call site with `rounded-none`). At the level "variant" the call site keeps its own value in the real code, so the kit leaves those controls out for this use. */ sets?: string[]; render: (a: ClayApplied) => ReactNode };
 export type ClayLevel = {
@@ -83,14 +83,15 @@ export function ClayPlayground(props: {
   const now = { ...initial, ...Object.fromEntries(active.map((c) => [c.id, values[c.id]])) } as ClayValues;
 
   // A use that the level changes gets the changed values only: scale classes as className, off-scale values as style.
-  const same: ClayApplied = { className: "", style: {}, values: initial, changes: false, level: level?.id };
-  const changes = (u: ClayUse) => !level || level.uses.includes(u.id);
-  // At the level "variant" a call site that sets a property itself keeps it in the real code: those controls are left out for that use.
+  const same: ClayApplied = { className: "", style: {}, values: initial, changes: false };
+  // At the level "variant" a call site that sets a property itself keeps it in the real code: those controls are left out for that use,
+  // and a use that sets every property the controls change does not change at all.
+  const own = (u: ClayUse) => (level?.id === "variant" ? (u.sets ?? []) : []);
+  const changes = (u: ClayUse) => (!level || level.uses.includes(u.id)) && !(active.length > 0 && active.every((c) => c.type === "scale" && own(u).includes(c.css)));
   const applied = (u: ClayUse): ClayApplied => {
     if (!changes(u)) return same;
-    const own = level?.id === "variant" ? (u.sets ?? []) : [];
-    const mine = moved.flatMap((c) => (c.type === "scale" && !c.token && !own.includes(c.css) ? [c] : []));
-    return { className: mine.filter(onScale).map((c) => values[c.id]).join(" "), style: Object.fromEntries(mine.filter((c) => !onScale(c)).map((c) => [c.css, String(values[c.id])])) as CSSProperties, values: now, changes: true, level: level?.id };
+    const mine = moved.flatMap((c) => (c.type === "scale" && !c.token && !own(u).includes(c.css) ? [c] : []));
+    return { className: mine.filter(onScale).map((c) => values[c.id]).join(" "), style: Object.fromEntries(mine.filter((c) => !onScale(c)).map((c) => [c.css, String(values[c.id])])) as CSSProperties, values: now, changes: true };
   };
 
   // The level "token": the variable is set on the page root, as the theme file would set it. The browser decides what changes.
@@ -101,18 +102,16 @@ export function ClayPlayground(props: {
     return () => { for (const [k] of set) root.style.removeProperty(k); };
   }, [tokens]);
 
-  // The text that the off-scale box holds while the person types: its earlier keystrokes are not values the person tried.
-  const typing = useRef<Record<string, string | undefined>>({});
-  const set = (c: ClayControl, v: number | boolean | string, typedNow = false) => {
+  const record = (c: ClayControl, v: number | boolean | string) => {
     const t = tried.current[c.id];
     if (c.type === "slider" && typeof v === "number") {
       const r = (t as { from: number; to: number } | undefined) ?? { from: c.initial, to: c.initial };
       tried.current[c.id] = { from: Math.min(r.from, v), to: Math.max(r.to, v) };
-    } else {
-      const before = ((t as (string | boolean)[] | undefined) ?? [c.initial as string | boolean]).filter((x) => !typedNow || x === c.initial || x !== typing.current[c.id]);
-      tried.current[c.id] = [...new Set([...before, v as string | boolean])];
-    }
-    typing.current[c.id] = typedNow && v !== c.initial ? String(v) : undefined;
+    } else tried.current[c.id] = [...new Set([...((t as (string | boolean)[] | undefined) ?? [c.initial as string | boolean]), v as string | boolean])];
+  };
+  // A typed value counts as tried when the person leaves the box (`typing`), not on each keystroke.
+  const set = (c: ClayControl, v: number | boolean | string, typing = false) => {
+    if (!typing) record(c, v);
     setValues((old) => ({ ...old, [c.id]: v }));
     setState("idle");
   };
@@ -192,11 +191,11 @@ export function ClayPlayground(props: {
                 {c.options.map((o) => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
               </select>
             )}
-            {c.type === "scale" && <input type="text" data-clay-off-scale-input placeholder="or a value off the scale, e.g. 14px" value={onScale(c) ? "" : (typed[c.id]?.trim() ? typed[c.id] : (values[c.id] as string))} onChange={(e) => { const text = e.target.value; setTyped((t) => ({ ...t, [c.id]: text })); set(c, text.trim() || c.initial, true); }} onBlur={() => { typing.current[c.id] = undefined; }} style={S.select} />}
+            {c.type === "scale" && <input type="text" data-clay-off-scale-input placeholder="or a value off the scale, e.g. 14px" value={onScale(c) ? "" : (typed[c.id]?.trim() ? typed[c.id] : (values[c.id] as string))} onChange={(e) => { const text = e.target.value; setTyped((t) => ({ ...t, [c.id]: text })); set(c, text.trim() || c.initial, true); }} onBlur={() => { if (!onScale(c)) record(c, values[c.id]); }} style={S.select} />}
             {c.type === "color" && <input type="color" value={values[c.id] as string} onChange={(e) => set(c, e.target.value)} />}
           </label>
         ))}
-        <button type="button" onClick={() => { tried.current = {}; typing.current = {}; setTyped({}); setValues(initial); setState("idle"); }} style={S.plain}>Back to the start values</button>
+        <button type="button" onClick={() => { tried.current = {}; setTyped({}); setValues(initial); setState("idle"); }} style={S.plain}>Back to the start values</button>
         {Object.entries(texts).map(([k, t]) => (
           <div key={k} style={S.row}>
             <span style={S.label}>{k}</span>
