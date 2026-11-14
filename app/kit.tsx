@@ -32,10 +32,22 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
   const router = useRouter();
+  // A drag is not interrupted: while a pointer is down the page is not asked again, as in SelfUpdate (app/live.tsx).
   useEffect(() => {
     if (!reading) return;
-    const t = setInterval(() => router.refresh(), 3000);
-    return () => clearInterval(t);
+    let down = false;
+    const press = () => void (down = true);
+    const release = () => void (down = false);
+    window.addEventListener("pointerdown", press, true);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    const t = setInterval(() => !down && router.refresh(), 3000);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("pointerdown", press, true);
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+    };
   }, [reading, router]);
   const api = `/api/p/${id}`;
   const { kit } = state;

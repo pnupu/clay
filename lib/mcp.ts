@@ -337,7 +337,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         notes: specShape.notes,
         data: specShape.data,
         controls: specShape.controls.describe("The full new list of controls of a preview playground. It replaces the current list."),
-        view: specShape.view.partial().optional().describe("Only the view fields that change: html, css, js, tailwind, height. The fields you leave out stay as they are. type may be left out; it cannot change."),
+        view: specShape.view.partial().optional().describe("Only the view fields that change: html, css, js, tailwind, map, height. The fields you leave out stay as they are. type may be left out; it cannot change."),
         outputs: specShape.outputs.describe("The full new list of outputs of a preview playground. It replaces the current list."),
         left_out: specShape.left_out,
       },
