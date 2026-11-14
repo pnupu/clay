@@ -155,3 +155,7 @@ export function rowNamed(name: unknown, names: JoinNames): boolean {
   if (words.some((w) => names.codes.has(w))) return true;
   return names.runs.some((run) => run.length <= words.length && run.every((w, j) => words[words.length - run.length + j] === w));
 }
+
+/** The file of one standing decision in the person's repository: one file per playground, at a fixed place (lib/record.ts).
+ * It is here because the pages name it too, and this module has no dependency. */
+export const recordPath = (id: string) => `.clay/decisions/${id}.md`;

@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { fromFrame, limiter } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
-import { hostsOf, joinNames, reasonOf, rowNamed, type JoinNames } from "@/lib/card";
+import { hostsOf, joinNames, reasonOf, recordPath, rowNamed, type JoinNames } from "@/lib/card";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
@@ -247,7 +247,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               <div className={css.settle}>
                 <button className="primary" disabled={busy || isSettled} onClick={settle}>{isSettled ? "Settled" : settled ? "Settle again on these values" : "Settle on these values"}</button>
                 {isSettled ? (
-                  <span className="small ok" data-settled>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.</span>
+                  <span className="small ok" data-settled>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</span>
                 ) : settled ? (
                   <span className="small warn">The controls differ from what you settled.</span>
                 ) : (

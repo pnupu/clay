@@ -176,15 +176,17 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         const w = await within(recheckWeb(playground_id));
         const now = (await load()).playgrounds[playground_id];
         if (!w.done) return text({ playground_id, url: url(playground_id), status: "running", still_reading: webReading(now), next: "The pages are still being re-read. Tell the person that today's facts are being read. Then call read_playground: it waits up to 20 seconds; repeat until build.status is \"done\". Its web_changes are what changed." });
+        const { verdict, ...file } = recheckFile(now, url(playground_id), new Date().toISOString(), webChanges(now.kit!).changes.length, !!w.value?.stop) as { verdict?: string };
         return text({
           playground_id,
           url: url(playground_id),
           checked_at: new Date().toISOString(),
           ...(w.value?.stop ? { stopped: `The re-check stopped early: ${w.value.stop}. Do not retry now; tell the person.` } : {}),
+          // A settled result is a standing decision: the verdict first, then what changed, then what to do with its file (lib/record.ts).
+          ...(verdict ? { verdict } : {}),
           changed_now: w.value?.changes.length ?? 0,
           web_changes: webChanges(now.kit!),
-          // A settled result is a standing decision: what to do with its file in the repository (lib/record.ts).
-          ...recheckFile(now, url(playground_id), new Date().toISOString(), webChanges(now.kit!).changes.length, !!w.value?.stop),
+          ...file,
           data: dataReport(now.kit!, webReading(now)),
           problems: webProblems(now.kit!, webReading(now)),
           // One statement, taken from web_changes, so the two cannot disagree. After a stop (rate limit, cap) it is the stop.

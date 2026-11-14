@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
 import { cents, crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
-import { reasonOf } from "@/lib/card";
+import { reasonOf, recordPath } from "@/lib/card";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { commitNumber, liveNumber } from "@/lib/numberbox";
 import type { Exploration, PublicState } from "@/lib/store";
@@ -388,7 +388,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
               ) : (
-                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
+                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
               {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
@@ -642,7 +642,7 @@ function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingMo
  * The saved decision, always judged under the assumptions it was saved with, and always labelled with them. What the saved
  * vendor would cost under other values is said elsewhere (the "You are trying other values" notice above the ranking).
  */
-function Standing({ decision, st, name, cheapestName, savedWords, atSaved, own, now, onLoad, onClear }: { decision: NonNullable<PublicState["decision"]>; st: Stand; name: string; cheapestName: string | null; savedWords: string; atSaved: boolean; own: boolean; now: number; onLoad: () => void; onClear: (() => void) | null }) {
+function Standing({ decision, st, name, cheapestName, savedWords, atSaved, own, now, file, onLoad, onClear }: { /** The owner's decision file in their repository (lib/record.ts); null for a visitor. */ file: string | null; decision: NonNullable<PublicState["decision"]>; st: Stand; name: string; cheapestName: string | null; savedWords: string; atSaved: boolean; own: boolean; now: number; onLoad: () => void; onClear: (() => void) | null }) {
   return (
     <>
       <p className="small" style={{ margin: "0 0 6px" }}>{own ? "Your saved choice" : "The saved choice of this example"}: <b>{name}</b></p>
@@ -653,6 +653,7 @@ function Standing({ decision, st, name, cheapestName, savedWords, atSaved, own, 
         Rule: the decision holds while {name} costs {st.tolerance > 0 ? `at most ${money(st.tolerance)} per month more than the cheapest vendor` : "no more than the cheapest vendor"} at the saved values.
       </p>
       <p className="small muted">Saved {ago(decision.savedAt, now)}. Judged against the prices as last read.{atSaved ? "" : " The ranking now shows other values than these."}</p>
+      {file && <p className="small muted" data-record>Tell your agent you saved it: it keeps this decision in your repository ({file}), and any later session re-checks it from there.</p>}
       <div className="row">
         <button className="small-btn" disabled={atSaved} onClick={onLoad}>{own ? "Back to my saved values" : "Back to the saved values"}</button>
         {onClear && <button className="small-btn" onClick={onClear}>Clear</button>}
