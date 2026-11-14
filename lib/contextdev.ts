@@ -77,16 +77,18 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   // A signed-in person (their page or their agent) also has their own daily cap (CLAY_USER_DAILY_REQUESTS, lib/accounts.ts).
   const user = currentUserId();
   const personal = user ? userDailyCap() : 0;
+  // A brand read costs 10 credits and a price extraction 5: a brand read counts as 2 requests in both caps.
+  const units = path.startsWith("/brand/") ? 2 : 1;
   const refusal = (daily > 0 || personal > 0) && method !== "DELETE" ? await update((s) => {
-    const b = daily > 0 ? spend(s.budget, day, daily) : s.budget;
+    const b = daily > 0 ? spend(s.budget, day, daily, units) : s.budget;
     if (!b && daily > 0) return "global";
-    const u = user && personal > 0 ? spend(s.users[user]?.usage ?? null, day, personal) : null;
+    const u = user && personal > 0 ? spend(s.users[user]?.usage ?? null, day, personal, units) : null;
     if (user && personal > 0 && !u) return "user";
     s.budget = b;
     if (user && u) s.users[user] = { ...(s.users[user] ?? { keyHash: null, keyCreatedAt: null }), usage: u };
     return null;
   }) : null;
-  if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were sent today (CONTEXT_DEV_DAILY_CAP). No request was sent. The budget resets at 00:00 UTC.`);
+  if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
   if (refusal === "user") throw new ContextDevError(429, "USER_DAILY_CAP", userCapMessage(personal));
   await slot();
   overCap();

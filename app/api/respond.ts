@@ -1,9 +1,9 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
-import { bindActor, canRead, canWrite, guessLimiter, looksLikeAgentKey, userOfKey, VISITOR, type Actor } from "@/lib/accounts";
+import { bindActor, canRead, canWrite, guessLimiter, keyDecision, looksLikeAgentKey, needsCheck, onlyTestAddresses, testAccountsAllowed, userOfKey, VISITOR, type Actor, type ClerkVerdict } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
-import { load, publicBase, publicState } from "@/lib/store";
+import { load, publicBase, publicState, update } from "@/lib/store";
 
 /** Sign-in through Clerk is on when both Clerk keys are set. Without them only the owner key works (the app as it was). */
 export const clerkOn = () => !!process.env.CLERK_SECRET_KEY && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
@@ -13,12 +13,47 @@ const guesses = guessLimiter();
 const clientIp = (h: { get(name: string): string | null }) => h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
 
 /**
+ * What Clerk says about this person now (lib/accounts.ts): "gone" when deleted, banned, or holding only Clerk test
+ * addresses on a public app; "unknown" when Clerk does not answer within 5 seconds or fails. The addresses are only read.
+ */
+export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
+  if (!clerkOn()) return "unknown";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("timeout")), 5000)));
+    const u = await Promise.race([(await clerkClient()).users.getUser(userId), timeout]);
+    if (u.banned) return "gone";
+    const emails = u.emailAddresses.map((e) => ({ address: e.emailAddress, verified: e.verification?.status === "verified" }));
+    return onlyTestAddresses(emails) && !testAccountsAllowed(isHosted()) ? "gone" : "ok";
+  } catch (e) {
+    return (e as { status?: unknown })?.status === 404 ? "gone" : "unknown";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Confirm an agent key's person with Clerk at most every 10 minutes (keyDecision()); revoke the key of a person who is gone. */
+async function confirmKey(userId: string, checkedAt: string | null | undefined): Promise<"ok" | "revoked" | "unavailable"> {
+  const now = Date.now();
+  if (!needsCheck({ checkedAt }, now)) return "ok";
+  const d = keyDecision({ checkedAt }, now, await clerkVerdict(userId));
+  if (d.revoke || d.checkedAt)
+    await update((s) => {
+      const a = s.users[userId];
+      if (!a) return;
+      if (d.revoke) s.users[userId] = { ...a, keyHash: null, keyCreatedAt: null, checkedAt: null };
+      else a.checkedAt = d.checkedAt;
+    });
+  return d.allow ? "ok" : d.revoke ? "revoked" : "unavailable";
+}
+
+/**
  * Who sends this request (lib/accounts.ts)? In this order: the owner key (bearer or owner cookie) is the admin; a bearer
  * agent key is its person; a Clerk session is its person; anyone else is a visitor. `bad` is set when a bearer token was
  * sent and matched nothing, so the caller can say so instead of acting as a visitor. Works on route requests and, with
  * the headers of the page request, in server components.
  */
-export async function identify(h: { get(name: string): string | null }): Promise<{ actor: Actor; bad: null | "key" | "blocked" }> {
+export async function identify(h: { get(name: string): string | null }): Promise<{ actor: Actor; bad: null | "key" | "blocked" | "revoked" | "unavailable" }> {
   const key = process.env.CLAY_ACCESS_KEY;
   const authorization = h.get("authorization");
   // Without an owner key, only the development server without Clerk is open, as before accounts existed.
@@ -26,8 +61,12 @@ export async function identify(h: { get(name: string): string | null }): Promise
   const bearer = /^Bearer\s+(\S+)\s*$/i.exec(authorization ?? "")?.[1];
   if (bearer) {
     // A valid key always works, so nobody can lock a person out by sending wrong keys from (or claiming) their address.
-    const userId = looksLikeAgentKey(bearer) ? userOfKey(bearer, (await load()).users) : null;
-    if (userId) return { actor: { kind: "user", userId, via: "key" }, bad: null };
+    const users = looksLikeAgentKey(bearer) ? (await load()).users : {};
+    const userId = userOfKey(bearer, users);
+    if (userId) {
+      const confirmed = await confirmKey(userId, users[userId]?.checkedAt);
+      return confirmed === "ok" ? { actor: { kind: "user", userId, via: "key" }, bad: null } : { actor: VISITOR, bad: confirmed };
+    }
     const ip = clientIp(h);
     if (guesses.blocked(ip)) return { actor: VISITOR, bad: "blocked" };
     guesses.fail(ip);
@@ -100,6 +139,8 @@ export async function refused(req: Request): Promise<Response | null> {
   const { actor, bad } = await identify(req.headers);
   holder.actor = actor;
   if (bad === "blocked") return Response.json({ error: "Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from the Connect your agent page." }, { status: 429 });
+  if (bad === "revoked") return Response.json({ error: "This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in on Clay and create a new key on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  if (bad === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
   if (bad === "key") return Response.json({ error: "This key is not valid. It may have been regenerated or revoked. Get a new agent key on the Connect your agent page of Clay." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   if (actor.kind === "visitor") return Response.json({ error: "Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   // Decoded, so an encoded form of an admin-only path (for example /api/p/x/%77atch) is recognised too.

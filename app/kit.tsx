@@ -149,7 +149,10 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
           <section className={`card ${css.stage}`}>
             <div className={css.stageHead}>
               <h2>Preview</h2>
-              <span className="small muted">Built by the owner&apos;s agent. It runs in a sandbox and cannot read this page or use the network.</span>
+              <span className="small muted">
+                Built by the owner&apos;s agent. It runs in a sandbox: it cannot read this page or send data to other sites
+                {state.brandData?.logos?.length || state.kit.preview.tailwind ? `, but your browser loads ${[state.brandData?.logos?.length ? "the brand's logo images from their hosts" : "", state.kit.preview.tailwind ? "the Tailwind build from jsDelivr" : ""].filter(Boolean).join(" and ")}, and those hosts see your IP address` : ""}.
+              </span>
             </div>
             {frame.status === "failed" && (
               <p className={`alert ${css.failed}`} role="alert">

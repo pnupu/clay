@@ -1,5 +1,5 @@
-import { refused } from "@/app/api/respond";
-import { currentActor, hashKey, newAgentKey } from "@/lib/accounts";
+import { clerkVerdict, refused } from "@/app/api/respond";
+import { currentActor, hashKey, newAgentKey, TEST_ACCOUNT_MESSAGE } from "@/lib/accounts";
 import { update } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +16,13 @@ async function signedIn(req: Request): Promise<string | Response> {
 export async function POST(req: Request) {
   const userId = await signedIn(req);
   if (userId instanceof Response) return userId;
+  // Asked at this moment, so a Clerk test account on a public app gets no key; nothing about the address is stored.
+  const verdict = await clerkVerdict(userId);
+  if (verdict === "gone") return Response.json({ error: `${TEST_ACCOUNT_MESSAGE}.` }, { status: 403 });
+  if (verdict === "unknown") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Try again in a few minutes." }, { status: 503 });
   const key = newAgentKey();
   const createdAt = new Date().toISOString();
-  await update((s) => void (s.users[userId] = { usage: s.users[userId]?.usage ?? null, keyHash: hashKey(key), keyCreatedAt: createdAt }));
+  await update((s) => void (s.users[userId] = { usage: s.users[userId]?.usage ?? null, keyHash: hashKey(key), keyCreatedAt: createdAt, checkedAt: createdAt }));
   return Response.json({ key, createdAt }, { headers: { "Cache-Control": "no-store" } });
 }
 

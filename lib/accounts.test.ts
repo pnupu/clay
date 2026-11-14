@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, limit, newAgentKey, playgroundCapMessage, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
 import { newPlayground } from "./store.ts";
 
@@ -88,4 +89,45 @@ test("key guesses: an address is refused after 20 failures in 10 minutes", () =>
   assert.equal(g.blocked("1.2.3.4", 2000), true);
   assert.equal(g.blocked("5.6.7.8", 2000), false);
   assert.equal(g.blocked("1.2.3.4", 1000 + 600_001), false);
+});
+
+test("agent keys follow the Clerk account: confirmed every 10 minutes, revoked when gone, bounded when Clerk is down", () => {
+  const now = Date.parse("2026-11-14T12:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  // When to ask Clerk: never confirmed (a key from before this rule), or confirmed 10 minutes ago or more.
+  assert.equal(needsCheck({ checkedAt: null }, now), true);
+  assert.equal(needsCheck({}, now), true);
+  assert.equal(needsCheck({ checkedAt: ago(KEY_CHECK_MS - 1) }, now), false);
+  assert.equal(needsCheck({ checkedAt: ago(KEY_CHECK_MS) }, now), true);
+  assert.equal(needsCheck({ checkedAt: "garbage" }, now), true);
+  // Clerk confirms: allow and record the time. Deleted, banned or a test account on a public app: refuse and revoke.
+  assert.deepEqual(keyDecision({ checkedAt: ago(KEY_CHECK_MS) }, now, "ok"), { allow: true, revoke: false, checkedAt: new Date(now).toISOString() });
+  assert.deepEqual(keyDecision({ checkedAt: ago(1000) }, now, "gone"), { allow: false, revoke: true, checkedAt: null });
+  // Clerk unreachable: fail open only within the grace after the last confirmation, never for a key never confirmed.
+  assert.equal(keyDecision({ checkedAt: ago(KEY_GRACE_MS - 1) }, now, "unknown").allow, true);
+  assert.equal(keyDecision({ checkedAt: ago(KEY_GRACE_MS) }, now, "unknown").allow, false);
+  assert.equal(keyDecision({ checkedAt: null }, now, "unknown").allow, false);
+  assert.equal(keyDecision({ checkedAt: ago(1000) }, now, "unknown").revoke, false);
+});
+
+test("Clerk test accounts: no agent key on a public app unless explicitly allowed", () => {
+  const v = (address: string, verified = true) => ({ address, verified });
+  assert.equal(onlyTestAddresses([v("ann+clerk_test@example.com")]), true);
+  assert.equal(onlyTestAddresses([v("Ann+CLERK_TEST@Example.com")]), true);
+  assert.equal(onlyTestAddresses([v("ann+clerk_test@example.com"), v("ann@example.org")]), false);
+  // An unverified real address does not count; an unverified test address does not count either.
+  assert.equal(onlyTestAddresses([v("ann+clerk_test@example.com"), v("ann@example.org", false)]), true);
+  assert.equal(onlyTestAddresses([v("ann+clerk_test@example.com", false)]), false);
+  assert.equal(onlyTestAddresses([]), false);
+  assert.equal(onlyTestAddresses([v("ann+clerktest@example.com")]), false);
+  assert.equal(testAccountsAllowed(true, {}), false);
+  assert.equal(testAccountsAllowed(true, { CLAY_ALLOW_TEST_ACCOUNTS: "true" }), false);
+  assert.equal(testAccountsAllowed(true, { CLAY_ALLOW_TEST_ACCOUNTS: "1" }), true);
+  assert.equal(testAccountsAllowed(false, {}), true);
+});
+
+test("budget: a brand read counts as 2 and cannot pass the cap with one unit left", () => {
+  assert.deepEqual(spend({ day: "d", used: 37 }, "d", 40, 2), { day: "d", used: 39 });
+  assert.equal(spend({ day: "d", used: 39 }, "d", 40, 2), null);
+  assert.deepEqual(spend({ day: "d", used: 39 }, "d", 40), { day: "d", used: 40 });
 });
