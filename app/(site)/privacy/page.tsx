@@ -1,8 +1,13 @@
+import { clerkOn } from "@/app/api/respond";
+
 export const metadata = { title: "Privacy and security · Clay", description: "What Clay stores, who else receives data, and what a preview built by an agent can and cannot do." };
 
 // Every sentence here states what the code does (lib/store.ts, lib/accounts.ts, lib/contextdev.ts, lib/frame.ts,
-// app/kit.tsx) or what the README says of the deployment. Change the code and this page together.
+// app/kit.tsx) or what the README says of the deployment. Change the code and this page together. What depends on the
+// deployment is read from it: whether sign-in is on, and whether its key is a development one (pk_test_).
 export default function Privacy() {
+  const signIn = clerkOn();
+  const development = signIn && (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "").startsWith("pk_test_");
   return (
     <>
       <main id="top">
@@ -11,7 +16,7 @@ export default function Privacy() {
             <div className="grid grid--top">
               <div className="span-4 doc__head">
                 <h1 id="privacy-h" className="t-h2">Privacy and security</h1>
-                <p className="t-lead">Clay is a hackathon project, built at Junction 2026. Sign-in runs on the sign-in provider’s development instance. This page says what Clay stores and what a preview can do, as the code stands today.</p>
+                <p className="t-lead">Clay is a hackathon project, built at Junction 2026.{development ? " Sign-in runs on the sign-in provider’s development instance." : signIn ? "" : " This deployment has no sign-in."} This page says what Clay stores and what a preview can do, as the code stands today.</p>
               </div>
               <div className="span-8 start-5 legal">
                 <section>
@@ -32,7 +37,7 @@ export default function Privacy() {
                 <section>
                   <h2>Who else receives data</h2>
                   <ul>
-                    <li><b>Clerk</b> runs sign-in and holds your sign-in data. On the sign-in pages Cloudflare’s bot check runs for Clerk.</li>
+                    {signIn && <li><b>Clerk</b> runs sign-in and holds your sign-in data. On the sign-in pages Cloudflare’s bot check runs for Clerk.</li>}
                     <li><b>Context.dev</b> reads the web for Clay. It receives the addresses and domains to read, the search words for a pricing page, and the description of what to extract. It does not receive your account id or the values you set.</li>
                     <li><b>Vercel</b> hosts the site and the stored document.</li>
                     <li><b>jsDelivr:</b> when a preview uses Tailwind, your browser loads that file from jsDelivr.</li>

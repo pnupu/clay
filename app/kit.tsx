@@ -283,7 +283,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                   </div>
                   {triedNow && (
                     <p className="small" data-settle-try role="status">
-                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${c.type === "toggle" ? (values[c.id] ? "on" : "off") : String(values[c.id])}`).join(", ")}. <Link href="/connect" prefetch={false}>Connect your own agent</Link>
+                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. <Link href="/connect" prefetch={false}>Connect your own agent</Link>
                     </p>
                   )}
                 </div>
@@ -322,6 +322,10 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     </Shell>
   );
 }
+
+/** A control's value as the page shows it: on or off, an option's label, a number with its unit. */
+const shownValue = (c: Control, v: Value): string =>
+  c.type === "toggle" ? (v ? "on" : "off") : c.type === "select" ? (c.options.find((o) => o.value === v)?.label ?? String(v)) : c.type === "slider" && c.unit ? `${v} ${c.unit}` : String(v);
 
 /** An output is folded when it is taller than this; folded, it shows its first lines (kit.module.css, .folded). */
 const FOLD_TALLER_THAN = 220;

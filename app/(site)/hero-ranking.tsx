@@ -11,8 +11,8 @@ const num = (n: number) => n.toLocaleString("en-US");
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /**
- * The landing page's hero when the featured example is a price decision: its real ranking, small. One slider (the first
- * metric that the vendors' pages price) moves the monthly cost of every vendor; the bars grow and shrink, and the rows
+ * The landing page's hero when the featured example is a price decision: its real ranking, small. One slider (the metric
+ * the page chose: the first along which the cheapest vendor changes, app/(site)/page.tsx) moves the monthly cost of every vendor; the bars grow and shrink, and the rows
  * change places where the order flips. The prices are the example's stored ones, as read from the vendors' own pages,
  * and the costs come from the same functions as the playground's own page (lib/pricing.ts). The server renders it at
  * the start value, so it shows before any script.
@@ -26,7 +26,7 @@ export default function HeroRanking({ id, question, metric, usage, models, names
   const ranking = useMemo(() => rank(models, { usage: { ...usage, [metric.id]: value }, required: [] }), [models, usage, metric.id, value]);
   // Where the order of the ranking changes along the slider (the same slider steps a person can reach), and where the
   // cheapest vendor changes (the price page's own function).
-  const cheapestFlips = useMemo(() => crossovers(models, { usage, required: [] }, metric.id, metric.min, metric.max), [models, usage, metric]);
+  const cheapestFlips = useMemo(() => crossovers(models, { usage, required: [] }, metric.id, metric.min, metric.max).filter((c) => c.from && c.to), [models, usage, metric]);
   const flips = useMemo(() => {
     const orderAt = (x: number) => rank(models, { usage: { ...usage, [metric.id]: x }, required: [] }).ranked.map((v) => v.id);
     const out: { at: number; up: string; down: string }[] = [];
@@ -37,7 +37,8 @@ export default function HeroRanking({ id, question, metric, usage, models, names
       const i = now.findIndex((id, k) => id !== before[k]);
       // The first place that differs: the vendor now there passed the one that was there. Only when the same vendors
       // are ranked on both sides: a vendor that left or entered the ranking (no plan fits, a price unknown) passed nobody.
-      if (i >= 0 && before[i] && now.length === before.length && now.every((id) => before.includes(id))) out.push({ at, up: now[i], down: before[i] });
+      // A change of the first place is not counted here: crossovers finds those, at their exact value.
+      if (i > 0 && before[i] && now.length === before.length && now.every((id) => before.includes(id))) out.push({ at, up: now[i], down: before[i] });
       before = now;
     }
     return out;
@@ -50,11 +51,13 @@ export default function HeroRanking({ id, question, metric, usage, models, names
   // when it never changes, where two other vendors change places.
   const name = (id: string | null) => (id ? (names[id] ?? id) : "no vendor");
   const leadAhead = cheapestFlips.find((c) => c.at > value);
-  const leadBehind = [...cheapestFlips].reverse().find((c) => c.at <= value);
+  const behind = cheapestFlips.filter((c) => c.at <= value);
+  const leadBehind = behind[behind.length - 1];
+  const before = behind[behind.length - 2];
   const flipLine = leadAhead
     ? `The cheapest changes at ${num(leadAhead.at)} ${metric.unit}: ${name(leadAhead.to)} takes over from ${name(leadAhead.from)}.`
     : leadBehind
-      ? `Below ${num(leadBehind.at)} ${metric.unit} the cheapest is ${name(leadBehind.from)}.`
+      ? (before ? `From ${num(before.at)} to ${num(leadBehind.at)} ${metric.unit} the cheapest is ${name(leadBehind.from)}.` : `Below ${num(leadBehind.at)} ${metric.unit} the cheapest is ${name(leadBehind.from)}.`)
       : flips.length === 0
         ? `The order stays the same from ${num(metric.min)} to ${num(metric.max)} ${metric.unit}.`
         : next
@@ -75,7 +78,7 @@ export default function HeroRanking({ id, question, metric, usage, models, names
           <input id={`hero-${metric.id}`} type="range" min={0} max={1000} value={pos} aria-valuetext={`${num(value)} ${metric.unit}`} onChange={(e) => { setPos(Number(e.target.value)); setTouched(true); }} />
           {/* Marks on the track: a strong one where the cheapest vendor changes, a light one where two others change places. */}
           {cheapestFlips.map((c) => <i key={`lead-${c.at}`} data-lead style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The cheapest changes at ${num(c.at)} ${metric.unit}`} />)}
-          {flips.filter((c) => !cheapestFlips.some((l) => Math.abs(l.at - c.at) <= c.at * 0.03)).map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at about ${num(c.at)} ${metric.unit}`} />)}
+          {flips.map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at about ${num(c.at)} ${metric.unit}`} />)}
         </div>
         <p className="rank2__flip">{flipLine}</p>
       </div>

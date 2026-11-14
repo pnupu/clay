@@ -29,7 +29,7 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
    The stage on top, the controls and what the agent would write side by side under it, their edges shared. */
 .live .k-root { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; font: 14px/1.4 var(--font-text); color: var(--p-ink); }
 .live .k-root > div, .live .k-main { display: contents; }
-.live .k-notes, .live .k-data, .live .k-caption, .live .k-about, .live .k-head p:not(.eyebrow) { display: none; }
+.live .k-notes, .live .k-data, .live .k-about, .live .k-head p:not(.eyebrow) { display: none; }
 .live :is(.k-stage, .k-controls, .k-out) { margin: 0; min-width: 0; background: var(--c-pane); border: 1px solid var(--c-line); border-radius: var(--r-md); overflow: hidden; }
 .live .k-label { font: 500 13px/1.3 var(--font-text); letter-spacing: 0; margin: 0 0 var(--s-2); color: var(--p-muted); }
 .live .k-head { grid-area: 1 / 1 / 2 / -1; margin: 0; }
