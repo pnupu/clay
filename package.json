@@ -2,6 +2,7 @@
   "name": "sorvi",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "next dev --webpack -H 127.0.0.1 -p ${PORT:-43117}",
     "build": "next build",

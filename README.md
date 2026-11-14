@@ -455,3 +455,7 @@ Everything that depends on Sorvi's tool names, tool results and page markup is i
 `evals/heldout.ts` holds 6 more requests that were written after the fixes of the first "just works" pass (`--set heldout`); write new ones for a new pass. The checker waits for a running build to end, as a person would, and it compares only texts when a preview animates on its own.
 
 Use the owner key (`CLAY_ACCESS_KEY`) as the key: the harness also acts as the person in a browser, through the owner link. With a per-person agent key the agent legs work, but the person's steps (save, settle) need a signed-in browser, which the harness does not have yet. Run against a fresh store, or expect a void sample when an agent picks the id of a lab that an earlier run left behind. Each CLI keeps its default tool-call timeout (about 60 s) on purpose: a build that outlasts it is reported as its own failure cause.
+
+## Licence
+
+MIT. See `LICENSE`.
