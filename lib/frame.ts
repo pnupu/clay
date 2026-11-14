@@ -131,14 +131,19 @@ export const HARDEN = `
   /** Elements whose content is text, not markup (RAWTEXT and RCDATA): innerHTML sets their text, as natively. */
   var TEXT_ONLY = /^(style|textarea|title|xmp|noscript|noembed|noframes|plaintext|script|iframe)$/;
   lock(Range.prototype, "createContextualFragment", function (html) { var f = ccf.call(this, html); clean(f); return f; });
-  lockSetter(E, "innerHTML", function (html) {
-    var own = nameOf.call(this);
-    if (own === "template" && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { innerSet.call(this, html); clean(this.content); return; }
+  // A template's markup goes to its content (an inert fragment), read with the saved getter; a fragment's children are
+  // replaced with the saved DocumentFragment method.
+  var contentOf = Object.getOwnPropertyDescriptor(HTMLTemplateElement.prototype, "content").get, fragReplace = DocumentFragment.prototype.replaceChildren;
+  var isTemplate = function (el) { return nameOf.call(el) === "template" && nsOf.call(el) === "http://www.w3.org/1999/xhtml"; };
+  // innerHTML, and setHTMLUnsafe on an element (the same fragment parsing, without declarative shadow roots here).
+  function setInner(html) {
+    if (isTemplate(this)) { innerSet.call(this, html); clean(contentOf.call(this)); return; }
     // Natively these parse to text only (RCDATA decodes entities, raw text does not); no element can be created there, so
     // the saved native setter is both safe and exact.
-    if (TEXT_ONLY.test(own) && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { innerSet.call(this, html == null ? "" : String(html)); return; }
+    if (TEXT_ONLY.test(nameOf.call(this)) && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { innerSet.call(this, html == null ? "" : String(html)); return; }
     origReplaceChildren.call(this, parse(this, html));
-  });
+  }
+  lockSetter(E, "innerHTML", setInner);
   if (window.ShadowRoot) { var shadowSet = (Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "innerHTML") || {}).set; if (shadowSet) lockSetter(ShadowRoot.prototype, "innerHTML", function (html) { var t = createEl.call(document, "template"); innerSet.call(t, html); clean(t.content); this.replaceChildren(t.content); }); }
   lockSetter(E, "outerHTML", function (html) { origReplaceWith.call(this, parse(this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null, html)); });
   lock(E, "insertAdjacentHTML", function (where, html) {
@@ -157,11 +162,14 @@ export const HARDEN = `
     var safe = P.setHTML; if (typeof safe === "function") lock(P, "setHTML", function () {
       var shadow = window.ShadowRoot && this instanceof ShadowRoot;
       var tmp = shadow ? E.attachShadow.call(createEl.call(document, "div"), { mode: "open" }) : createNS.call(document, nsOf.call(this), nameOf.call(this));
-      safe.apply(tmp, arguments); clean(tmp);
-      var f = document.createDocumentFragment(); while (tmp.firstChild) f.appendChild(tmp.firstChild);
-      this.replaceChildren(f);
+      safe.apply(tmp, arguments);
+      // A template sanitizes into its content, as natively.
+      var into = !shadow && isTemplate(this), src = into ? contentOf.call(tmp) : tmp;
+      clean(src);
+      var f = document.createDocumentFragment(); while (src.firstChild) f.appendChild(src.firstChild);
+      if (into) fragReplace.call(contentOf.call(this), f); else this.replaceChildren(f);
     });
-    if (typeof P.setHTMLUnsafe === "function") lock(P, "setHTMLUnsafe", function (html) { var f = parse(this.host || this, html); this.replaceChildren(f); });
+    if (typeof P.setHTMLUnsafe === "function") lock(P, "setHTMLUnsafe", function (html) { if (P === E) return setInner.call(this, html); var f = parse(this.host || this, html); this.replaceChildren(f); });
   });
   if (Document.parseHTMLUnsafe) lock(Document, "parseHTMLUnsafe", function () { refuse("parsed document"); });
   var parseFrom = DOMParser.prototype.parseFromString;

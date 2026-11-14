@@ -99,7 +99,15 @@ const ta = document.createElement("textarea"); ta.innerHTML = "&lt;b&gt;Tom &amp
 out["textarea innerHTML decodes entities as natively"] = ta.value === "<b>Tom & Jerry</b>" ? "ok (decoded)" : "ALLOWED " + JSON.stringify(ta.value);
 const ti = document.createElement("title"); ti.innerHTML = "A &amp; B";
 out["title innerHTML decodes entities as natively"] = ti.text === "A & B" ? "ok (decoded)" : "ALLOWED " + JSON.stringify(ti.text);
+// setHTMLUnsafe keeps the native parsing of its receiver: a template fills its content, RCDATA elements decode text.
+const hasUnsafe = typeof Element.prototype.setHTMLUnsafe === "function";
+if (hasUnsafe) {
+  try { const tu = document.createElement("template"); tu.setHTMLUnsafe("<b>A &amp; B</b>"); out["template setHTMLUnsafe fills its content"] = tu.content.textContent === "A & B" && !tu.firstChild ? "ok (content)" : "ALLOWED " + JSON.stringify([tu.content.textContent, tu.textContent]); } catch (e) { out["template setHTMLUnsafe fills its content"] = "ALLOWED threw " + e.name; }
+  try { const tx = document.createElement("textarea"); tx.setHTMLUnsafe("<b>A &amp; B</b>"); out["textarea setHTMLUnsafe keeps text"] = tx.value === "<b>A & B</b>" && !tx.firstElementChild ? "ok (text)" : "ALLOWED " + JSON.stringify(tx.value); } catch (e) { out["textarea setHTMLUnsafe keeps text"] = "ALLOWED threw " + e.name; }
+  try { const tt = document.createElement("title"); tt.setHTMLUnsafe("<b>A &amp; B</b>"); out["title setHTMLUnsafe keeps text"] = tt.text === "<b>A & B</b>" ? "ok (text)" : "ALLOWED " + JSON.stringify(tt.text); } catch (e) { out["title setHTMLUnsafe keeps text"] = "ALLOWED threw " + e.name; }
+}
 if (hasSetHTML) {
+  try { const tp = document.createElement("template"); tp.setHTML("<b>A &amp; B</b>"); out["template setHTML fills its content"] = tp.content.textContent === "A & B" && !tp.firstChild ? "ok (content)" : "ALLOWED " + JSON.stringify([tp.content.textContent, tp.textContent]); } catch (e) { out["template setHTML fills its content"] = "ALLOWED threw " + e.name; }
   const tb2 = document.createElement("tbody"); tbl.appendChild(tb2);
   try { tb2.setHTML("<tr><td>ok</td></tr>"); out["tbody setHTML keeps rows"] = tb2.rows.length === 1 ? "ok (1 row)" : "ALLOWED " + tb2.rows.length + " rows"; } catch (e) { out["tbody setHTML keeps rows"] = "ALLOWED threw " + e.name; }
   try { const host = document.createElement("div"); document.body.appendChild(host); const sr = host.attachShadow({ mode: "open" }); sr.setHTML("<b>shadow</b>"); out["ShadowRoot setHTML works"] = sr.querySelector("b") ? "ok (works)" : "ALLOWED nothing set"; } catch (e) { out["ShadowRoot setHTML works"] = "ALLOWED threw " + e.name; }
