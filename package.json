@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -H ${HOST:-127.0.0.1} -p ${PORT:-43117}",
     "lint": "eslint",
-    "test": "node --test lib/*.test.ts",
+    "test": "node --test lib/*.test.ts evals/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
