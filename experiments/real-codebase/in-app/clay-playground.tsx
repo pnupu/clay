@@ -15,6 +15,9 @@ export type ClayControl = {
   label: string;
   /** A CSS variable of the theme ("--radius"). The control then belongs to the level "token": the kit sets the variable on the page root, so everything bound to it changes. */
   token?: string;
+  /** When a level holds several tokens: the ids of the shown uses that this token reaches, and the files with more uses of it that are not shown. Without them the level's own lists count for this control. */
+  uses?: string[];
+  others?: string[];
 } & (
   | { type: "slider"; min: number; max: number; step?: number; initial: number; unit?: string }
   | { type: "toggle"; initial: boolean }
@@ -89,10 +92,14 @@ export function ClayPlayground(props: {
   // At the level "variant" a call site that sets a property itself keeps it in the real code: those controls are left out for that use,
   // and a use that sets every property the controls change does not change at all.
   const own = (l: ClayLevel | undefined, u: ClayUse) => (l?.id === "variant" ? (u.sets ?? []) : []);
-  const keeps = (l: ClayLevel | undefined, u: ClayUse, of: ClayControl[]) => of.length > 0 && of.every((c) => c.type === "scale" && own(l, u).includes(c.css));
+  // A control does not reach a use that is not in the control's own list (a token that the use is not bound to), or that sets the property itself.
+  const reaches = (c: ClayControl, l: ClayLevel | undefined, u: ClayUse) => !(c.uses && !c.uses.includes(u.id)) && !(c.type === "scale" && own(l, u).includes(c.css));
+  const keeps = (l: ClayLevel | undefined, u: ClayUse, of: ClayControl[]) => of.length > 0 && of.every((c) => !reaches(c, l, u));
   // The controls that decide it: the ones of the level that the person moved; before the first move, all controls of the level.
   const decide = (l: ClayLevel | undefined) => (movedOf(l).length ? movedOf(l) : controlsOf(l));
   const changesAt = (l: ClayLevel | undefined, u: ClayUse) => (!l || l.uses.includes(u.id)) && !keeps(l, u, decide(l));
+  // The files with more uses that change and are not shown: those of the deciding controls when each names its own, else those of the level.
+  const othersAt = (l: ClayLevel | undefined) => { const of = decide(l); return of.length > 0 && of.every((c) => c.others) ? [...new Set(of.flatMap((c) => c.others ?? []))] : (l?.others ?? []); };
   const changes = (u: ClayUse) => changesAt(level, u);
   const applied = (u: ClayUse): ClayApplied => {
     if (!changes(u)) return same;
@@ -130,7 +137,7 @@ export function ClayPlayground(props: {
       // The level, what it names, the files the hand-back may edit, and the uses that change and that do not.
       level: level?.id ?? null, target: level?.target ?? null, files: level?.files ?? [],
       // Nothing moved means nothing changes: the badges then show what the level can reach, which is not a change to hand back.
-      uses: moved.length ? { changed: uses.filter(changes).map((u) => u.file), unchanged: uses.filter((u) => !changes(u)).map((u) => u.file), changedNotShown: level?.others ?? [] } : { changed: [], unchanged: uses.map((u) => u.file), changedNotShown: [] },
+      uses: moved.length ? { changed: uses.filter(changes).map((u) => u.file), unchanged: uses.filter((u) => !changes(u)).map((u) => u.file), changedNotShown: othersAt(level) } : { changed: [], unchanged: uses.map((u) => u.file), changedNotShown: [] },
       values: pick(values), initial: pick(initial), changed: moved.map((c) => c.id),
       // For every spacing, radius and colour control: is the value on the project's scale?
       onScale: Object.fromEntries(active.filter((c) => c.type === "scale").map((c) => [c.id, onScale(c)])),
@@ -146,7 +153,7 @@ export function ClayPlayground(props: {
     }
   }
   const paths = (l: ClayLevel) => {
-    const all = [...uses.filter((u) => changesAt(l, u)).map((u) => u.file), ...(l.others ?? [])];
+    const all = [...uses.filter((u) => changesAt(l, u)).map((u) => u.file), ...othersAt(l)];
     return `Changes ${all.length} use${all.length === 1 ? "" : "s"}: ${all.slice(0, 4).join(", ")}${all.length > 4 ? ` and ${all.length - 4} more` : ""}.`;
   };
   return (
