@@ -204,14 +204,18 @@ export function SelfUpdate({ id, rev, data, own }: { id: string; rev: string; /*
       if (waiting.current) setTimeout(() => !down.current && waiting.current && apply.current(), 50);
     };
     const key = woke;
+    // A press that ended outside this document (outside the window, or over the preview frame) sends no pointerup here.
+    const move = (e: PointerEvent) => void (down.current && !e.buttons && release());
     window.addEventListener("pointerdown", press, true);
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
+    window.addEventListener("pointermove", move, true);
     window.addEventListener("keydown", key, true);
     return () => {
       window.removeEventListener("pointerdown", press, true);
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("pointermove", move, true);
       window.removeEventListener("keydown", key, true);
     };
   }, [poke]);
