@@ -15,7 +15,7 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * `canWrite`: this viewer owns the playground (or is the admin). Anyone else is looking at an example: every control, the
  * preview and the outputs work for them in their browser, and nothing is settled, reported or saved. Their wording differs:
  * the agent that built an example is someone else's.
- * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and no h1.
+ * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
 export default function Kit({ id, title, state, canWrite, embedded = false }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean }) {
   // The https logo hosts that the frame's img-src allows (lib/frame.ts): the preview can send requests there.
@@ -139,7 +139,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false }: { 
   const copy = (key: string, text: string) => navigator.clipboard?.writeText(text).then(() => setCopied(key), () => {});
 
   const Shell = embedded ? "div" : "main";
-  const Title = embedded ? "h3" : "h1";
+  const Title = embedded ? "h2" : "h1";
   return (
     <Shell className={embedded ? css.embedded : "shell"}>
       <header className="top">

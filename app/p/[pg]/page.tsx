@@ -37,8 +37,8 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
     );
   return (
     <>
-      {/* A preview playground has its own screen. Someone who does not own it starts on the start values (an example). The key remounts the screen when the agent revises the playground. */}
-      {p.kit ? <Kit key={JSON.stringify(p.kit.kit)} id={p.domain.id} title={p.domain.question} state={p.kit} canWrite={canWrite(me, p)} /> : <Playground key={JSON.stringify(p.domain)} domain={p.domain} explored={canWrite(me, p) ? p.exploration : null} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
+      {/* A preview playground has its own screen. Someone who does not own it starts on the start values (an example) and is not sent what the owner tried or settled. The key remounts the screen when the agent revises the playground. */}
+      {p.kit ? <Kit key={JSON.stringify(p.kit.kit)} id={p.domain.id} title={p.domain.question} state={canWrite(me, p) ? p.kit : { ...p.kit, settled: null, exploration: null }} canWrite={canWrite(me, p)} /> : <Playground key={JSON.stringify(p.domain)} domain={p.domain} explored={canWrite(me, p) ? p.exploration : null} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
     </>
   );
 }

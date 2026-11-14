@@ -53,7 +53,7 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
  * `canWrite`: this viewer owns the playground (or is the admin) and may save a decision and re-read the sources. Anyone else
  * is looking at an example: every control, the ranking and the chart work for them in their browser, and nothing is saved.
  * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
- * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and no h1.
+ * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
 export default function Playground({ domain, explored, canWrite, admin, embedded = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean }) {
   const Shell = embedded ? "div" : "main";
@@ -184,7 +184,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
       <header className="top">
         <div>
           <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · data read from the web by Context.dev</> : "An example · prices read from the web by Context.dev"}</p>
-          {embedded ? <h3 className="question">{domain.question}</h3> : <h1>{domain.question}</h1>}
+          {embedded ? <h2 className="question">{domain.question}</h2> : <h1>{domain.question}</h1>}
           {domain.note && <p className="muted" style={{ maxWidth: "70ch", margin: "6px 0 0" }}>{domain.note}</p>}
         </div>
         <div className="actions">

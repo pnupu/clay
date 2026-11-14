@@ -19,13 +19,23 @@ const detailOf = (p: AnyPlayground) => (!p.kit && p.domain?.vendors?.length ? p.
 // What a gallery card says about an example. All of it is optional, so an example of any kind, with any note, gets a card.
 const noteOf = (p: AnyPlayground) => (p.kit?.kit.notes ?? p.domain?.note ?? "").trim();
 /** The person's own words, when the note starts with them: Someone told their agent: "...". */
-const requestOf = (note: string) => /^Someone told their agent:\s*["“]([\s\S]{3,240}?)["”](?=\s|$)/.exec(note)?.[1].trim() ?? null;
+// The closing quote is the first one that a new sentence or the end follows, so a quoted word inside the request stays in it.
+const requestOf = (note: string) => /^Someone told their agent:\s*["“]([\s\S]{3,240}?)["”][.,]?(?=\s+[A-Z"“]|\s*$)/.exec(note)?.[1].trim() ?? null;
 /** Without that pattern: the first sentence of the note, cut short. */
 const blurbOf = (note: string) => {
   const first = note.split(/(?<=[.!?])\s/)[0] ?? "";
   return first.length > 140 ? `${first.slice(0, 139).trimEnd()}…` : first;
 };
-const controlsOf = (p: AnyPlayground) => (p.kit ? p.kit.kit.controls.map((c) => c.label) : [...(p.domain?.metrics ?? []), ...(p.domain?.features ?? [])].map((x) => x.label));
+/** The controls a visitor gets. A price playground shows only the metrics and features that a page it has read mentions (app/playground.tsx). */
+function controlsOf(p: AnyPlayground): string[] {
+  if (p.kit) return p.kit.kit.controls.map((c) => c.label);
+  const plans = Object.values(p.sources ?? {}).flatMap((s) => s.snapshot?.model.plans ?? []);
+  const metrics = (p.domain?.metrics ?? []).filter((m) => plans.some((x) => x.meters?.some((y) => y.metric === m.id)));
+  const features = (p.domain?.features ?? []).filter((f) => plans.some((x) => x.features?.some((y) => y.feature === f.id && y.status != null)));
+  return [...metrics, ...features].map((x) => x.label);
+}
+/** What a visitor's browser gets of a preview playground: not what its owner tried or settled. */
+const forVisitor = (k: NonNullable<Playground["kit"]>) => ({ ...k, settled: null, exploration: null });
 
 export default async function Home() {
   const me = await viewer();
@@ -55,9 +65,9 @@ export default async function Home() {
           </div>
           <div className="try-box">
             {examples[0][1].kit ? (
-              <Kit key={first} id={first} title={titleOf(examples[0][1], first)} state={examples[0][1].kit} canWrite={false} embedded />
+              <Kit key={JSON.stringify(examples[0][1].kit.kit)} id={first} title={titleOf(examples[0][1], first)} state={forVisitor(examples[0][1].kit)} canWrite={false} embedded />
             ) : (
-              <PricePlayground key={first} domain={examples[0][1].domain} explored={null} canWrite={false} admin={false} embedded />
+              <PricePlayground key={JSON.stringify(examples[0][1].domain)} domain={examples[0][1].domain} explored={null} canWrite={false} admin={false} embedded />
             )}
           </div>
         </section>
