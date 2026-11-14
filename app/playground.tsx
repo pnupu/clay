@@ -389,7 +389,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               ) : (
                 <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => (x.error ? x.snapshot?.fetchedAt : (x.lastCheckedAt ?? x.snapshot?.fetchedAt)) ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
-              {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
+              {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect" prefetch={false}>Connect your own agent</Link> to build one and save your own.</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
               {pick && unsaved && canWrite && (
                 <div className="save" ref={saveBox}>

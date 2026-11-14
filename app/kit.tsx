@@ -284,7 +284,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                 )}
               </div>
             ) : (
-              <p className="small" data-example>This is an example, so there is nothing to settle here. <Link href="/connect">Connect your own agent</Link> to build and settle your own.</p>
+              <p className="small" data-example>This is an example, so there is nothing to settle here. <Link href="/connect" prefetch={false}>Connect your own agent</Link> to build and settle your own.</p>
             )}
           </section>
 
