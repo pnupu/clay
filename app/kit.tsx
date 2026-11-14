@@ -2,7 +2,7 @@
 
 // The screen of a preview playground: kit controls, the sandboxed preview of the real artifact, and the outputs that go
 // back to the agent. Every move is local: the page posts the values to the frame, and nothing waits for a network call.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fromFrame, limiter } from "@/lib/frame";
@@ -276,7 +276,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
                   </li>
                 )}
                 {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
-                {kit.inline && <li data-inline><p className="small">{canWrite ? "Provided by your agent, not checked" : "Provided by the author's agent from their own files, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
+                {kit.inline && <li data-inline><p className="small">{canWrite ? "Provided by your agent, not checked" : "Provided by the author's agent, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
                 {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b> — {reasonOf(x.reason)}</p></li>)}
               </ul>
@@ -300,7 +300,8 @@ function OutputText({ id, text }: { id: string; text: string }) {
   const pre = useRef<HTMLPreElement>(null);
   const [tall, setTall] = useState(() => text.length > 600);
   const [open, setOpen] = useState(false);
-  useEffect(() => {
+  const words = useMemo(() => text.split(/\s+/).filter(Boolean).length, [text]);
+  useLayoutEffect(() => {
     const el = pre.current;
     if (!el) return;
     // scrollHeight is the height of the whole text, also while it is folded.
@@ -315,7 +316,7 @@ function OutputText({ id, text }: { id: string; text: string }) {
       <pre ref={pre} data-output={id} id={`output-${id}`} className={tall && !open ? css.folded : undefined}>{text}</pre>
       {tall && (
         <button className={`small-btn ${css.more}`} aria-expanded={open} aria-controls={`output-${id}`} onClick={() => setOpen(!open)}>
-          {open ? "Show less" : `Show all of it (${text.split(/\s+/).filter(Boolean).length} words)`}
+          {open ? "Show less" : `Show all of it (${words} words)`}
         </button>
       )}
     </>
@@ -441,16 +442,17 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
   const changes = (st?.changes ?? []).filter((c) => !since || c.at > since);
   const fields = s.fields ?? s.rows!.fields;
   const fact = (v: WebValue) => (v === true ? "yes" : v === false ? "no" : v == null ? "unknown" : String(v));
-  // The first text field of a row is its name (lib/reference.ts says so to the agent).
-  const key = fields[0]?.type === "text" ? fields[0].id : null;
+  // The first text field of a row is its name, as in the change list and the quotes (rowKey, lib/web.ts).
+  const key = s.rows?.fields.find((f) => f.type === "text")?.id ?? null;
   const rows = read?.rows ?? [];
   const named = key ? rows.filter((r) => r[key] != null) : rows;
   const nameless = key ? rows.filter((r) => r[key] == null) : [];
   const used = key ? named.filter((r) => rowNamed(r[key], names)) : [];
   const foldable = rows.length > FOLD_OVER;
-  // Folded: the rows this playground names, or the first few when it names none.
-  const first = used.length ? used : named.slice(0, 5);
-  const visible = foldable && !all ? first : [...named, ...nameless];
+  // Folded: the rows this playground names, or the first few when it names none. The other rows stay in the page, hidden.
+  const first = used.length ? used : (named.length ? named : nameless).slice(0, 5);
+  const ordered = [...named, ...nameless];
+  const isShown = (r: (typeof rows)[number]) => !foldable || all || first.includes(r);
   const tableId = `rows-${s.id}`;
   const site = hostsOf([host])[0] ?? host;
   return (
@@ -475,7 +477,7 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
             <table className={css.web}>
               <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe}>{f.id}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
               <tbody>
-                {visible.map((r, i) => <tr key={i}>{fields.map((f) => <td key={f.id}>{f.id === key && r[f.id] == null ? <span className="muted">no name read</span> : shown(r[f.id])}</td>)}</tr>)}
+                {ordered.map((r, i) => <tr key={i} hidden={!isShown(r)}>{fields.map((f) => <td key={f.id}>{f.id === key && r[f.id] == null ? <span className="muted"><span className={css.unseen}>unknown: </span>no name read</span> : shown(r[f.id])}</td>)}</tr>)}
                 {!rows.length && <tr><td colSpan={fields.length}><span className="warn">No row was found on this page.</span></td></tr>}
               </tbody>
             </table>
@@ -488,7 +490,7 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
           )}
           {nameless.length > 0 && (
             <p className="small muted" data-nameless>
-              {nameless.length === 1 ? "1 row has" : `${nameless.length} rows have`} values but no name: the read did not find {nameless.length === 1 ? "its" : "their"} name on the page, so nothing can be matched to {nameless.length === 1 ? "it" : "them"} and the preview does not use {nameless.length === 1 ? "it" : "them"}.
+              {nameless.length === 1 ? "1 row has" : `${nameless.length} rows have`} values but no name: the read did not find {nameless.length === 1 ? "its" : "their"} name on the page, so nothing can be matched to {nameless.length === 1 ? "it" : "them"} by name.
               {foldable && !all ? ` ${nameless.length === 1 ? "It is" : "They are"} listed last under “Show all”.` : ` ${nameless.length === 1 ? "It is" : "They are"} listed last, marked “no name read”.`}
             </p>
           )}

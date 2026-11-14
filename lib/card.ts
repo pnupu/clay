@@ -108,23 +108,23 @@ export function hostsOf(pages: (string | null | undefined)[]): string[] {
 
 const plain = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const wordsOf = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-/** A word that names one thing by itself: a model number such as "a6000", "l4", "4090"; not "5", "24" or "gpu". */
-const isCode = (w: string) => /\d/.test(w) && (w.length >= 4 || (w.length >= 2 && /[a-z]/.test(w)));
-export type JoinNames = { exact: Set<string>; partial: string[]; codes: Set<string> };
+/** A word that names one thing by itself: a model number such as "a6000", "l4", "h100"; not "5", "2026" or "gpu". */
+const isCode = (w: string) => w.length >= 2 && /\d/.test(w) && /[a-z]/.test(w);
+export type JoinNames = { exact: Set<string>; runs: string[][]; codes: Set<string> };
 
 /**
  * The names a preview can join its page rows on: the short texts of its own data (a model id from a measurements file)
- * and the values and labels of its select options, in plain form (lower case, letters and digits only).
- * - `exact`: a row whose whole name is one of them.
- * - `partial`: a name with a digit or several words names one thing, so it also matches inside a longer row name:
- *   "h100sxm" in "NVIDIA H100 SXM". "claude" alone does not.
+ * and the values and labels of its select options.
+ * - `exact`: a row whose whole name is one of them, in plain form (lower case, letters and digits only).
+ * - `runs`: a name of several words also matches the end of a longer row name, as whole words: "H100 SXM" in
+ *   "NVIDIA H100 SXM", but not "gpt-4" in "GPT-4o", "claude-opus-5" in "Claude Opus 5.5" or "RTX 3080" in "RTX 3080 Ti".
  * - `codes`: a model number in a name ("a6000" in "RTX A6000") matches a row that has it as a whole word ("NVIDIA A6000"),
- *   so "a10" does not take "A100".
+ *   so "a10" does not take "A100". A year or a count is not a model number.
  * The preview's own code decides what it uses; this is the page's best reading of it, for what to show first.
  */
 export function joinNames(inline: unknown, options: string[] = []): JoinNames {
   const exact = new Set<string>();
-  const partial = new Set<string>();
+  const runs = new Map<string, string[]>();
   const codes = new Set<string>();
   const add = (text: string) => {
     if (text.length > 60) return;
@@ -132,7 +132,7 @@ export function joinNames(inline: unknown, options: string[] = []): JoinNames {
     if (p.length < 2) return;
     exact.add(p);
     const words = wordsOf(text);
-    if (p.length >= 4 && (/\d/.test(p) || words.length > 1)) partial.add(p);
+    if (words.length > 1 && words.length <= 6) runs.set(words.join(" "), words);
     words.filter(isCode).forEach((w) => codes.add(w));
   };
   const walk = (x: unknown, depth: number) => {
@@ -142,7 +142,7 @@ export function joinNames(inline: unknown, options: string[] = []): JoinNames {
   };
   walk(inline, 0);
   options.forEach(add);
-  return { exact, partial: [...partial], codes };
+  return { exact, runs: [...runs.values()], codes };
 }
 
 /** Whether a row read from a page (by its name) is one that the preview's own names match. */
@@ -150,5 +150,8 @@ export function rowNamed(name: unknown, names: JoinNames): boolean {
   if (typeof name !== "string") return false;
   const n = plain(name);
   if (!n) return false;
-  return names.exact.has(n) || names.partial.some((p) => n.includes(p)) || wordsOf(name).some((w) => names.codes.has(w));
+  if (names.exact.has(n)) return true;
+  const words = wordsOf(name);
+  if (words.some((w) => names.codes.has(w))) return true;
+  return names.runs.some((run) => run.length <= words.length && run.every((w, j) => words[words.length - run.length + j] === w));
 }

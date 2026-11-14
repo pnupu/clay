@@ -106,5 +106,13 @@ test("the rows a preview names: its own data and its options, never a common wor
   assert.equal(rowNamed("NVIDIA A6000", gpus), true);
   assert.equal(rowNamed("RTX 6000 Ada", gpus), false);
   // A date or a count in the person's data names no row.
-  assert.equal(rowNamed("B200", joinNames({ hours: "200 GPU hours", date: "2026-11-14", size: "24 GB" })), false);
+  const prose = joinNames({ hours: "200 GPU hours", date: "2026-11-14", size: "24 GB" });
+  assert.equal(rowNamed("B200", prose), false);
+  assert.equal(rowNamed("Pricing 2026", prose), false);
+  // A shorter id does not take a longer look-alike.
+  assert.equal(rowNamed("GPT-4o", joinNames(null, ["gpt-4"])), false);
+  assert.equal(rowNamed("Claude Opus 5.5", joinNames(null, ["claude-opus-5"])), false);
+  assert.equal(rowNamed("RTX 3080 Ti", joinNames(null, ["RTX 3080"])), false);
+  assert.equal(rowNamed("NVIDIA RTX 3080", joinNames(null, ["RTX 3080"])), true);
+  assert.equal(rowNamed("Nvidia H100 SXM5", gpus), true);
 });

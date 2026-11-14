@@ -15,14 +15,16 @@ export const dynamic = "force-dynamic";
 // kind shows without a change here; only its label falls back to "Playground".
 type AnyPlayground = Playground;
 const titleOf = (p: AnyPlayground, id: string) => p.domain?.question ?? id;
+/** The web sources of a preview that were read: a page that failed is not "live web data". */
+const readSources = (p: AnyPlayground) => (p.kit?.kit.web ?? []).filter((s) => p.kit!.web?.[s.id]?.read);
 /** The label of a card, from what the playground is built on (lib/card.ts): live web data, a brand, the real thing tuned by hand, or prices. */
-const kindOf = (p: AnyPlayground, whose: "yours" | "theirs" = "theirs") => kindLabel({ price: !p.kit && !!p.domain?.vendors?.length, preview: !!p.kit, web: p.kit?.kit.web?.length ?? 0, brand: !!p.kit?.kit.brand, inline: !!p.kit?.kit.inline }, whose);
+const kindOf = (p: AnyPlayground, whose: "yours" | "theirs" = "theirs") => kindLabel({ price: !p.kit && !!p.domain?.vendors?.length, preview: !!p.kit, web: readSources(p).length, brand: !!p.kit?.kit.brand && !!p.kit.brandData, inline: !!p.kit?.kit.inline }, whose);
 /** Where the facts of a playground come from, in one short line: the vendors of a price playground, the hosts of a preview's web pages, its brand. */
 function detailOf(p: AnyPlayground): string | null {
   if (!p.kit) return p.domain?.vendors?.length ? p.domain.vendors.map((v) => v.name).join(", ") : null;
-  const hosts = hostsOf((p.kit.kit.web ?? []).map((s) => p.kit!.web?.[s.id]?.url ?? s.url ?? s.domain));
+  const hosts = hostsOf(readSources(p).map((s) => p.kit!.web?.[s.id]?.url ?? s.url ?? s.domain));
   const read = hosts.length ? `Read from ${hosts.slice(0, 4).join(", ")}${hosts.length > 4 ? ` and ${hosts.length - 4} more` : ""}` : null;
-  const brand = p.kit.kit.brand ? `${read ? "brand colours of" : "Brand colours of"} ${hostsOf([p.kit.kit.brand.domain])[0] ?? p.kit.kit.brand.domain}` : null;
+  const brand = p.kit.kit.brand && p.kit.brandData ? `${read ? "brand colours of" : "Brand colours of"} ${hostsOf([p.kit.kit.brand.domain])[0] ?? p.kit.kit.brand.domain}` : null;
   return [read, brand].filter(Boolean).join("; ") || null;
 }
 
@@ -119,12 +121,13 @@ export default async function Home() {
               // The person's request in quotes, else the start of the note; never cut inside a word (lib/card.ts).
               const said = cardText(noteOf(p));
               const controls = controlsOf(p);
+              const detail = detailOf(p);
               return (
                 <li key={id} className="card">
                   <p className="eyebrow">{kindOf(p)}</p>
                   {said && ("quote" in said ? <blockquote>“{said.quote}”</blockquote> : <p className="blurb">{said.blurb}</p>)}
                   <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
-                  {detailOf(p) && <p className="small muted" data-sources>{detailOf(p)}</p>}
+                  {detail && <p className="small muted" data-sources>{detail}</p>}
                   {controls.length > 0 && <p className="small muted">You move: {controls.slice(0, 6).join(", ")}{controls.length > 6 ? ` and ${controls.length - 6} more` : ""}</p>}
                 </li>
               );
