@@ -38,15 +38,17 @@ CHECKS = [
 
 
 def main():
-    files = subprocess.run(["git", "ls-files", "-z", "bench"], cwd=os.path.dirname(HERE), capture_output=True, text=True, check=True).stdout.split("\0")
+    # Tracked files, and new files that are not ignored: a fresh run's results before `git add`.
+    files = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "bench"], cwd=os.path.dirname(HERE),
+                           capture_output=True, text=True, check=True).stdout.split("\0")
     findings = 0
     for rel in filter(None, files):
         if rel == "bench/check-public.py":  # its own patterns are the only matches it may hold
             continue
         path = os.path.join(os.path.dirname(HERE), rel)
         try:
-            text = open(path, encoding="utf-8").read()
-        except (UnicodeDecodeError, FileNotFoundError):
+            text = open(path, encoding="utf-8", errors="replace").read()  # a non-UTF-8 byte must not hide a key
+        except FileNotFoundError:
             continue
         for n, line in enumerate(text.splitlines(), 1):
             for what, pat in CHECKS:
@@ -54,7 +56,7 @@ def main():
                 if m:
                     findings += 1
                     print(f"{rel}:{n}: {what}: {m.group(0)[:60]}")
-    print(f"{len([f for f in files if f])} tracked files checked, {findings} finding(s)")
+    print(f"{len([f for f in files if f])} files checked (tracked and new), {findings} finding(s)")
     return 1 if findings else 0
 
 

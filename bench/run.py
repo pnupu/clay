@@ -326,9 +326,10 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
             if agent == "codex" else ("stream-json init event" if effort else "none"),
             "repeat": repeat, "passed": passed, "wall_seconds": wall, "timeout_s": task["timeout_s"],
             "exit_code": p.returncode, "error_class": err_class,
-            "error_text": (parsed.get("cli_error") or (stderr.strip()[-500:] if p.returncode else None)),
-            "check_output": None if passed else check_out.strip()[-300:],
-            "check_fail_line": None if passed else (fail_line or "")[:400],
+            # Scrubbed before they are cut, so a cut cannot leave half a path (scrub.py).
+            "error_text": scrub(parsed.get("cli_error") or "")[:1000] or (scrub(stderr.strip())[-500:] if p.returncode else None),
+            "check_output": None if passed else scrub(check_out.strip())[-300:],
+            "check_fail_line": None if passed else scrub(fail_line or "")[:400],
             "changed_files": changed, "task_set": os.path.basename(TASKS),
             "transcript_mentions_bench_dir": HERE in stdout,
             "started_utc": started,
@@ -404,7 +405,8 @@ def main():
 
     reused = 0
     if a.reuse:
-        src_id = os.path.basename(os.path.dirname(os.path.abspath(a.reuse)))
+        src_dir = os.path.dirname(os.path.abspath(a.reuse))
+        src_id = os.path.basename(os.path.dirname(src_dir) if os.path.basename(src_dir) == "private" else src_dir)
         keys = {(t, ag, m, r) for t, ag, m, r in plan}
         for line in open(a.reuse):
             rec = json.loads(line)

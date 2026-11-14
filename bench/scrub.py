@@ -4,7 +4,7 @@
 Placeholders:
   <clone>              the repository checkout that ran the bench
   <scratch>            a session scratch directory under the system temp directory
-  <tmp>                the temp directory of the run (TMPDIR or the system default)
+  <tmp>                a TMPDIR of the run (not the shared /tmp, which is not machine-specific)
   <global-agents-md>   the file that ~/.codex/AGENTS.md points to (it can name a private repository)
   <home>               the home directory of the user who ran the bench
 
@@ -19,6 +19,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+TMP = os.path.realpath(tempfile.gettempdir()).rstrip("/")
 REPO = os.path.dirname(HERE)
 
 
@@ -35,11 +36,12 @@ def _rules():
         # Claude Code session scratchpads: /tmp/claude-<uid>/<project>/<session>/scratchpad
         (r"/tmp/claude-\d+/[^/\s\"']+/[0-9a-f-]{36}/scratchpad", "<scratch>"),
         (r"/tmp/claude-\d+", "<tmp>"),
-        # The temp directory the run used (TMPDIR, or the system default); a bare "/tmp" as in bwrap's
-        # "--tmpfs /tmp" is the sandbox's own /tmp and stays.
-        (re.escape(tempfile.gettempdir().rstrip("/")) + r"/", "<tmp>/"),
-        (re.escape(home) + r"(?=[/\s\"'.,;:)\]}]|$)", "<home>"),
-        (r"/home/[^/\s\"'<>]+(?=[/\s\"'.,;:)\]}]|$)", "<home>"),
+        # A TMPDIR of the run's own (not the shared /tmp, whose paths are not machine-specific and include
+        # the sandbox's own /tmp).
+        *([(re.escape(TMP) + r"(?=/)", "<tmp>")] if TMP not in ("", "/tmp", "/var/tmp") else []),
+        # A backslash ends a path: on raw JSON text it starts an escape such as \n, which must stay.
+        (re.escape(home) + r"(?=[/\\\s\"'.,;:)\]}]|$)", "<home>"),
+        (r"/home/[^/\\\s\"'<>]+(?=[/\\\s\"'.,;:)\]}]|$)", "<home>"),
     ]
     return [(re.compile(p), r) for p, r in rules]
 
