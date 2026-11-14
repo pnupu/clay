@@ -36,11 +36,12 @@ test("the agent's report while pages are still being read: no problem for a vend
   assert.equal(buildReport(playground(work({ startedAt: new Date(Date.now() - 400_000).toISOString() }))).status, "stalled");
 });
 
-test("a rate-limited request waits as long as the API says, within 1 to 30 seconds", () => {
+test("a rate-limited request waits as long as the API says, within 1 to 65 seconds (a stated 43 s is honoured)", () => {
   assert.equal(retryAfterMs("API rate limit exceeded: 10 request units are allowed per minute and this request uses 1. Retry in 4 seconds.", 0), 5000);
   assert.equal(retryAfterMs("Retry in 4 seconds.", 1), 7000);
   assert.equal(retryAfterMs("no hint", 0), 6000);
-  assert.equal(retryAfterMs("Retry in 500 seconds.", 0), 30000);
+  assert.equal(retryAfterMs("Retry in 43 seconds.", 0), 44000);
+  assert.equal(retryAfterMs("Retry in 500 seconds.", 0), 65000);
 });
 
 test("a build on which fewer than two vendors can be ranked is reported as broken, with the metric to repair", () => {
