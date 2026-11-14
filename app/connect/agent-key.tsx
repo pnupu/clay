@@ -104,6 +104,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
           </div>
         ))}
         <p className="small muted">In Claude Code the same works as a command: <code>/mcp__clay__playground the hover on my Sign up button</code> (type <code>/</code> and it is listed as <code>/clay:playground</code>). Codex has no such commands: type the sentence. Other words work too: “make a playground …”, “let me play with it first”, “clay this”.</p>
+        <p className="small muted">Measured on 14 November 2026 with the agents&apos; normal tools and nothing pasted anywhere: asked with this sentence, Claude Code 2.1.321 built a playground in 14 of 14 runs and Codex 0.167.0 in 4 of 4; the Claude Code command in 4 of 4. Asked a plain question or given an exact instruction without it, Claude Code built none (0 of 3).</p>
         <p>What happens: your agent answers with a link. Open it and move the controls until it looks, feels or costs right. Then press Settle (or save your decision) and tell your agent you are done. It reads what you chose and carries it out.</p>
       </section>
 
@@ -112,7 +113,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
           <summary><strong>Optional: let your agent offer a playground on its own</strong></summary>
           <p>When you do not ask for a playground, Claude Code mostly edits the file or looks the price up itself. To make it build one on its own when you are vague, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
           {block("standing-instruction", STANDING_INSTRUCTION, false)}
-        <p className="small muted">Measured on 14 November 2026 with Claude Code 2.1.321 and its normal tools (shell, web search), on four vague requests, three runs each: without these lines it built a playground in 2 of 12 runs, with them in 12 of 12. For an exact instruction or a plain question it still built none (0 of 9). Codex built one with and without the lines.</p>
+        <p className="small muted">Measured on 14 November 2026 with Claude Code 2.1.321 and its normal tools (shell, web search), before the server&apos;s opening text was changed to the explicit sentence, on four vague requests, three runs each: without these lines it built a playground in 2 of 12 runs, with them in 12 of 12. For an exact instruction or a plain question it still built none (0 of 9). Codex built one with and without the lines.</p>
         </details>
       </section>
 

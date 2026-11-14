@@ -92,7 +92,23 @@ The server also has two MCP prompts, so nothing must be pasted anywhere. Claude 
 - `/mcp__clay__playground <what you want to try, tune or decide>` (listed as `/clay:playground`): the same request with the whole loop. Without words after it, the agent asks what you want to play with. Claude Code 2.1.321 splits the words on spaces and gives the prompt only the first one; the agent still reads the whole line, which Claude Code puts into the conversation, and the prompt text says so.
 - `/mcp__clay__recheck [which decision]` (listed as `/clay:recheck`): "is my saved decision still right?".
 
-Codex CLI 0.167.0 has no commands for MCP prompts (its documentation lists tools, server instructions and authentication as the supported MCP features, and no prompts): in Codex, type the sentence. The agent builds a playground and gives you its URL. Explore, then press Settle (preview) or save a decision (price). Tell the agent you are done: it reads the result and writes it into your code, or reports the decision. Later ask "what did I decide, and does it still hold?".
+Codex CLI 0.167.0 has no commands for MCP prompts (its documentation lists tools, server instructions and authentication as the supported MCP features, and no prompts): in Codex, type the sentence.
+
+Measured on 2026-11-14 with `evals/` and its option `--say` (the agent's normal tools: shell, web search, files; a clean home; nothing in `CLAUDE.md` or `AGENTS.md`; fixture web data; Claude Code 2.1.321 with its default model, Claude Opus 5.5; the prompts and the server text of this commit range):
+
+| What the person typed | Runs | The agent built a playground in its first answer |
+|---|---|---|
+| "build me a playground for this: <request>", 7 requests (the four that Claude Code missed unprompted and three it built) | 7 | 7 of 7 |
+| "<request> ... let me play with it first", the same 7 | 7 | 7 of 7 |
+| `/mcp__clay__playground <request>`, 4 requests | 4 | 4 of 4 |
+| Codex CLI 0.167.0, default model, the first sentence, 4 requests | 4 | 4 of 4 |
+| The three requests that need no playground, without the sentence | 3 | 0 of 3 |
+
+In 14 of the 18 Claude Code runs the agent loaded Clay's tools by their exact names (`select:mcp__clay__create_playground,...`), in the other 4 with a search for "clay" or "clay playground": it knows the tool names before the first request, and the word "playground" in the request is in `create_playground`. In 2 of the 14 sentence runs (the same request both times: one fact of a web page) the playground was built without a web source and failed that check.
+
+Both legs with the first sentence (build, a simulated person settles in their own browser, hand-back) on the eight clean-home requests: 7 of 8 pass every check on the first try. In the one failure (an email service on prices) the agent built the playground, then saw that the fixture's prices were made up, read the vendors' real pages with its web tool and answered from those; it never read the playground back.
+
+The numbers under "Optional" below (2 of 12 and 12 of 12) were measured before the server's opening text changed to the explicit sentence; they were not measured again. The agent builds a playground and gives you its URL. Explore, then press Settle (preview) or save a decision (price). Tell the agent you are done: it reads the result and writes it into your code, or reports the decision. Later ask "what did I decide, and does it still hold?".
 
 ### Optional: let your agent offer a playground on its own
 
