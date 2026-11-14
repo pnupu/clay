@@ -131,16 +131,17 @@ clay.onChange((v) => {
   const month = (r) => usd(r.perTask == null ? null : r.perTask * v.tasks);
   // The answer first: one sentence that changes with the controls. Under it the rule behind it, with its numbers, and
   // the person's own choice.
-  el("answer").textContent = pick ? pick.m.model + " is the cheapest model inside your limits: " + month(pick) + " a month." : "No model inside your limits has a known price.";
+  // The sentence names the measure of the mark (cost per passed task): a model with a lower bill and more failed tasks is not "cheaper".
+  el("answer").textContent = pick ? pick.m.model + " costs the least per passed hard task inside your limits: " + month(pick) + " a month." : "No model inside your limits has a known price.";
   const own = list.find((r) => r.m.model === v.model);
-  el("chosen").textContent = "Your limits: at least " + v.min_pass + "% of the hard tasks passed, within " + v.max_seconds + " s per task. " + (own === pick ? "It is the model you chose." : "You chose " + own.m.model + ": " + month(own) + " a month" + (own.ok ? "." : ", outside your limits."));
+  el("chosen").textContent = "Your limits: at least " + v.min_pass + "% of the hard tasks passed, within " + v.max_seconds + " s per task." + (!own ? "" : own === pick ? " It is the model you chose." : " You chose " + own.m.model + ": " + month(own) + " a month" + (own.ok ? "." : ", outside your limits."));
   body.textContent = "";
   for (const r of list) {
     const tr = body.appendChild(document.createElement("tr"));
     // .pick: the model the person chose (the select). .out: outside their limits. The mark of the rule is a badge.
     tr.className = (r.m.model === v.model ? "pick " : "") + (r.ok ? "" : "out");
     const name = cell(tr, "", r.m.model + " ");
-    if (r === pick) badge(name, "Cheapest inside your limits", "ok");
+    if (r === pick) badge(name, "Least per passed task inside your limits", "ok");
     if (!r.ok) badge(name, "Outside your limits", "warn");
     cell(tr, "Pass rate, hard tasks", Math.round(r.m.hard_pass_rate * 100) + "%", "num");
     cell(tr, "Median time", r.m.median_seconds + " s", "num");

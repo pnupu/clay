@@ -76,7 +76,8 @@
 .webFields { width: auto; min-width: min(100%, 360px); }
 .web th, .web td { text-align: left; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--c-line); vertical-align: top; font-variant-numeric: tabular-nums; }
 .web th:last-child, .web td:last-child { padding-right: 0; }
-.web tbody tr:last-child > * { border-bottom: 0; } /* the line under the last row is the line between two sources */
+/* The line under the last row in view is the line between two sources (a folded table hides its other rows). */
+.web tbody tr:nth-last-child(1 of :not([hidden])) > * { border-bottom: 0; }
 .web th { color: var(--p-muted); font-weight: 500; }
 .web .num { text-align: right; }
 .webFields td { text-align: right; }

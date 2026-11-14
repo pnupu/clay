@@ -309,7 +309,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                     )}
                   </li>
                 )}
-                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
+                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} pg={id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
                 {kit.inline && <li data-inline><p className="small">{builtByViewer ? "Provided by your agent, not checked" : "Provided by the author's agent, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
                 {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b> — {reasonOf(x.reason)}</p></li>)}
@@ -496,13 +496,23 @@ const FOLD_OVER = 8;
 const words = (id: string) => id.replace(/_/g, " ").replace(/^[a-z]/, (c) => c.toUpperCase());
 const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
 
+/** The values a person opened, by playground and source, kept in this tab's memory. */
+const opened = new Set<string>();
+
 /**
  * The values read from one source, closed until the person asks for them: the card says where the data comes from, and
  * the raw tables no longer push the page away. They stay in the page, so any number can still be checked against its
  * source. No summary: nothing to fold, the content is shown as it is.
  */
-function Values({ summary, children }: { summary: string | null; children: ReactNode }) {
-  return summary == null ? <>{children}</> : <details className={css.values}><summary>{summary}</summary>{children}</details>;
+function Values({ id, summary, children }: { id: string; summary: string | null; children: ReactNode }) {
+  // What the person opened stays open in this tab: the screen is mounted again whenever a source is read (see `held`).
+  const [open, setOpen] = useState(() => opened.has(id));
+  const toggle = (now: boolean) => {
+    if (now) opened.add(id);
+    else opened.delete(id);
+    setOpen(now);
+  };
+  return summary == null ? <>{children}</> : <details className={css.values} open={open} onToggle={(e) => toggle(e.currentTarget.open)}><summary>{summary}</summary>{children}</details>;
 }
 
 /**
@@ -511,7 +521,7 @@ function Values({ summary, children }: { summary: string | null; children: React
  * A long table shows first the rows that the preview's own names match (`names`), and the rest on request. A row whose
  * name the read did not find cannot be matched to anything: it is listed last, as such, and counted in a line of its own.
  */
-function WebSourceItem({ source: s, state: st, reading, since, names }: { source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
+function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /** The playground's id. */ pg: string; source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
   const [all, setAll] = useState(false);
   const read = st?.read;
   const link = st?.url && /^https:\/\//.test(st.url) ? st.url : null;
@@ -544,7 +554,7 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
       {!read && !reading && <p className="small warn">This page could not be read{st?.error ? `: ${st.error.slice(0, 200)}` : ""}. Its values are unknown.</p>}
       {read && st?.error && <p className="small warn">{st.error.slice(0, 200)}</p>}
       {read && s.fields && (
-        <Values summary={`${count(s.fields.length, "value")} read${unknown ? `, ${unknown} unknown` : ""}`}>
+        <Values id={`${pg}:${s.id}`} summary={unknown ? `${s.fields.length - unknown} of ${count(s.fields.length, "value")} read, ${unknown} unknown` : `${count(s.fields.length, "value")} read`}>
           <table className={`${css.web} ${css.webFields}`}>
             <tbody>
               {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{words(f.id)}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
@@ -554,7 +564,7 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
       )}
       {read && s.rows && (
         // A page on which no row was found has nothing to fold: the line that says so stays in view.
-        <Values summary={rows.length ? `${count(rows.length, "row")} read${unknown ? `, ${count(unknown, "value")} unknown` : ""}` : null}>
+        <Values id={`${pg}:${s.id}`} summary={rows.length ?`${count(rows.length, "row")} read${unknown ? `, ${count(unknown, "value")} unknown` : ""}` : null}>
           <div className={`${css.webScroll} ${all ? css.webOpen : ""}`} id={tableId}>
             <table className={css.web}>
               <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe} className={f.type === "number" ? css.num : undefined}>{words(f.id)}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>

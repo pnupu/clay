@@ -94,12 +94,17 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   };
 
   /** The result of building or revising a preview playground. */
-  const preview = async (id: string, extra: object, warnings: string[]) => {
+  const preview = async (id: string, extra: object, warnings: string[], previewKept = false) => {
     const p = (await load()).playgrounds[id];
     const k = p.kit!;
     const reading = webReading(p);
-    /** How a page of data looks (lib/kit.ts, styleProblems): part of problems, and it comes first in `next`. */
-    const look = styleProblems(k.kit);
+    /**
+     * How a page of data looks (lib/kit.ts, styleProblems): part of problems, and it comes first in `next`. Not after a
+     * revision that left the preview code as it was (`previewKept`): a change of a label is no reason to rewrite a page
+     * the person may have settled.
+     */
+    const style = styleProblems(k.kit);
+    const look = previewKept ? [] : style;
     return text({
       playground_id: id,
       url: url(id),
@@ -111,11 +116,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       data: dataReport(k, reading),
       problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null), ...look],
       // What is in problems is not said twice.
-      warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !look.includes(x)),
+      warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !style.includes(x)),
       next:
-        // A page of data in styles of its own is repaired before the person is told it is ready. While the pages are
-        // still being read, the steps below already end with the repair of what problems lists.
-        (look.length && !reading.length ? "First act on what problems says about the look of the page: revise it with revise_playground, unless the problem itself says that it may stay. Then: " : "") +
+        // A page of data in styles of its own is repaired before the person gets the link, also while the pages are
+        // still being read: read_playground does not list the look of a page, so this result is where it is said.
+        (look.length ? `First act on what problems says about the look of the page, which only this result lists: revise it with revise_playground now${reading.length ? " (the pages are read on meanwhile)" : ""}, unless the problem itself says that it may stay. Then: ` : "") +
         (reading.length
           ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
           : k.kit.web?.length
@@ -286,7 +291,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           const r = await revisePreview(parsed.domain, parsed.kit);
           await within(Promise.all([r.brand, r.web]));
           const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the person must reload the page before they settle.";
-          return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings);
+          return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings, !!r.previewKept);
         }
         const r = await revisePlayground(parsed.domain, origin);
         const w = await within(r.work);

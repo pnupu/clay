@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { frameCsp, frameDocument } from "./frame.ts";
 import { styleProblems, type KitState } from "./kit.ts";
@@ -55,6 +56,21 @@ test("the reference teaches the parts the sheet styles, and the sheet has no tex
   assert.match(KIT_REFERENCE, /## A data view \(view\.data: true\)/);
 });
 
+test("the colours of a data view are the page's own: every colour of the sheet's variables is in the page's tokens", () => {
+  // The sheet is a string in a sandboxed frame and cannot read the page's variables, so it states the values again.
+  // This keeps them equal: a change of the palette (app/tokens.ts, app/clay.css) fails here until the sheet follows.
+  const page = (readFileSync(new URL("../app/tokens.ts", import.meta.url), "utf8") + readFileSync(new URL("../app/clay.css", import.meta.url), "utf8")).toLowerCase();
+  const root = dataSheet(null).match(/:root \{([^}]*)\}/)![1];
+  const colours = root.match(/#[0-9a-f]{6}\b/g) ?? [];
+  assert.ok(colours.length >= 11, root);
+  for (const c of colours) assert.ok(page.includes(c), `${c} is a colour of the page`);
+  // The hairlines are the page's ink (38 37 30 is #26251e) at the page's shares.
+  assert.match(root, /--ink: #26251e;/);
+  assert.match(root, /--line: rgb\(38 37 30 \/ 0\.13\); --line-2: rgb\(38 37 30 \/ 0\.3\);/);
+  assert.match(page, /--c-line: color-mix\(in oklab, var\(--p-ink\) 13%, transparent\)/);
+  assert.match(page, /--c-line-2: color-mix\(in oklab, var\(--p-ink\) 30%, transparent\)/);
+});
+
 test("a page of data in styles of its own is a problem for the agent that builds it; a data view with Clay's parts has none", () => {
   assert.deepEqual(parsed(MODEL_EXAMPLE).warnings, []);
   // Web facts without view.data: told to become a data view. A map with web facts is not a table.
@@ -80,6 +96,8 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // in a selector is not a colour, also in a list of selectors over two lines, and one colour written in three ways is one.
   assert.deepEqual(parsed(model({ css: "li:hover #add,\n#bad { color: var(--muted); font-size: 13px; font-weight: 600; } .series-a { background: #2a78d6; } .series-b { background: #eb6834; }" })).warnings, []);
   assert.deepEqual(data(".a { color: #fff; background: #FFFFFF; border-color: #ffffffff; outline-color: #2a78d6 }"), []);
+  // Two colours that differ only in where their spaces are stay two colours.
+  assert.equal(data(".a { color: rgb(1 10 0); background: rgb(11 0 0); border-color: rgb( 1  10 0 ); outline-color: #2a78d6 }").length, 1);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });
