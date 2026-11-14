@@ -296,7 +296,7 @@ test("review 5, finding 3: in the re-check answer foreign text is quoted data, a
 /** A price playground whose re-check began at SINCE and read every page again in full. */
 const SINCE = "2026-11-20T08:29:00.000Z";
 const rechecked = (bases: Record<string, number>, extra: object = {}) => {
-  const p = price(bases, extra) as unknown as { sources: Record<string, { lastCheckedAt: string; error: string | null; snapshot: { fetchedAt: string; quarantined: object[]; truncated: boolean } | null }> };
+  const p = price(bases, extra) as unknown as { sources: Record<string, { lastCheckedAt: string; unpriced?: boolean; error: string | null; snapshot: { fetchedAt: string; model: unknown; quarantined: object[]; truncated: boolean } | null }> };
   for (const s of Object.values(p.sources)) { s.lastCheckedAt = "2026-11-20T08:29:30.000Z"; s.snapshot!.fetchedAt = "2026-11-20T08:29:30.000Z"; }
   return p;
 };
@@ -462,4 +462,60 @@ test("a look-alike quote or a hidden selector in foreign text cannot close Clay'
   assert.ok(!/[＂„‟«»″｀\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/u.test(text));
   // The plan cell is one quoted string: exactly two double quotes in it.
   assert.equal(row.split("|")[2].split('"').length - 1, 2, row);
+});
+
+// ---- Review 6: a page that states no price, and a capture from a cache.
+
+type Answer = { verdict: string; not_compared?: { vendor: string; reason: string }[]; not_read_in_full?: { vendor: string; reason: string }[]; if_this_repeats?: string; decision_file: Record<string, string> };
+const answerOf = (p: unknown) => recheckVerdict(p as never, URL, "2026-11-20T08:30:00.000Z", false, SINCE) as unknown as Answer;
+/** The shape of the auth example: two priced vendors and Stytch, whose page was read in this check and holds only "contact sales". */
+const withUnpriced = (chosen = "resend") => {
+  const p = rechecked({ resend: 20, postmark: 25, stytch: 0 }, { decision: { usage: { emails: 40000 }, required: [], chosen, tolerance: 5, savedAt: "2026-11-14T10:05:00.000Z" } });
+  const s = p.sources.stytch;
+  s.snapshot!.model = { vendor: "V", currency: "USD", plans: [{ name: "Enterprise", base_price: null, custom_pricing: true, price_quote: "contact sales", meters: [], features: [] }] };
+  s.error = "No price could be read for Stytch. Tried: https://stytch.example/pricing (plans were found, but no price or included quantity is stated for them).";
+  s.unpriced = true;
+  return p;
+};
+
+test("review 6: a vendor whose page was read and states no price does not make every re-check NOT KNOWN", () => {
+  // Read in full today, one vendor states no price: the rule is judged over the vendors that have one, and the answer says who was left out and why.
+  const a = answerOf(withUnpriced());
+  assert.match(a.verdict, /^STILL HOLDS: "Resend" is the cheapest at the saved values, at \$20 per month/);
+  assert.deepEqual(a.not_compared, [{ vendor: '"Stytch"', reason: "its pricing page was read and states no price that fits the saved values, so it is left out of the comparison", source: "https://stytch.example/pricing" }]);
+  assert.equal(a.decision_file.with, "- Last checked: 2026-11-20 08:30 UTC: holds.");
+  // The record says the same, and its check line certifies: the list can hold.
+  const record = decisionRecord(withUnpriced() as never, URL)!.text;
+  assert.match(record, /^- Last checked: 2026-11-20 08:29 UTC: holds\.$/m);
+  assert.match(record, /^\| "Stytch" \| [^|]+ \| unknown \| /m);
+  assert.match(record, /^Not compared: "Stytch"\. The page was read and states no price for these values, so the rule is judged over the vendors that have one\.$/m);
+  // A price that rises is still found with such a vendor in the list.
+  const risen = withUnpriced(); (risen.sources.resend.snapshot!.model as { plans: { base_price: number }[] }).plans[0].base_price = 45;
+  assert.match(answerOf(risen).verdict, /^NO LONGER HOLDS: "Resend" now costs \$45/);
+  assert.equal(answerOf(risen).not_compared?.length, 1);
+  // The chosen vendor itself states no price any more: that is a verdict, not "not known".
+  assert.match(answerOf(withUnpriced("stytch")).verdict, /^NO LONGER HOLDS: "Stytch" can no longer be fully priced at the saved values/);
+});
+
+test("review 6: the reviewers' rule stands beside it: a failed, stale, cut or doubtful read still certifies nothing", () => {
+  const shapes: Record<string, [(p: ReturnType<typeof withUnpriced>) => void, RegExp]> = {
+    "today's read of the unpriced vendor failed (the pipeline clears the mark and stores the failure)": [(p) => { p.sources.stytch.unpriced = false; p.sources.stytch.error = "Context.dev POST /web/scrape -> 500"; }, /"Stytch".*the read of its pricing page failed/],
+    "the unpriced vendor was not read in this check": [(p) => (p.sources.stytch.lastCheckedAt = "2026-11-14T10:00:00.000Z"), /"Stytch".*was not read in this check/],
+    "a number of the unpriced vendor is not on its page": [(p) => p.sources.stytch.snapshot!.quarantined.push({ path: "Enterprise/base", value: 3 }), /"Stytch".*a number that was read is not on its page/],
+    "a priced vendor's read failed": [(p) => (p.sources.postmark.error = "HTTP 500"), /"Postmark".*the read of its pricing page failed/],
+    "a priced vendor's page was cut for length": [(p) => (p.sources.postmark.snapshot!.truncated = true), /"Postmark".*was cut for length/],
+    "a priced vendor has a number that is not on its page": [(p) => p.sources.postmark.snapshot!.quarantined.push({ path: "Pro/base", value: 3 }), /"Postmark".*a number that was read is not on its page/],
+    "a priced vendor's page was never read": [(p) => (p.sources.postmark.snapshot = null), /"Postmark".*was never read/],
+  };
+  for (const [name, [breakIt, reason]] of Object.entries(shapes)) {
+    const p = withUnpriced();
+    breakIt(p);
+    const a = answerOf(p);
+    assert.match(a.verdict, /^NOT KNOWN: not every pricing page could be read again in full/, name);
+    assert.ok(!/STILL HOLDS/.test(JSON.stringify(a)), name);
+    // The answer names the vendor and the reason, and says what to do when the same page fails on every check.
+    assert.match((a.not_read_in_full ?? []).map((g) => `${g.vendor}: ${g.reason}`).join(" | "), reason, name);
+    assert.match(a.if_this_repeats ?? "", /offer to remove it from the comparison or to give its exact pricing page/, name);
+    assert.deepEqual(a.decision_file, { path: ".clay/decisions/email-provider.md", keep: "Leave the file as it is: its check line is changed only after a full read." }, name);
+  }
 });

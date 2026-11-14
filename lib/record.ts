@@ -15,6 +15,8 @@ export { recordPath };
 export const RECORD_LIMIT = 8_000;
 /** The line of the file that a re-check replaces. It starts the same way in every record. */
 export const CHECKED = "- Last checked:";
+/** What to do when the same page is not a full read on every check (a cut page, a number that is not on its page). */
+const NOT_FULL_WAY_OUT = "A page that is cut for length, or a number that is not on its page, is not a full read on any day, so the same list can answer NOT KNOWN every time. Then tell the person which vendor it is and why, and offer to remove it from the comparison or to give its exact pricing page (revise_playground); they then save the decision again.";
 
 /**
  * Text that Clay did not write (a vendor, plan or row name from a web page; a title, label or reason from the spec) goes
@@ -61,17 +63,42 @@ const oldest = (times: (string | null | undefined)[]) => (times.length && times.
  * on such a read. Not a full read: a page that was never read, a read that failed (its stored error; the facts are the
  * old ones), two reads that disagreed (stored as an error too), a number that was quarantined, a page cut for length.
  * `since`: the read must also be from this re-check (its start time), so a page that was skipped or is stale is not full.
+ * A page that was read and states no price ("contact sales") is a full read: its stored `error` is the explanation of
+ * that, the vendor stays out of the comparison, and the rule is judged over the vendors that have a price. Why this
+ * state and no other: its facts are complete and known (there is no price). A cut page or a number that is not on its
+ * page is the opposite, Clay does not know what the page says, so those stay "not full" also when they happen on
+ * every read; priceGaps() names the vendor and the reason, so the person can remove the vendor or give a better page.
  */
 export function fullRead(p: Playground, since: string | null = null): boolean {
+  return p.kit ? fullReadKit(p, since) : priceGaps(p, since).length === 0;
+}
+
+/** Why the pages of a price playground are not a full read: one entry per vendor, in Clay's words. Empty: a full read. */
+export function priceGaps(p: Playground, since: string | null = null): { vendor: string; reason: string }[] {
+  const from = since ? new Date(Date.parse(since) - 60_000).toISOString() : null;
+  const inCheck = (t: string | null | undefined) => !from || (!!t && t >= from);
+  const gaps = p.domain.vendors.flatMap((v) => {
+    const src = p.sources[v.id];
+    const reason = !src?.snapshot ? "its pricing page was never read"
+      : src.error && src.unpriced !== true ? "the read of its pricing page failed, or two reads of it disagreed; its facts are the earlier ones"
+      : src.snapshot.quarantined?.length ? "a number that was read is not on its page"
+      : src.snapshot.truncated ? "its pricing page was cut for length"
+      : !inCheck(src.lastCheckedAt) ? "its pricing page was not read in this check"
+      : null;
+    return reason ? [{ vendor: quoted(p, v.id), reason }] : [];
+  });
+  return p.domain.vendors.length ? gaps : [{ vendor: "none", reason: "the playground has no vendor" }];
+}
+/** The vendors whose page was read and states no price: they are left out of the comparison, and every answer says so. */
+const notCompared = (p: Playground) => p.domain.vendors.filter((v) => p.sources[v.id]?.unpriced === true && !p.sources[v.id]?.snapshot?.quarantined?.length).map((v) => ({ vendor: quoted(p, v.id), reason: "its pricing page was read and states no price that fits the saved values, so it is left out of the comparison", source: page(p.sources[v.id]?.url) }));
+
+function fullReadKit(p: Playground, since: string | null = null): boolean {
   // A call can join a re-check that another call started moments ago (lib/pipeline.ts), so a page read up to a minute
   // before this call began is of this check.
   const from = since ? new Date(Date.parse(since) - 60_000).toISOString() : null;
   const now = (checked: string | null | undefined) => !from || (!!checked && checked >= from);
-  if (p.kit) {
-    const sources = p.kit.kit.web ?? [];
-    return sources.length > 0 && sources.every((s) => { const st = p.kit!.web?.[s.id]; return !!st?.read && !st.error && !st.read.quarantined?.length && !st.read.truncated && now(st.lastCheckedAt); });
-  }
-  return p.domain.vendors.length > 0 && p.domain.vendors.every((v) => { const src = p.sources[v.id]; return !!src?.snapshot && !src.error && !src.snapshot.quarantined?.length && !src.snapshot.truncated && now(src.lastCheckedAt); });
+  const sources = p.kit!.kit.web ?? [];
+  return sources.length > 0 && sources.every((s) => { const st = p.kit!.web?.[s.id]; return !!st?.read && !st.error && !st.read.quarantined?.length && !st.read.truncated && now(st.lastCheckedAt); });
 }
 
 /**
@@ -174,6 +201,7 @@ function priceBody(p: Playground): { chosen: string[]; sections: string[] } | nu
       ...r.ranked.slice(0, 8).map((v) => row(v.id, q(v.best!.plan, 60), usd(v.best!.cost))),
       ...r.unranked.slice(0, 8).map((v) => row(v.id, v.best ? q(v.best.plan, 60) : "no plan fits", "unknown")),
       "",
+      ...(notCompared(p).length ? [`Not compared: ${notCompared(p).slice(0, 8).map((x) => x.vendor).join(", ")}. The page was read and states no price for these values, so the rule is judged over the vendors that have one.`, ""] : []),
       ...leftOutLines(p),
     ],
   };
@@ -234,7 +262,10 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
   if (!d) return { verdict: "No decision is saved, so there is nothing to judge. The prices below are today's." };
   const path = recordPath(p.domain.id);
   // Without a full read of every page in this re-check (fullRead), the prices are not today's: nothing is said about holding.
-  if (stopped || !fullRead(p, since)) return { verdict: RECORD.notKnown("pricing page", "decision"), do_now: RECORD.notKnownDo, decision_file: { path, keep: "Leave the file as it is: its check line is changed only after a full read." } };
+  const gaps = priceGaps(p, since);
+  if (stopped || gaps.length) return { verdict: RECORD.notKnown("pricing page", "decision"), ...(gaps.length ? { not_read_in_full: gaps.slice(0, 8), if_this_repeats: NOT_FULL_WAY_OUT } : {}), do_now: RECORD.notKnownDo, decision_file: { path, keep: "Leave the file as it is: its check line is changed only after a full read." } };
+  const out = notCompared(p);
+  const left = out.length ? { not_compared: out.slice(0, 8) } : {};
   const st = standing(d, models(p));
   // Names are the spec's text: in quotes here too, so they read as data inside Clay's sentences.
   const name = quoted(p, d.chosen);
@@ -243,7 +274,7 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
   const line = checkedLine(p, checkedAt)!;
   if (st.holds) {
     const how = st.chosenCost == null ? "" : st.cheapest === d.chosen ? `${name} is the cheapest at the saved values, at ${usd(st.chosenCost)} per month` : `${name} costs ${usd(st.chosenCost)} per month at the saved values, ${usd(st.gap ?? 0)} more than ${cheapest}, within the tolerance of ${usd(st.tolerance)}`;
-    return { verdict: `STILL HOLDS: ${how}. Checked ${when(checkedAt)}.`, do_now: RECORD.holds, decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, if_the_file_is_missing: "call read_playground and write its decision_record" } };
+    return { verdict: `STILL HOLDS: ${how}. Checked ${when(checkedAt)}.`, ...left, do_now: RECORD.holds, decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, if_the_file_is_missing: "call read_playground and write its decision_record" } };
   }
   const events = p.events.filter((e) => e.at > d.savedAt);
   const changed = events.flatMap((e) => e.changes.map((c) => ({ vendor: quoted(p, e.sourceId), fact: q(c.path, 100), old_value: fact(c.before), new_value: fact(c.after), source: page(p.sources[e.sourceId]?.url), read_at: p.sources[e.sourceId]?.snapshot?.fetchedAt ?? e.at }))).slice(0, 12);
@@ -255,6 +286,7 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
     verdict: `NO LONGER HOLDS: ${gap}. Checked ${when(checkedAt)}.`,
     what_changed: changed.length ? changed : "No confirmed change of a fact since the decision was saved: it stands as it did at the last read.",
     saved_rule_now_picks: picks,
+    ...left,
     do_now: RECORD.broken(url, !!best),
     decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, then: "After the person has agreed and saved the new choice on the playground page, call read_playground and replace the whole file with its decision_record." },
   };

@@ -152,6 +152,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
   const prev = p.sources[id];
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
   src.name = v.name;
+  src.unpriced = false;
   try {
     if (v.demo) {
       Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
@@ -196,7 +197,8 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         const said = `No price could be read for ${v.name}. Tried: ${tried.map((t) => `${t.url} (${t.why})`).join("; ") || `a search on ${v.domain}, which found no page`}.`;
         // The best read is kept, so the page can show the plan names it did find; the source says what is missing.
         const kept = best as { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null;
-        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot });
+        // That page was read; it states no price. This is a fact of the page, kept apart from a failed read (unpriced).
+        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, unpriced: true });
         src.error = hadPrices ? `${v.name}'s pricing page could not be read again (${tried[0]?.why ?? "unknown reason"}). The earlier read is kept.` : said;
       }
     }
@@ -642,7 +644,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       if (cur?.textHash !== src.snapshot!.textHash || cur?.fetchedAt !== src.snapshot!.fetchedAt) return void (event = null);
       // The demo page lives on this app's origin, which changes with the port.
       // A read that gives no price keeps its explanation (collect(): what was tried and why) until a read gives one.
-      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? (hasPrices(snapshot.model) ? null : p.sources[id].error), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? (hasPrices(snapshot.model) ? null : p.sources[id].error), unpriced: error == null && note == null && !hasPrices(snapshot.model), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
     });
   }

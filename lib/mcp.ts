@@ -230,7 +230,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         ...(stop ? { stopped: `The re-check stopped early: ${message(stop.reason)}. Do not retry now; tell the person.` } : {}),
         // First the verdict, what changed, what the saved rule now picks and what to do (lib/record.ts); the detail follows.
         ...recheckVerdict(p, url(playground_id), new Date().toISOString(), !!stop, started),
-        sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
+        sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.unpriced ? "read; the page states no price, so this vendor is not compared" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
         changes: changed,
         saved_decision: guardDecision(decisionReport(p) ?? "none: the person has not saved a decision yet", p),
         ...(p.decision ? { ranking_under_saved_assumptions: rankingReport(p, p.decision) } : {}),
