@@ -32,17 +32,18 @@ const cut = (s: string, n: number) => {
 const q = (s: string, n: number) => `"${cut(s, n)}"`;
 /** An id of a source or a field is printed bare: only an id as the spec allows it passes, anything else is quoted. */
 const bare = (id: string) => (/^[a-z][a-z0-9_]{0,39}$/.test(id) ? id : q(id, 40));
-/** A unit after a number: plain unit text (letters, digits, spaces, % / $ . - and currency signs) is printed bare, any other unit in quotes. */
-const unit = (u: string | undefined) => (!u ? "" : /^[\p{L}\p{N} %/$€£.-]{1,40}$/u.test(u) ? ` ${u}` : ` ${q(u, 40)}`);
+/** A unit after a number is the spec's text like any label: always in quotes ("emails", "USD per 1M tokens"). */
+const unit = (u: string | undefined) => (u ? ` ${q(u, 40)}` : "");
 /**
- * An address is printed bare, so only its plain part is printed: https, the host and a path of plain characters. No user
- * name, query or fragment (they can carry a key or a sentence); a path that is long or not plain is left out.
+ * An address is printed bare, and part of it is chosen by others (a search result decides the path), so only its plain
+ * part is printed and little of it: https, the host, and a path of at most 40 plain characters, else "/…". No user name,
+ * query or fragment (they can carry a key or a sentence). The file says that every address is data.
  */
 const page = (u: string | null | undefined) => {
   try {
     const x = new URL(u ?? "");
     if (x.protocol !== "https:" || x.username || x.password || !/^[a-z0-9.-]{1,100}$/.test(x.hostname)) return "no page";
-    return `https://${x.hostname}${/^[\w\-./~]{0,120}$/.test(x.pathname) ? x.pathname : "/"}`;
+    return `https://${x.hostname}${x.pathname === "/" ? "" : /^[\w\-./~]{1,40}$/.test(x.pathname) ? x.pathname : "/…"}`;
   } catch {
     return "no page";
   }
