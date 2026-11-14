@@ -176,10 +176,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       if (before.kit) {
         // A preview playground: re-read its web sources. Clay reports what changed; the agent judges what it means.
         if (!before.kit.kit.web?.length) return fail(`"${playground_id}" is a preview playground without web sources (data.web): it has nothing to re-check. Call read_playground for its settled result.`);
+        const began = new Date().toISOString();
         const w = await within(recheckWeb(playground_id));
         const now = (await load()).playgrounds[playground_id];
         if (!w.done) return text({ playground_id, url: url(playground_id), status: "running", still_reading: webReading(now), next: "The pages are still being re-read. Tell the person that today's facts are being read. Then call read_playground: it waits up to 20 seconds; repeat until build.status is \"done\". Its web_changes are what changed." });
-        const { verdict, ...file } = recheckFile(now, url(playground_id), new Date().toISOString(), webChanges(now.kit!).changes.length, !!w.value?.stop) as { verdict?: string };
+        const { verdict, ...file } = recheckFile(now, url(playground_id), new Date().toISOString(), webChanges(now.kit!).changes.length, !!w.value?.stop, began) as { verdict?: string };
         return text({
           playground_id,
           url: url(playground_id),
@@ -219,7 +220,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         checked_at: new Date().toISOString(),
         ...(stop ? { stopped: `The re-check stopped early: ${message(stop.reason)}. Do not retry now; tell the person.` } : {}),
         // First the verdict, what changed, what the saved rule now picks and what to do (lib/record.ts); the detail follows.
-        ...recheckVerdict(p, url(playground_id), new Date().toISOString(), !!stop),
+        ...recheckVerdict(p, url(playground_id), new Date().toISOString(), !!stop, started),
         sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
         changes: changed,
         saved_decision: decisionReport(p) ?? "none: the person has not saved a decision yet",

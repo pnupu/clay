@@ -12,6 +12,7 @@
 //
 //   node evals/return.ts --base-url <url> --fixture-url <url> --home <clean home> --scratch-root <dir outside this repository>
 //                        [--cases write,holds,broken,model] [--memory <file>] [--label <text>] [--timeout 300] [--store <file>]
+//   node evals/return.ts --from <run dir>[,<run dir>...]   judge saved runs again with the checks as they are now
 // The agent is Claude Code with its normal tools and its default model, one run at a time, in a clean home (see run.ts for
 // how to prepare one). --memory puts a standing instruction into the scratch repository as CLAUDE.md.
 // The app must run on the return fixture (no live web request). The owner key comes from CLAY_ACCESS_KEY.
@@ -21,7 +22,7 @@ import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { MCP_PATH, authHeader } from "./adapter.ts";
-import { runAgent, type AgentRun } from "./subjects.ts";
+import { parseClaude, runAgent, type AgentRun } from "./subjects.ts";
 
 const HERE = import.meta.dirname;
 const argv = process.argv.slice(2);
@@ -34,7 +35,9 @@ const scratchRoot = flag("scratch-root") ? resolve(flag("scratch-root")!) : null
 const memory = flag("memory") ? readFileSync(resolve(flag("memory")!), "utf8") : null;
 const timeoutMs = Number(flag("timeout") ?? 300) * 1000;
 const outside = (dir: string | null) => !!dir && relative(resolve(HERE, ".."), dir).startsWith("..");
-if (!baseUrl || !fixtureUrl || !outside(home) || !outside(scratchRoot)) throw new Error("Needs --base-url, --fixture-url, and --home and --scratch-root outside this repository.");
+/** --from <run dir>,<run dir>: judge the saved transcripts, answers and files of earlier runs again. No server, no agent. */
+const from = flag("from")?.split(",").map((d) => resolve(d.trim())) ?? null;
+if (!from && (!baseUrl || !fixtureUrl || !outside(home) || !outside(scratchRoot))) throw new Error("Needs --base-url, --fixture-url, and --home and --scratch-root outside this repository (or --from <run dir>).");
 
 export type ReturnCase = { id: "write" | "holds" | "broken" | "model"; kind: "return"; request: (playground: string) => string; note: string };
 /** No Clay word in the two return requests: the file in the repository must carry the agent to the tool. */
@@ -137,6 +140,55 @@ function repository(dir: string, provider: boolean) {
   for (const [path, text] of Object.entries(files)) { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), text); }
 }
 
+/** What a run left behind, for the checks: from a live run, or read back from a saved run (--from). */
+type Evidence = { id: string; error: string | null; calls: AgentRun["calls"]; answer: string; allText: string; raw: string; fileBefore: string | null; fileAfter: string | null; recordPath: string; recordText: string | null; codeUnchanged: boolean; carried?: Record<string, boolean> };
+
+/** The checks of one case. Pure: the same evidence gives the same verdict, so a saved run can be judged again. */
+function judge(c: ReturnCase, x: Evidence): Check[] {
+  const { id, raw, answer, fileBefore, fileAfter } = x;
+  const recheck = x.calls.filter((x) => x.mcp && x.tool === "recheck_playground");
+  const url = `${baseUrl}/p/${id}`;
+  const checks: Check[] = [];
+  const check = (name: string, pass: boolean, detail = "") => checks.push({ name, pass, detail: detail.replace(/\s+/g, " ").slice(0, 300) });
+  check("the agent run ended without an error", !x.error, x.error ?? "");
+  if (c.id === "write") {
+    check("it read the playground", x.calls.some((x) => x.mcp && x.tool === "read_playground" && x.input.playground_id === id), x.calls.filter((x) => x.mcp).map((x) => x.tool).join(", "));
+    check(`it wrote the record to ${x.recordPath}`, fileAfter != null, fileAfter == null ? "no file" : `${fileAfter.length} characters`);
+    // A saved run does not hold the server's text: the saved outcome of this check is carried over, and said so.
+    if (x.recordText == null) check("the file is the server's text, unchanged", x.carried?.["the file is the server's text, unchanged"] ?? false, "carried over from the saved run");
+    else check("the file is the server's text, unchanged", (fileAfter ?? "").trim() === x.recordText.trim(), fileAfter == null ? "" : firstDifference(fileAfter.trim(), x.recordText.trim()));
+    check("it told the person where the decision is kept", new RegExp(x.recordPath.replace(/[.\/]/g, "\\$&")).test(x.allText) || /\.clay\/decisions/.test(x.allText), answer.slice(-240));
+  } else {
+    check("it opened the decision file in the repository before it called the re-check", openedBefore(raw), "");
+    check("it called recheck_playground with the id from the file", recheck.some((x) => x.input.playground_id === id), recheck.map((x) => JSON.stringify(x.input)).join(" ") || `Clay calls: ${x.calls.filter((x) => x.mcp).map((x) => x.tool).join(", ") || "none"}`);
+    check("it did not build a new playground or search the web", !x.calls.some((x) => (x.mcp && x.tool === "create_playground") || /^Web(Search|Fetch)$/.test(x.tool)), x.calls.map((x) => x.tool).join(", "));
+    check("it changed no code", x.codeUnchanged, "");
+    // The line that the re-check answer gave for the file (the same minute gives the same line as before).
+    const given = (() => { try { return (JSON.parse(recheck.at(-1)?.result ?? "{}") as { decision_file?: { with?: string } }).decision_file?.with ?? null; } catch { return null; } })();
+    const lineNow = (fileAfter ?? "").split("\n").find((l) => l.startsWith("- Last checked:")) ?? "no line";
+    if (c.id === "model") {
+      // swift-2: 60,000 x $6 + 2,000 x $30 per 1M = $0.42 a task; deep-2: 60,000 x $3 + 2,000 x $15 = $0.21 a task.
+      check("the answer says the settled choice no longer holds", /no longer|not the (right|cheaper|cheapest|best)|isn't the (right|cheaper|cheapest|best)|doesn't hold|does not hold|not anymore|^no[.,]/i.test(answer.trim()), answer.slice(0, 300));
+      check("it says what changed: swift-2's prices, old and new", /swift-2/i.test(answer) && dollars(1).test(answer) && dollars(6).test(answer) && dollars(30).test(answer), answer.slice(0, 300));
+      check("it works out what the settled rule now gives: deep-2 is the cheaper one", /deep-2/i.test(answer) && /(\$0\.21|\$630(?!\d)|half as much|half the)/i.test(answer), answer.slice(0, 400));
+      check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
+      check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
+      check("the file keeps the settled choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter), lineNow);
+    } else if (c.id === "holds") {
+      check("the answer says the choice still holds, and names the service", /resend/i.test(answer) && /(still|remains?|yes)\b[^.]*\b(holds?|right|cheapest|best|good|fine|stands)/i.test(answer) && !/no longer|switch to|move to/i.test(answer), answer.slice(0, 300));
+      check("the check line of the file is the one the re-check gave, and says it holds", !!fileAfter && !!given && lineNow === given && /: holds\.$/.test(lineNow) && sameBut(fileBefore!, fileAfter), `${lineNow} (given: ${given})`);
+    } else {
+      check("the answer says the choice no longer holds", /no longer|not the (right|cheapest|best)|isn't the (right|cheapest|best)|doesn't hold|does not hold|stopped holding|not anymore|^no[.,]/i.test(answer.trim()), answer.slice(0, 300));
+      check("it says what changed: the old and the new price of Resend", /resend/i.test(answer) && dollars(20).test(answer) && dollars(45).test(answer), answer.slice(0, 300));
+      check("it names what the saved rule now picks: Postmark at $25", /postmark/i.test(answer) && dollars(25).test(answer), answer.slice(0, 300));
+      check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
+      check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
+      check("the file keeps the saved choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter) && /("Resend"|\*\*Resend\*\*) \(chosen\)/.test(fileAfter), lineNow);
+    }
+  }
+  return checks;
+}
+
 async function runCase(c: ReturnCase, runDir: string, tag: string): Promise<Result> {
   const id = `mail-${c.id}-${tag}`;
   const caseDir = join(runDir, c.id);
@@ -165,45 +217,9 @@ async function runCase(c: ReturnCase, runDir: string, tag: string): Promise<Resu
   }
   const raw = read(join(caseDir, "leg1.jsonl")) ?? "";
   const fileAfter = read(file);
-  const recheck = run.calls.filter((x) => x.mcp && x.tool === "recheck_playground");
   const answer = run.finalText || run.allText;
-  const url = `${baseUrl}/p/${id}`;
-  const checks: Check[] = [];
-  const check = (name: string, pass: boolean, detail = "") => checks.push({ name, pass, detail: detail.replace(/\s+/g, " ").slice(0, 300) });
-  check("the agent run ended without an error", !run.error, run.error ?? "");
-  if (c.id === "write") {
-    check("it read the playground", run.calls.some((x) => x.mcp && x.tool === "read_playground" && x.input.playground_id === id), run.calls.filter((x) => x.mcp).map((x) => x.tool).join(", "));
-    check(`it wrote the record to ${record.path}`, fileAfter != null, fileAfter == null ? "no file" : `${fileAfter.length} characters`);
-    check("the file is the server's text, unchanged", (fileAfter ?? "").trim() === record.text.trim(), fileAfter == null ? "" : firstDifference(fileAfter.trim(), record.text.trim()));
-    check("it told the person where the decision is kept", new RegExp(record.path.replace(/[.\/]/g, "\\$&")).test(run.allText) || /\.clay\/decisions/.test(run.allText), answer.slice(-240));
-  } else {
-    check("it opened the decision file in the repository before it called the re-check", openedBefore(raw), "");
-    check("it called recheck_playground with the id from the file", recheck.some((x) => x.input.playground_id === id), recheck.map((x) => JSON.stringify(x.input)).join(" ") || `Clay calls: ${run.calls.filter((x) => x.mcp).map((x) => x.tool).join(", ") || "none"}`);
-    check("it did not build a new playground or search the web", !run.calls.some((x) => (x.mcp && x.tool === "create_playground") || /^Web(Search|Fetch)$/.test(x.tool)), run.calls.map((x) => x.tool).join(", "));
-    check("it changed no code", read(join(repo, code)) === codeBefore, "");
-    // The line that the re-check answer gave for the file (the same minute gives the same line as before).
-    const given = (() => { try { return (JSON.parse(recheck.at(-1)?.result ?? "{}") as { decision_file?: { with?: string } }).decision_file?.with ?? null; } catch { return null; } })();
-    const lineNow = (fileAfter ?? "").split("\n").find((l) => l.startsWith("- Last checked:")) ?? "no line";
-    if (c.id === "model") {
-      // swift-2: 60,000 x $6 + 2,000 x $30 per 1M = $0.42 a task; deep-2: 60,000 x $3 + 2,000 x $15 = $0.21 a task.
-      check("the answer says the settled choice no longer holds", /no longer|not the (right|cheaper|cheapest|best)|isn't the (right|cheaper|cheapest|best)|doesn't hold|does not hold|not anymore|^no[.,]/i.test(answer.trim()), answer.slice(0, 300));
-      check("it says what changed: swift-2's prices, old and new", /swift-2/i.test(answer) && dollars(1).test(answer) && dollars(6).test(answer) && dollars(30).test(answer), answer.slice(0, 300));
-      check("it works out what the settled rule now gives: deep-2 is the cheaper one", /deep-2/i.test(answer) && /(\$0\.21|\$630(?!\d)|half as much|half the)/i.test(answer), answer.slice(0, 400));
-      check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
-      check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
-      check("the file keeps the settled choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter), lineNow);
-    } else if (c.id === "holds") {
-      check("the answer says the choice still holds, and names the service", /resend/i.test(answer) && /(still|remains?|yes)\b[^.]*\b(holds?|right|cheapest|best|good|fine|stands)/i.test(answer) && !/no longer|switch to|move to/i.test(answer), answer.slice(0, 300));
-      check("the check line of the file is the one the re-check gave, and says it holds", !!fileAfter && !!given && lineNow === given && /: holds\.$/.test(lineNow) && sameBut(fileBefore!, fileAfter), `${lineNow} (given: ${given})`);
-    } else {
-      check("the answer says the choice no longer holds", /no longer|not the (right|cheapest|best)|isn't the (right|cheapest|best)|doesn't hold|does not hold|stopped holding|not anymore|^no[.,]/i.test(answer.trim()), answer.slice(0, 300));
-      check("it says what changed: the old and the new price of Resend", /resend/i.test(answer) && dollars(20).test(answer) && dollars(45).test(answer), answer.slice(0, 300));
-      check("it names what the saved rule now picks: Postmark at $25", /postmark/i.test(answer) && dollars(25).test(answer), answer.slice(0, 300));
-      check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
-      check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
-      check("the file keeps the saved choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter) && fileAfter.includes('"Resend" (chosen)'), lineNow);
-    }
-  }
+  const checks = judge(c, { id, error: run.error, calls: run.calls, answer, allText: run.allText, raw, fileBefore, fileAfter, recordPath: record.path, recordText: record.text, codeUnchanged: read(join(repo, code)) === codeBefore });
+  const recheck = run.calls.filter((x) => x.mcp && x.tool === "recheck_playground");
   // The repository as the agent left it, without its .git folder. Source files get ".txt", so no tool of this repository
   // takes them for its own code.
   cpSync(repo, join(caseDir, "repository"), { recursive: true, filter: (src) => !/\/\.git(\/|$)/.test(src) });
@@ -248,6 +264,30 @@ function scrub(dir: string): number {
   return n;
 }
 
+if (from) {
+  let failed = 0;
+  const again: { run: string; id: string; memory: boolean; saved: string; now: string; firstFail: string | null }[] = [];
+  for (const dir of from) {
+    const saved = (JSON.parse(readFileSync(join(dir, "results.json"), "utf8")) as { results: Result[] }).results;
+    for (const r of saved) {
+      const c = RETURN_CASES.find((x) => x.id === r.id);
+      if (!c || r.playground === "?") continue;
+      const raw = read(join(dir, r.id, "leg1.jsonl")) ?? "";
+      const run = parseClaude(raw);
+      const carried = Object.fromEntries(r.checks.map((x) => [x.name, x.pass]));
+      const checks = judge(c, { id: r.playground, error: r.error, calls: run.calls, answer: r.answer, allText: run.allText, raw, fileBefore: r.fileBefore, fileAfter: r.fileAfter, recordPath: `.clay/decisions/${r.playground}.md`, recordText: null, codeUnchanged: carried["it changed no code"] ?? true, carried });
+      const fail = checks.find((x) => !x.pass) ?? null;
+      if (fail) failed++;
+      again.push({ run: dir.split("/").at(-1)!, id: r.id, memory: r.memory, saved: r.result, now: fail ? "fail" : "pass", firstFail: fail ? `${fail.name}: ${fail.detail}` : null });
+      console.log(`${fail ? "FAIL" : "PASS"}  ${dir.split("/").at(-1)!.slice(-6)}  ${r.id}${r.memory ? " (standing instruction present)" : ""}  saved as ${r.result}${fail ? `  first fail: ${fail.name}: ${fail.detail}` : ""}`);
+    }
+  }
+  const outDir = join(HERE, "out", `${stamp()}-return-rejudged-${randomBytes(3).toString("hex")}`);
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "results.json"), JSON.stringify({ meta: { kind: "return, judged again from saved runs", from, command: `node evals/return.ts ${argv.join(" ")}` }, results: again }, null, 1));
+  console.log(`${again.length - failed} of ${again.length} saved runs pass the checks as they are now. ${join(outDir, "results.json")}`);
+  process.exit(failed ? 1 : 0);
+}
 const runId = `${stamp()}-return-${randomBytes(3).toString("hex")}`;
 const runDir = join(HERE, "out", runId);
 if (existsSync(runDir)) throw new Error(`${runDir} exists already`);
