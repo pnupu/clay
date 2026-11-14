@@ -203,7 +203,8 @@ const OWN_COLOURS = 2;
  *   preview: those are a place and the person's own component, and view.data is refused with view.tailwind;
  * - a data view is told about each thing it brings that the frame already has: a typeface, text under 12 px, colours.
  * Advice, not a refusal: the playground is built. Only view.css and the quoted style attributes of view.html are read;
- * what view.js sets is not seen, and neither is a style element inside view.html, a colour by name or a size in em or %.
+ * what view.js sets is not seen, and neither is a style element inside view.html, a colour by name, a colour function
+ * with another function inside it (rgb(var(--r) 1 2)) or a size in em or %.
  */
 export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "data" | "map"> & { tailwind?: boolean }; web?: unknown[] | null }): string[] {
   const { preview } = kit;
@@ -224,7 +225,9 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   // declaration at a time and each of its patterns can match a number or a colour only from its first character, so
   // the time grows with the length of the text and no faster: a view.css of the largest size, written to be slow,
   // costs milliseconds. It must: this runs on what an agent sends, before anything is stored.
-  const decls = [...styles.matchAll(/([^;{}]*)([;{}])/g)]
+  // A value bound to a control ({{control_id}}) is read as one word, or its braces would cut the declaration in two:
+  // "font-family: {{face}}" is a typeface of its own, and the size in "font-size: {{size}}px" is not known here.
+  const decls = [...styles.replace(/\{\{[^{}]*\}\}/g, "x").matchAll(/([^;{}]*)([;{}])/g)]
     .filter((m) => m[2] !== "{")
     .map((m) => /^\s*([\w-]+)\s*:([\s\S]*)$/.exec(m[1]))
     .filter((m) => m != null)

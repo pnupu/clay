@@ -139,6 +139,11 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // comment that is never closed and after a view.css that does not close its last rule.
   assert.deepEqual(styleProblems({ preview: { html: '<p style="font-size: 1em /* n"><b style="padding: 4px">x</b></p>', css: "", data: true } }), []);
   assert.deepEqual(styleProblems({ preview: { html: '<b style="padding: 4px">x</b>', css: ".a { font-size: 1em", data: true } }), []);
+  // A value bound to a control is still a declaration: a typeface from a control is a typeface of its own, the size
+  // next to a bound line height is read, and a size that comes from a control is not known.
+  assert.match(data(".a { font-family: {{face}} }")[0], /Clay's typeface/);
+  assert.match(data(".a { font: 600 10px/{{lh}} Arial }").join("\n"), /Clay's typeface[\s\S]*font-size 10px is under 12 px/);
+  assert.deepEqual(data(".a { font-size: {{size}}px; color: {{ink}} }"), []);
   // url(#grad) names a gradient or a clip path of a chart, not a colour.
   assert.deepEqual(data(".a { fill: url(#abc); stroke: url( '#def'); mask: url(#fed); color: #2a78d6 }"), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
