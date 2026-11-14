@@ -99,14 +99,17 @@ Full numbers are in `results/20261114-hard/SUMMARY.md`. 144 runs: 8 tasks × 6 m
 | gpt-6.1-terra | 21/24 = 88% | 69–96% | 19/19 |
 | gpt-6-luna | 17/24 = 71% | 51–85% | 19/19 |
 
-**How uncertain a rate from 24 runs is.** 24 runs on 8 tasks is a small sample, and the 3 repeats of one
-task are not independent of each other. A model at 24/24 can still fail up to about 14% of such tasks
-(the lower end of its interval is 86%). The four models at 100% are not separated from each other at
-all. gpt-6-luna is clearly below them: its interval (51–85%) does not overlap theirs. gpt-6.1-terra's
-interval (69–96%) overlaps theirs, and all 3 of its failures are on one disputed check (below); without
-them it is 21/21. So the honest reading is: on these tasks, luna fails noticeably more often, terra
-possibly a little more often, and the other four cannot be told apart by success; they differ in time
-and tokens.
+**How uncertain a rate from 24 runs is.** 24 runs on 8 tasks is a small sample. The Wilson intervals
+treat the 24 runs as independent, but the 3 repeats of one task are strongly correlated (a model tends
+to pass or fail the same task each time), so the real sample is somewhere between 8 and 24 and **the
+intervals are too narrow**. A model at 24/24 can still fail a fair share of such tasks: the interval's
+lower end is 86% with 24 independent runs, and about 68% if only the 8 tasks counted. The four models
+at 100% are not separated from each other at all. gpt-6-luna failed on 5 of the 8 tasks (in 7 of 24
+runs), so it is very likely weaker on this kind of work, but the size of the gap is uncertain.
+gpt-6.1-terra failed on only one task, and all 3 of those failures are one disputed check (below);
+without them it is 21/21. So the honest reading is: on these tasks, luna fails noticeably more often,
+terra possibly a little more often, and the other four cannot be told apart by success; they differ in
+time and tokens.
 
 **Disputed check.** All 3 gpt-6.1-terra failures are `bank-import` runs that raise `ValueError` on the
 hidden file `nordea2.csv`. That file has Nordea amounts with fewer than two decimals (`12`,
@@ -120,9 +123,20 @@ number with `-` became `null`; 1 × `job-queue`, a retry ran before its delay) a
 `no-change (gave up)` (`dedupe-perf`: it ended after 10 s without editing). gpt-6.1-terra 3 ×
 `wrong-output` (the disputed `bank-import` case). No run timed out, hit a limit or had a CLI error.
 
-**Changed after the run.** Only the one-line `summary` text of `tasks-hard/batch-invoices/task.json`
-(it said "two causes" from before hardening). So `bench_sha256` in the run's manifest is the hash with
-the old text. When the run started, `tasks-hard/` was not committed yet (`source_dirty` in the
+**Changed after the run** (from a code review; none of these changes the outcome of any run in
+`20261114-hard`):
+
+- the one-line `summary` text of `tasks-hard/batch-invoices/task.json` (it said "two causes" from
+  before hardening);
+- the `exporter-refactor` check now also accepts `from . import rows` and `from reports import rows`,
+  and labels a structure miss `incomplete` instead of `wrong-output` (all 18 runs of this task passed);
+- the `dedupe-perf` check allows 30 s instead of 60 s per small input, so that its total stays well
+  under the harness's check limit, which was raised from 180 s to 600 s (the one failed run of this
+  task changed no file);
+- the harness now records a check timeout as `too-slow` instead of crashing that run, and keeps a
+  run whose work directory holds links, sockets or unreadable files.
+
+So `bench_sha256` in the run's manifest is the hash of the task set before these changes. When the run started, `tasks-hard/` was not committed yet (`source_dirty` in the
 manifest); the code that ran is in the commit that added these results.
 
 **Sandbox, first real run.** Before the full run, one real agent per CLI ran a probe script inside the

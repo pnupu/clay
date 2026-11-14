@@ -217,9 +217,9 @@ def run_check(task_dir, task, work):
     with tempfile.TemporaryDirectory(prefix="bench-check-") as chk:
         shutil.copytree(os.path.join(task_dir, "check"), chk, dirs_exist_ok=True)
         try:
-            r = subprocess.run(task["check"] + [work], cwd=chk, capture_output=True, text=True, timeout=180)
+            r = subprocess.run(task["check"] + [work], cwd=chk, capture_output=True, text=True, timeout=600)
         except subprocess.TimeoutExpired:
-            return False, "check timed out"
+            return False, "check timed out", "FAIL too-slow: the hidden check itself took over 600 s"
         return r.returncode == 0, (r.stdout + r.stderr)[-600:], next(
             (ln.strip() for ln in r.stdout.splitlines() if ln.startswith("FAIL")), None)
 
@@ -232,7 +232,13 @@ def tree_digest(d):
         dirs[:] = [x for x in dirs if x not in ("__pycache__", "node_modules")]
         for f in files:
             p = os.path.join(root, f)
-            out[os.path.relpath(p, d)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
+            try:  # only regular files; a link, socket, FIFO or unreadable file is recorded by name only
+                if os.path.islink(p) or not os.path.isfile(p):
+                    out[os.path.relpath(p, d)] = "special:" + (os.readlink(p) if os.path.islink(p) else "")
+                else:
+                    out[os.path.relpath(p, d)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
+            except OSError as e:
+                out[os.path.relpath(p, d)] = f"unreadable:{e.errno}"
     return out
 
 
@@ -387,6 +393,8 @@ def main():
         except Exception as e:  # one broken run must not lose the others or the manifest
             rec = {"task": t, "agent": ag, "model": m, "repeat": r, "passed": False, "wall_seconds": None,
                    "error_class": "harness_error", "error_text": f"{type(e).__name__}: {e}"[:500],
+                   "failure_kind": "harness_error", "task_set": os.path.basename(TASKS),
+                   "agent_version": versions.get(ag), "effort": codex_default_effort(m) if ag == "codex" else None,
                    "input_tokens": None, "output_tokens": None}
         with lock:
             if rec["error_class"] == "rate_or_usage_limit" and (ag, m) not in stopped:

@@ -11,17 +11,18 @@ old = {n: importlib.import_module(f"orig.{n}_export") for n in ("csv", "json", "
 
 # Structure: the helpers live in reports/rows.py, and no exporter defines its own copy.
 if not os.path.exists(os.path.join(work, "reports", "rows.py")):
-    print("FAIL wrong-output: reports/rows.py does not exist"); sys.exit(1)
+    print("FAIL incomplete: reports/rows.py does not exist"); sys.exit(1)
 for n in ("csv", "json", "xml"):
     tree = ast.parse(open(os.path.join(work, "reports", f"{n}_export.py")).read())
     defs = {x.name for x in ast.walk(tree) if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef))}
     dup = defs & {"_select", "_fmt_value", "_sort_rows"}
     if dup:
-        print(f"FAIL wrong-output: {n}_export.py still defines {sorted(dup)}"); sys.exit(1)
-    uses = any(isinstance(x, ast.ImportFrom) and (x.module or "").split(".")[-1] == "rows" for x in ast.walk(tree)) or \
-        any(isinstance(x, ast.Import) and any(a.name.endswith("rows") for a in x.names) for x in ast.walk(tree))
+        print(f"FAIL incomplete: {n}_export.py still defines {sorted(dup)}"); sys.exit(1)
+    uses = any(isinstance(x, ast.ImportFrom) and ((x.module or "").split(".")[-1] == "rows"
+                                                    or any(a.name == "rows" for a in x.names)) for x in ast.walk(tree)) or \
+        any(isinstance(x, ast.Import) and any(a.name.split(".")[-1] == "rows" for a in x.names) for x in ast.walk(tree))
     if not uses:
-        print(f"FAIL wrong-output: {n}_export.py does not import reports.rows"); sys.exit(1)
+        print(f"FAIL incomplete: {n}_export.py does not import reports.rows"); sys.exit(1)
 
 rnd = random.Random(42)
 words = ["alpha", "Beta", "gamma", "Delta", "  padded ", "a&b<c>", 'quote "x"', "comma, here", "line\nbreak",

@@ -59,7 +59,7 @@ def load(run_dirs):
         for r in own:
             r["disputed"] = (not r["passed"]) and any(
                 r["task"] == u["task"] and r["agent"] == u["agent"] and r["model"] == u["model"]
-                and u["fail_line_contains"] in (r.get("check_fail_line") or "") for u in disputed)
+                and all(x in (r.get("check_fail_line") or "") for x in u["fail_line_contains_all"]) for u in disputed)
             r["pass_scored"] = not any(
                 r["task"] == u["task"] and r["repeat"] == u["repeat"] and fnmatch.fnmatch(r["agent"], u["agent"])
                 and fnmatch.fnmatch(r["model"], u["model"]) for u in unknown)
@@ -77,7 +77,8 @@ def summarize(recs):
         passed = [r for r in scored if r["passed"]]
         secs = [r["wall_seconds"] for r in rs if r["wall_seconds"] is not None]
         rows.append({
-            "agent": ag, "model": m, "agent_version": rs[0]["agent_version"], "effort": rs[0]["effort"],
+            "agent": ag, "model": m, "agent_version": next((r.get("agent_version") for r in rs if r.get("agent_version")), None),
+            "effort": next((r.get("effort") for r in rs if r.get("effort")), "cli default (not reported)"),
             "runs": len(rs), "scored_runs": len(scored), "passed": len(passed),
             "pass_rate": round(len(passed) / len(scored), 3) if scored else None,
             "pass_rate_ci95": wilson(len(passed), len(scored)),
@@ -101,7 +102,8 @@ def summarize(recs):
     per_task = []
     for t in tasks:
         tr = [r for r in recs if r["task"] == t]
-        task = json.load(open(os.path.join(HERE, tr[0].get("task_set") or "tasks", t, "task.json")))
+        tset = next((r.get("task_set") for r in tr if r.get("task_set")), "tasks")
+        task = json.load(open(os.path.join(HERE, tset, t, "task.json")))
         res = {}
         for ag, m in subjects:
             x = [r for r in tr if (r["agent"], r["model"]) == (ag, m)]
@@ -177,7 +179,7 @@ def main():
     dirs = [a for a in args if a != "--overwrite"]
     if not dirs:
         sys.exit(__doc__)
-    outs = [os.path.join(dirs[-1], n) for n in ("summary.json", "SUMMARY.md", "clay-inline.json")]
+    outs = [os.path.join(dirs[-1], n) for n in ("summary.json", "SUMMARY.md", "clay-inline.json", "clay-inline-combined.json")]
     if not overwrite and any(os.path.exists(o) for o in outs):
         sys.exit(f"refusing to overwrite the summary in {dirs[-1]}; pass --overwrite to regenerate it")
     recs = load(dirs)
