@@ -152,7 +152,7 @@ export default async function Home() {
                 </ul>
                 {second && (
                   <div className="frame span-5 start-8 gallery__live">
-                    <iframe src={`/p/${second}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" loading="lazy" title={`The example “${titleOf(playgrounds[second], second)}”, running`} />
+                    <iframe src={`/p/${second}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title={`The example “${titleOf(playgrounds[second], second)}”, running`} />
                   </div>
                 )}
               </div>
