@@ -3,15 +3,18 @@
 // Every selector comes from adapter.ts. The control discovery is generic (range, checkbox, select, colour inputs).
 import { createHash } from "node:crypto";
 import type { Browser, Locator, Page } from "playwright-core";
-import { PAGE, missingControls, previewContent, settle, signIn, type Dimension } from "./adapter.ts";
+import { EXPLORATION_REPORT, PAGE, missingControls, previewContent, settle, signIn, type Dimension } from "./adapter.ts";
 import type { Check } from "./check.ts";
 
 export const CHROME = process.env.CHROME ?? "/snap/bin/chromium";
 const cut = (s: string, n = 140) => (s.length > n ? s.slice(0, n - 1) + "…" : s).replace(/\s+/g, " ");
 
-async function open(browser: Browser, baseUrl: string, url: string, key: string | undefined) {
+async function open(browser: Browser, baseUrl: string, url: string, key: string | undefined, probe = false) {
   // A tall viewport and a viewport screenshot: a full-page capture draws the sandboxed preview frame wrongly.
   const context = await browser.newContext({ viewport: { width: 1440, height: 1600 } });
+  // The checker's probe moves every control to its ends. Those reports are answered here and never reach the server, so the
+  // agent later reads only what the person did (personSettles), not what the checker did.
+  if (probe) await context.route(EXPLORATION_REPORT, (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(`page error: ${e.message}`));
@@ -45,9 +48,8 @@ async function settled(page: Page): Promise<string> {
 
 /**
  * Move one control through other values and say whether anything visible changed. The control is put back afterwards.
- * lean: the probe runs signed in as the owner (a private playground cannot be opened otherwise), so the page stores these
- * moves as the person's exploration, and a button group with no pressed option cannot be put back. Probe as a visitor
- * once playgrounds of an eval account can be opened without sign-in.
+ * The probe runs signed in as the owner (a private playground cannot be opened otherwise); its exploration reports are
+ * intercepted in open(), so nothing it does is stored.
  */
 async function reacts(page: Page, control: Locator, kind: string): Promise<boolean> {
   const before = await settled(page);
@@ -91,7 +93,7 @@ export type PageResult = { checks: Check[]; shot: string | null };
 
 /** Load the page, look for error states, move every control, take the contact-sheet screenshot. */
 export async function checkPage(browser: Browser, o: { baseUrl: string; url: string; key?: string; dims: Dimension[] | null; shotPath: string }): Promise<PageResult> {
-  const { context, page, errors, response } = await open(browser, o.baseUrl, o.url, o.key);
+  const { context, page, errors, response } = await open(browser, o.baseUrl, o.url, o.key, true);
   const checks: Check[] = [];
   let shot: string | null = null;
   try {

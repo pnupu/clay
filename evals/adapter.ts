@@ -109,6 +109,9 @@ export const PAGE = {
   previewSettleMs: 2500,
 };
 
+/** The request with which the page reports the person's exploration to the agent. The checker's own control moves must not be stored as the person's. */
+export const EXPLORATION_REPORT = "**/api/p/*/explore";
+
 /** How many visible elements the preview shows, or null when the page has no preview. Zero means a blank preview. */
 export async function previewContent(page: Page): Promise<number | null> {
   const el = await page.$(PAGE.preview);
