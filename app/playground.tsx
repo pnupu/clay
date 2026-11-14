@@ -379,9 +379,10 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                     {e.verdict && decision && Date.parse(e.at) >= Date.parse(decision.savedAt) && (
                       <p className={e.verdict.holds ? "verdict ok" : "verdict bad"}>
                         {e.verdict.holds ? "✓ Decision holds. " : "✕ Decision no longer holds. "}
-                        {e.verdict.reason}
+                        {/* The stored reason speaks of "the chosen vendor" and "your tolerance": say the vendor, and to a visitor "the saved". */}
+                        {e.verdict.reason.replace(/^The chosen vendor/, nameOf(decision.chosen) ?? "The chosen vendor").replace(/\byour (tolerance|assumptions)/g, canWrite ? "your $1" : "the saved $1")}
                         {e.verdict.chosenCostBefore != null && e.verdict.chosenCostNow != null && e.verdict.chosenCostBefore !== e.verdict.chosenCostNow && ` ${canWrite ? "Your choice" : "The saved choice"}: ${money(e.verdict.chosenCostBefore)} → ${money(e.verdict.chosenCostNow)} per month.`}
-                        {e.verdict.cheapestNow && e.verdict.cheapestNow !== e.verdict.cheapestBefore && ` Cheapest is now ${sources[e.verdict.cheapestNow]?.name}.`}
+                        {e.verdict.cheapestNow && e.verdict.cheapestNow !== e.verdict.cheapestBefore && e.verdict.cheapestNow !== decision.chosen && ` Cheapest is now ${sources[e.verdict.cheapestNow]?.name}.`}
                       </p>
                     )}
                   </li>
@@ -455,7 +456,8 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
   const others = names.filter((n) => n !== p?.plan);
   return (
     <li className={chosen ? "vendor chosen" : "vendor"}>
-      <div className="vendor-head">
+      {/* The head wraps: with two badges and a long product name the cost and the button must stay inside the card. */}
+      <div className="vendor-head" style={{ flexWrap: "wrap", rowGap: 2 }}>
         <span className="dot" style={{ background: color(v.id) }} />
         <span className="name">{place ? `${place}. ` : ""}{src?.name}</span>
         {src?.demo && <span className="badge">Demo</span>}
