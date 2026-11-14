@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { MCP_PATH, SERVER, authHeader } from "./adapter.ts";
+import { MCP_PATH, SERVER, TOOL, authHeader, parseBuild } from "./adapter.ts";
 import type { Call } from "./check.ts";
 
 export type SubjectName = "claude" | "codex";
@@ -183,6 +183,27 @@ export function parseClaude(raw: string): Parsed {
   if (!done) p.error ??= "the transcript has no result event";
   p.finalText ||= last;
   return p;
+}
+
+/**
+ * Seconds from the start of a leg to the first create result that holds a playground URL: from then on the person can
+ * have the link. From the event timestamps of a `claude -p` transcript: the leg ends at its last message and lasted
+ * `duration_ms` of its result event. null when no create succeeded, or when the transcript has no timestamps (codex).
+ */
+export function linkSeconds(raw: string): number | null {
+  const events = lines(raw);
+  const at = (m: Json) => (typeof m.timestamp === "string" ? Date.parse(m.timestamp) : NaN);
+  const timed = events.filter((m) => (m.type === "assistant" || m.type === "user") && !Number.isNaN(at(m)));
+  const duration = events.find((m) => m.type === "result")?.duration_ms;
+  if (!timed.length || typeof duration !== "number") return null;
+  const start = at(timed[timed.length - 1]) - duration;
+  const creates = new Set<string>();
+  for (const m of timed)
+    for (const c of ((m.message as Json)?.content as Json[] | undefined) ?? []) {
+      if (m.type === "assistant" && c?.type === "tool_use" && String(c.name) === `mcp__${SERVER}__${TOOL.create}`) creates.add(String(c.id));
+      else if (m.type === "user" && c?.type === "tool_result" && creates.has(String(c.tool_use_id)) && c.is_error !== true && parseBuild(textOf(c.content)).url) return Math.max(0, Math.round((at(m) - start) / 1000));
+    }
+  return null;
 }
 
 /** `codex exec --json`: thread.started, item.completed (agent_message, mcp_tool_call, file_change, command_execution), turn.completed. */

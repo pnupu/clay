@@ -29,8 +29,9 @@ test("the prompts: the person's own request with the whole loop, short, with and
   // person's whole line, which that client puts just above the prompt.
   assert.match(PROMPTS.playground.text("the"), /^Build me a Clay playground for this: the\n\(Some clients pass only the first word here: when my words after the command, just above, say more, they are my request\.\)/);
   assert.match(PROMPTS.recheck.text("the"), /about the still right\? \(Some clients pass only the first word here/);
-  // The loop, in order: the real file first, the reference and the build, the link and the wait, the hand-back.
-  const order = ["read my real file", "kit_reference", "create_playground", "price_ranking", 'Follow "next" in each tool result until the build is done and its problems are repaired', "give me the link and wait until I say I am done", "read_playground", "or tell me the decision I saved", "decision_record"].map((x) => withWhat.indexOf(x));
+  // The loop, in order: the real file first, the reference and the build, the link at once, then the repairs and the
+  // wait, the hand-back. (The link came after the repairs before: the person then waited for the whole build.)
+  const order = ["read my real file", "longer research comes after the first link", "kit_reference", "create_playground", "price_ranking", "Write the spec straight into the call", "Give me the link when create_playground returns it, before any check or repair", 'Follow "next" in each tool result until the build is done and repaired', "wait until I say I am done", "read_playground", "or tell me the decision I saved", "decision_record"].map((x) => withWhat.indexOf(x));
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), JSON.stringify(order));
   assert.match(withWhat, /Do not guess, edit my files or answer the question before that/);
   // Without it, the agent asks first, then builds by the same loop.
