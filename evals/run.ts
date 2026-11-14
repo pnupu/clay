@@ -3,6 +3,9 @@
 //   node evals/run.ts --base-url <url> [--subject claude|codex] [--model <id>] [--cases <id,id>] [--kind <price,none,...>]
 //                     [--one-leg <id,id|all>] [--concurrency 2] [--timeout 600] [--from <run dir>] [--label <text>]
 //                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
+//                     [--scratch-root <dir>]   put the agents' scratch directories under <dir>, outside this repository.
+//                         Use it when the operator's own agent rules forbid edits inside a shared checkout (Codex loads
+//                         ~/.codex/AGENTS.md whatever the flags). The files are copied back into the run directory.
 //   node evals/run.ts report <run dir> <run dir> ...        one report over several runs (for example live and fixture servers)
 //
 // The base URL and the agent key also come from the environment: CLAY_BASE_URL, CLAY_ACCESS_KEY. Prefer the environment
@@ -77,6 +80,7 @@ const concurrency = Number(flag("concurrency") ?? 2);
 const timeoutSeconds = Number(flag("timeout") ?? 600);
 const oneLeg = list("one-leg") ?? [];
 const from = flag("from") ? resolve(flag("from")!) : null;
+const scratchRoot = flag("scratch-root") ? resolve(flag("scratch-root")!) : null;
 if (!/^https?:\/\//.test(baseUrl)) throw new Error("Give the server: --base-url <url> or CLAY_BASE_URL.");
 if (!["claude", "codex"].includes(subject)) throw new Error("--subject is claude or codex.");
 if (model && /haiku/i.test(model)) throw new Error("Haiku models are not allowed as subjects.");
@@ -102,7 +106,8 @@ const pageUrl = (id: string) => (/^[a-z][a-z0-9-]{2,39}$/.test(id) ? `${baseUrl}
 async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseResult> {
   const dir = join(runDir, "cases", c.id);
   // A dot directory: tsc and Next.js skip it, so scratch .tsx files do not break the repository's typecheck.
-  const ws = join(dir, ".ws");
+  const kept = join(dir, ".ws");
+  const ws = scratchRoot && !from ? join(scratchRoot, runId, c.id) : kept;
   const r: CaseResult = { id: c.id, kind: c.kind, request: c.request, note: c.note, result: "skip", firstFail: null, checks: [], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
   if (c.needsKit && !kit) return { ...r, skipReason: "needs the kit, which this server does not have" };
   // --from: the earlier run's transcripts, scratch directory, playground and the person's choice are reused; no agent starts.
@@ -112,10 +117,15 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   if (old) cpSync(old, dir, { recursive: true });
   else if (c.files) cpSync(join(HERE, "files", c.files), ws, { recursive: true });
   mkdirSync(ws, { recursive: true });
+  mkdirSync(dir, { recursive: true });
   r.agentRuns = earlier?.agentRuns ?? 0; // the agent runs that produced the reused transcripts
   const original = (path: string) => (c.files ? read(join(HERE, "files", c.files, path)) : null);
   const add = (...checks: Check[]) => r.checks.push(...checks);
-  const finish = () => { const v = verdict(r.checks); return { ...r, result: v.result, firstFail: v.firstFail }; };
+  const finish = () => {
+    if (ws !== kept) cpSync(ws, kept, { recursive: true }); // the record of what the agent left behind stays with the run
+    const v = verdict(r.checks);
+    return { ...r, result: v.result, firstFail: v.firstFail };
+  };
   const leg = async (name: string, prompt: string, resume?: string | null): Promise<AgentRun> => {
     if (from) {
       // --from starts no agent: a leg without a saved transcript counts as not run.

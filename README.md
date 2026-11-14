@@ -227,6 +227,16 @@ Environment variables (Vercel project `clay`, Production):
 - Webhook URL: `<public base URL>/api/webhooks/context/<playgroundId>/<sourceId>`, set per monitor by "Start webhook monitors". A page monitor run costs 1 Context.dev credit.
 - Known limits: request pacing and the re-check queue are per function instance (see the `lean:` comments in `lib/contextdev.ts` and `lib/pipeline.ts`). `run/requests.jsonl` logging is skipped where the filesystem is read-only.
 
+## Tested with
+
+Measured with `evals/` on 2026-11-14 against a local server of `master`:
+
+- **Claude Code 2.1.321, Claude Opus 5.5** (`claude -p`): the full set of 20 requests and the 6 held-out ones. The numbers are in the run reports under `evals/out/`.
+- **Codex CLI 0.167.0, its default model** (`codex exec`): a sample of 5 requests. Price playgrounds (build, repair, read-back of the saved decision) and preview playgrounds (build from the real file, settle, read-back) worked as with Claude Code. Two things differ:
+  - `codex exec` cannot ask for approval, so every Clay tool call is refused ("MCP tool call requires approval, but approval policy is never") unless the server entry says `default_tools_approval_mode = "approve"` (`codex mcp add` writes the entry; add that line to it in `~/.codex/config.toml`, or pass `-c mcp_servers.clay.default_tools_approval_mode="approve"`). In the interactive Codex the person approves the call.
+  - Codex loads the operator's `~/.codex/AGENTS.md` whatever the flags. On the test machine that file forbids edits in a shared checkout, and Codex then refused to write the settled result into the file in 2 of 3 cases. Those results say nothing about Clay; measure Codex on a machine or account without such rules.
+- Both clients cut an MCP tool call at about 60 seconds. Every Clay tool answers within about 20 seconds (see below), so neither client's default needs to be raised.
+
 ## A build answers within 20 seconds
 
 Claude Code and Codex cut an MCP tool call at about 60 seconds, and a cut call looks like a failure although the server finished. So `create_playground`, `revise_playground` and `recheck_playground` wait at most 20 seconds (`CLAY_TOOL_WAIT_MS`) for the pricing pages and then answer with `build.status`: `done`, or `running` when pages are still being read. The reads go on in the background; the MCP route keeps the function alive for them with Next.js `after()`, within `maxDuration` (300 s). Meanwhile:
