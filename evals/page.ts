@@ -3,14 +3,15 @@
 // Every selector comes from adapter.ts. The control discovery is generic (range, checkbox, select, colour inputs).
 import { createHash } from "node:crypto";
 import type { Browser, Locator, Page } from "playwright-core";
-import { PAGE, missingControls, settle, signIn, type Dimension } from "./adapter.ts";
+import { PAGE, missingControls, previewContent, settle, signIn, type Dimension } from "./adapter.ts";
 import type { Check } from "./check.ts";
 
 export const CHROME = process.env.CHROME ?? "/snap/bin/chromium";
 const cut = (s: string, n = 140) => (s.length > n ? s.slice(0, n - 1) + "…" : s).replace(/\s+/g, " ");
 
 async function open(browser: Browser, baseUrl: string, url: string, key: string | undefined) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+  // A tall viewport and a viewport screenshot: a full-page capture draws the sandboxed preview frame wrongly.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1600 } });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(`page error: ${e.message}`));
@@ -30,14 +31,35 @@ async function observe(page: Page): Promise<string> {
   return parts.join("\n");
 }
 
+/** What the person sees once it has stopped changing (a preview that is still rendering, an animation that runs out). */
+async function settled(page: Page): Promise<string> {
+  let last = await observe(page);
+  for (let i = 0; i < 10; i++) {
+    await page.waitForTimeout(200);
+    const now = await observe(page);
+    if (now === last) return now;
+    last = now;
+  }
+  return last; // lean: a preview that animates for ever never settles; every control then looks alive. Revisit with a paused-animation probe.
+}
+
 /** Move one control through other values and say whether anything visible changed. The control is put back afterwards. */
 async function reacts(page: Page, control: Locator, kind: string): Promise<boolean> {
-  const before = await observe(page);
+  const before = await settled(page);
   const changed = async () => { await page.waitForTimeout(250); return (await observe(page)) !== before; };
   if (kind === "checkbox") {
     await control.click();
     const yes = await changed();
     await control.click();
+    return yes;
+  }
+  if (kind === "buttons") {
+    // A group of option or swatch buttons: press the others, then the one that was pressed.
+    const buttons = await control.locator("button").all();
+    const start = (await Promise.all(buttons.map((b) => b.getAttribute("aria-pressed")))).indexOf("true");
+    let yes = false;
+    for (const [i, b] of buttons.entries()) if (i !== start) { await b.click(); if (await changed()) { yes = true; break; } }
+    if (start >= 0) await buttons[start].click();
     return yes;
   }
   if (kind === "select-one") {
@@ -68,8 +90,10 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     // ---- Does it load without an error state and without console errors?
     const status = response instanceof Error ? null : (response?.status() ?? null);
     const rendered = await page.waitForSelector(PAGE.ready, { timeout: 20000 }).then(() => true, () => false);
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: o.shotPath, fullPage: true }).then(() => (shot = o.shotPath), () => {});
+    // The ranking or the preview appears after hydration; a preview then needs time to run.
+    await page.locator(`${PAGE.preview}, ${PAGE.ranked}`).first().waitFor({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout((await page.locator(PAGE.preview).count()) ? PAGE.previewSettleMs : 500);
+    await page.screenshot({ path: o.shotPath }).then(() => (shot = o.shotPath), () => {});
     const shown: string[] = [];
     for (const sel of PAGE.errors) for (const el of await page.locator(sel).all()) if (await el.isVisible()) shown.push(cut(await el.innerText(), 120));
     const ranked = await page.locator(PAGE.ranked).count();
@@ -88,11 +112,11 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     }
 
     // ---- Do controls exist, and does each one change something visible?
-    const controls = await page.locator(PAGE.controls).locator('input[type="range"], input[type="checkbox"], select, input[type="color"]').all();
+    const controls = await page.locator(PAGE.controls).locator('input[type="range"], input[type="checkbox"], select, input[type="color"], [role="group"]:has(button)').all();
     const hidden = o.dims ? await missingControls(page, o.dims) : [];
     const dead: string[] = [];
     for (const c of controls) {
-      const kind = (await c.evaluate((el) => (el as HTMLInputElement).type)) as string;
+      const kind = (await c.evaluate((el) => (el as HTMLInputElement).type ?? "buttons")) as string;
       const name = (await c.getAttribute("id")) || (await c.getAttribute("aria-label")) || cut(await c.locator("xpath=..").innerText().catch(() => kind), 40);
       if (!(await reacts(page, c, kind))) dead.push(name);
     }
@@ -106,9 +130,8 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     // ---- The preview: no error (covered by the error states above) and not blank.
     if (!hasPreview) checks.push({ id: "preview", status: "na", reason: "the page has no preview" });
     else {
-      const png = await page.locator(PAGE.preview).first().screenshot();
-      // A blank frame compresses to almost nothing. lean: a size threshold, not a pixel count; revisit if a real preview is this plain.
-      checks.push(png.length < 1500 ? { id: "preview", status: "fail", reason: "the preview is blank" } : { id: "preview", status: "pass", reason: "the preview shows content" });
+      const visible = await previewContent(page);
+      checks.push(!visible ? { id: "preview", status: "fail", reason: "the preview is blank: no visible element in it" } : { id: "preview", status: "pass", reason: `the preview shows ${visible} visible element(s) and no error` });
     }
     if (errors.length && !load) checks[0] = { id: "page_loads", status: "fail", reason: cut(errors[0]) }; // an error raised by moving a control
     return { checks, shot };

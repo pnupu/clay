@@ -117,8 +117,13 @@ export function namesChoice(text: string, chosen: string): Check {
   return text.toLowerCase().includes(chosen.toLowerCase()) ? pass("handback_match", `the answer names the saved choice (${chosen})`) : fail("handback_match", `the answer does not name the saved choice (${chosen})`);
 }
 
-/** Every leaf value of the settled outputs: strings as they are, numbers as numbers. */
+/** Every leaf value of the settled outputs: strings as they are, numbers as numbers. An output whose text is JSON is opened up. */
 export function leaves(v: unknown, path = ""): { path: string; value: string | number }[] {
+  if (typeof v === "string" && /^\s*[[{]/.test(v)) {
+    try {
+      return leaves(JSON.parse(v), path);
+    } catch {}
+  }
   if (typeof v === "string" || typeof v === "number") return [{ path, value: v }];
   if (v && typeof v === "object") return Object.entries(v).flatMap(([k, x]) => leaves(x, path ? `${path}.${k}` : k));
   return [];
@@ -132,7 +137,8 @@ export function fileMatches(before: string, after: string | null, outputs: unkno
   const want = leaves(outputs);
   if (!want.length) return fail("handback_match", "the playground returned no outputs to compare");
   const nums = numbersIn(after);
-  const missing = want.find((w) => (typeof w.value === "string" ? !after.includes(w.value) : !nums.includes(w.value)));
+  const flat = (t: string) => t.replace(/\s+/g, " ").trim(); // line breaks and indentation may differ, nothing else
+  const missing = want.find((w) => (typeof w.value === "string" ? !flat(after).includes(flat(w.value)) : !nums.includes(w.value)));
   return missing ? fail("handback_match", `the file lacks the settled ${missing.path}: ${cut(String(missing.value), 80)}`) : pass("handback_match", `the file holds all ${want.length} settled value(s)`);
 }
 

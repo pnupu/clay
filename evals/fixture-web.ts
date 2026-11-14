@@ -1,4 +1,4 @@
-// A local stand-in for Context.dev (search and scrape) for agent runs that must not spend real requests.
+// A local stand-in for Context.dev (search, scrape and brand) for agent runs that must not spend real requests.
 // Unlike scripts/fixture-api.ts it answers for ANY playground an agent designs: it reads the metric and feature ids from the
 // extraction schema of the request and invents a fictional price list per vendor URL, the same on every read.
 // The prices are fiction. A playground built on it proves the agent, the page and the hand-back, not the web data.
@@ -75,6 +75,12 @@ createServer(async (req, res) => {
   if (req.url === "/web/search") {
     const domain = String((b.includeDomains as string[] | undefined)?.[0] ?? "example.com");
     return send(200, { results: [{ url: `https://${domain}/pricing`, title: `${domain} pricing` }], key_metadata: { credits_consumed: 0 } });
+  }
+  if (req.url === "/brand/retrieve") {
+    // Fictional brand colours, stable per domain, for preview playgrounds with data.brand.
+    const h = hash(String(b.domain ?? ""));
+    const hex = (n: number) => "#" + ((h * (n + 3) * 2654435761) >>> 8).toString(16).padStart(6, "0").slice(-6);
+    return send(failing ? 500 : 200, failing ? { error_code: "FIXTURE_FAILURE", message: "fixture read failed" } : { brand: { title: `${b.domain} (fixture brand)`, colors: [0, 1, 2, 3].map((n) => ({ hex: hex(n), name: `Fixture ${n + 1}` })), logos: [] }, key_metadata: { credits_consumed: 0 } });
   }
   if (req.url !== "/web/scrape") return send(404, {});
   if (failing) return send(500, { error_code: "FIXTURE_FAILURE", message: "fixture read failed" });

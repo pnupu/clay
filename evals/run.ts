@@ -13,7 +13,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, wri
 import { randomBytes } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { chromium, type Browser } from "playwright-core";
-import { MCP_PATH, TOOL, authHeader, dimensions, kitAvailable, parseBuild, preparedPlayground, type Dimension } from "./adapter.ts";
+import { MCP_PATH, TOOL, authHeader, dimensions, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, type Dimension } from "./adapter.ts";
 import { CAUSE, creation, directAnswer, fileMatches, lastBuild, namesChoice, ranges, readBack, toolUse, verdict, type Check } from "./check.ts";
 import { CHROME, checkPage, personSettles } from "./page.ts";
 import { CASES, type Case } from "./requests.ts";
@@ -140,14 +140,14 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   let prepared: { id: string; url: string; chosen: string; dims: Dimension[] | null } | null = null;
   if (c.expect === "return") {
     const before = earlier?.playground?.split("/").pop();
-    if (from && before && earlier?.person?.chosen) prepared = { id: before, url: pageUrl(before)!, chosen: earlier.person.chosen, dims: preparedPlayground(before).metrics };
+    if (from && before && earlier?.person?.chosen) prepared = { id: before, url: pageUrl(before)!, chosen: earlier.person.chosen, dims: preparedDimensions(before) };
     else try {
       const id = `eval-${tag}-${c.id}`;
       const res = await mcp("tools/call", { name: TOOL.create, arguments: preparedPlayground(id) });
       const built = parseBuild(String((res.content as { text?: string }[] | undefined)?.[0]?.text ?? ""));
       const url = pageUrl(id);
       if (res.isError || built.id !== id || !url) throw new Error(`the playground could not be prepared: ${JSON.stringify(res).slice(0, 200)}`);
-      const dims = preparedPlayground(id).metrics;
+      const dims = preparedDimensions(id);
       const person = await personSettles(browser, { baseUrl, url, key, dims });
       if (person.error || !person.chosen) throw new Error(`the prepared decision could not be saved: ${person.error}`);
       prepared = { id, url, chosen: person.chosen, dims };

@@ -1,6 +1,6 @@
 // The ONE file that knows Clay's tool names, tool result shapes and page markup. Everything else in evals/ goes through it.
-// When the kit (spec, preview, named outputs, settle) or accounts (per-person agent keys, sign-in) land, change this file only.
-// Lines marked "kit:" are written from the kit's description and are not yet proven against a server that has it.
+// It reads both shapes of the create tool: the spec ({ data: { price_pages }, view, controls, outputs }, since the kit) and
+// the earlier price config ({ metrics, vendors }). When tools or markup change, change this file only.
 import type { Page } from "playwright-core";
 
 // ---- The agent's side: MCP endpoint and tools.
@@ -11,11 +11,11 @@ export const TOOL = { create: "create_playground", read: "read_playground", rech
 /** Tools whose result describes a build (the URL, what was read, the problems list). */
 export const BUILD_TOOLS: string[] = [TOOL.create, TOOL.revise];
 
-/** How the agent authenticates. Today: one owner key as a bearer token. Accounts: a per-person agent key, same header. */
+/** How the agent authenticates: the owner key or a per-person agent key (/connect), both as a bearer token. */
 export const authHeader = (key: string) => ({ Authorization: `Bearer ${key}` });
 
 type ToolInfo = { name: string; description?: string; inputSchema?: unknown };
-/** Does this server have the kit? Today's create tool takes a price config; the kit's takes a spec with views such as `preview`. */
+/** Does this server have the kit? Its create tool takes a spec with a view, controls and outputs; before the kit it took a price config. */
 export const kitAvailable = (tools: ToolInfo[]) => /"(spec|views|preview|outputs)"/.test(JSON.stringify(tools.find((t) => t.name === TOOL.create)?.inputSchema ?? {}));
 
 export type Build = { id: string | null; url: string | null; problems: string[]; stopped: string | null };
@@ -29,48 +29,63 @@ export function parseBuild(resultText: string): Build {
   }
 }
 /** The problems that mean a broken build, which the agent must repair or tell the person. The others are true findings about a page. */
-export const isBuildError = (problem: string) => /was not read|no plan was found|none states a quantity|no page states a price|no page says whether/.test(problem);
+export const isBuildError = (problem: string) => /was not read|no plan was found|none states a quantity|no page states a price|no page says whether|could not be read/.test(problem);
 /** Who a problem is about: "resend: ..." gives "resend", "metric emails: ..." gives "emails". */
 export const problemSubject = (problem: string) => problem.split(":")[0].replace(/^(metric|feature)\s+/, "").trim();
 /** The playground id a tool call works on. */
 export const callTarget = (input: Record<string, unknown>) => (typeof input.playground_id === "string" ? input.playground_id : typeof input.id === "string" ? input.id : null);
 /** The create tool refused because the server already has a playground with that id. In an eval that is a leftover of an earlier run. */
-export const isIdCollision = (resultText: string) => /^A playground with id ".*" already exists/.test(resultText);
+export const isIdCollision = (resultText: string) => /^A playground with id ".*" already exists|^The id ".*" is taken/.test(resultText);
 /** The id a create call asks for. Used when the call's result never reached the agent (a client-side timeout). */
 export const createdId = (input: Record<string, unknown>) => (typeof input.id === "string" ? input.id : null);
-/** Names that a revise call adds (vendors today; kit: also controls and views). */
-export const addedNames = (input: Record<string, unknown>) => (Array.isArray(input.add_vendors) ? (input.add_vendors as Record<string, unknown>[]).map((v) => `${v.id} ${v.name} ${v.domain ?? ""} ${v.pricing_url ?? ""}`) : []);
+const pricePages = (input: Record<string, unknown>) => ((input.data as Record<string, unknown> | undefined)?.price_pages as Record<string, unknown> | undefined) ?? null;
+/** The vendors a revise call gives: the new vendor list of data.price_pages (or add_vendors before the kit). */
+export const addedNames = (input: Record<string, unknown>) => ((pricePages(input)?.vendors ?? input.add_vendors ?? []) as Record<string, unknown>[]).map((v) => `${v.id} ${v.name} ${v.domain ?? ""} ${v.pricing_url ?? ""}`);
 
 /** Arguments for the create tool that prepares the playground of the return-visit cases. */
 export const preparedPlayground = (id: string) => ({
   id,
-  question: "Which email service should our app use?",
-  product: "transactional email API",
-  metrics: [{ id: "emails_per_month", label: "Emails per month", unit: "emails", describe: "Emails sent per month (also called messages or sends), included in the plan and billed as overage.", min: 5000, max: 300000, initial: 30000 }],
-  features: [],
-  vendors: [
-    { id: "resend", name: "Resend", pricing_url: "https://resend.com/pricing" },
-    { id: "postmark", name: "Postmark", pricing_url: "https://postmarkapp.com/pricing" },
-    { id: "mailgun", name: "Mailgun", pricing_url: "https://www.mailgun.com/pricing/" },
-  ],
+  title: "Which email service should our app use?",
+  view: { type: "price_ranking" },
+  data: {
+    price_pages: {
+      product: "transactional email API",
+      metrics: [{ id: "emails_per_month", label: "Emails per month", unit: "emails", describe: "Emails sent per month (also called messages or sends), included in the plan and billed as overage.", min: 5000, max: 300000, initial: 30000 }],
+      features: [],
+      vendors: [
+        { id: "resend", name: "Resend", pricing_url: "https://resend.com/pricing" },
+        { id: "postmark", name: "Postmark", pricing_url: "https://postmarkapp.com/pricing" },
+        { id: "mailgun", name: "Mailgun", pricing_url: "https://www.mailgun.com/pricing/" },
+      ],
+    },
+  },
 });
+/** The numeric dimensions of the prepared playground. */
+export const preparedDimensions = (id: string): Dimension[] => preparedPlayground(id).data.price_pages.metrics;
 
 // ---- The stored playground, as far as the checker needs it.
 export type Dimension = { id: string; label: string; unit: string; min: number; max: number; initial: number };
 type BuildCall = { tool: string; mcp: boolean; input: Record<string, unknown>; isError: boolean };
+/** The numeric dimensions in one create or revise input, or null when the call does not state them. */
+function statedDimensions(input: Record<string, unknown>): Dimension[] | null {
+  const metrics = (pricePages(input)?.metrics ?? input.metrics) as Dimension[] | undefined; // a price playground: one slider per metric
+  if (metrics) return metrics.map((m) => ({ id: m.id, label: m.label, unit: m.unit, min: m.min, max: m.max, initial: m.initial }));
+  const controls = input.controls as (Partial<Dimension> & { type?: string })[] | undefined; // a preview playground: its slider controls
+  if (controls) return controls.filter((c) => c.type === "slider").map((c) => ({ id: String(c.id), label: String(c.label ?? c.id), unit: String(c.unit ?? ""), min: Number(c.min), max: Number(c.max), initial: Number(c.initial) }));
+  return null;
+}
 /**
- * The numeric dimensions of a playground after every repair: the create call's metrics, then each successful revise applied
- * in order (an entry with an existing id replaces it). The public state route does not return them, so they come from the calls.
+ * The numeric dimensions of a playground after every repair: those of the create call, then each successful revise applied
+ * in order (a revise replaces the whole list). The public state route does not return them, so they come from the calls.
  */
 export function dimensions(calls: BuildCall[], id: string): Dimension[] | null {
   let dims: Dimension[] | null = null;
   for (const c of calls.filter((x) => x.mcp && !x.isError)) {
-    // kit: map the spec's slider controls here: { id, label, unit, min, max, initial }.
-    if (c.tool === TOOL.create && c.input.id === id) dims = ((c.input.metrics as Dimension[] | undefined) ?? []).map((m) => ({ ...m }));
+    if (c.tool === TOOL.create && c.input.id === id) dims = statedDimensions(c.input) ?? [];
     else if (c.tool === TOOL.revise && c.input.playground_id === id && dims) {
-      const add = (c.input.add_metrics as Dimension[] | undefined) ?? [];
+      const add = (c.input.add_metrics as Dimension[] | undefined) ?? []; // before the kit: entries were added and removed by id
       const remove = (c.input.remove_metric_ids as string[] | undefined) ?? [];
-      dims = [...dims.filter((d: Dimension) => !remove.includes(d.id) && !add.some((a) => a.id === d.id)), ...add];
+      dims = statedDimensions(c.input) ?? [...dims.filter((d: Dimension) => !remove.includes(d.id) && !add.some((x) => x.id === d.id)), ...add];
     }
   }
   return dims;
@@ -80,21 +95,35 @@ export function dimensions(calls: BuildCall[], id: string): Dimension[] | null {
 export const PAGE = {
   /** Present when the playground has rendered. */
   ready: "h1",
-  /** Error states that a person sees. */
-  errors: ["p.alert", "section.card.empty", "[data-preview-error]" /* kit: the preview's error box */],
-  /** The area that holds the controls. */
-  controls: "section.controls, [data-controls]",
-  /** Areas that must react when a control moves: the ranking and the decision panel today; kit: the outputs. */
-  reacts: ["section.results", "aside.side", "[data-outputs]"],
-  /** kit: the sandboxed preview. Compared by screenshot, and checked for an error and for a blank frame. */
-  preview: "iframe[data-preview], [data-preview] iframe",
-  /** Rows of the ranking, best first. */
+  /** Error states that a person sees: a page or source error, "preview failed" (also p.alert), and a playground with no data. */
+  errors: ["p.alert", "section.card.empty"],
+  /** The area that holds the controls, on both kinds of playground. */
+  controls: "section.controls",
+  /** Areas that must react when a control moves: the ranking and the decision panel (price), the output texts (preview). */
+  reacts: ["section.results", "aside.side", "[data-output]"],
+  /** The sandboxed preview of a preview playground. Compared by screenshot, and checked for content. */
+  preview: 'iframe[src$="/frame"]',
+  /** Rows of the ranking of a price playground, best first. */
   ranked: "ol.rank li.vendor",
+  /** Milliseconds a preview needs after load before it reports that it ran. */
+  previewSettleMs: 2500,
 };
 
-/** Become the person. Today: the owner link puts the owner key in a cookie. Accounts: replace with the sign-in flow or a session cookie. */
+/** How many visible elements the preview shows, or null when the page has no preview. Zero means a blank preview. */
+export async function previewContent(page: Page): Promise<number | null> {
+  const el = await page.$(PAGE.preview);
+  const frame = await el?.contentFrame();
+  if (!frame) return null;
+  return frame.evaluate(() => [...document.body.querySelectorAll("*")].filter((e) => !["SCRIPT", "STYLE", "LINK"].includes(e.tagName) && e.getBoundingClientRect().width > 1 && e.getBoundingClientRect().height > 1).length).catch(() => 0);
+}
+
+/**
+ * Become the person. The owner link puts the owner key in a cookie, which makes the browser the admin.
+ * lean: a per-person agent key (clay_ak...) cannot sign a browser in; that needs a Clerk session. Until the harness has a
+ * test account, run the evals with the owner key. With a per-person key the agent legs work and the person's writes fail.
+ */
 export async function signIn(page: Page, baseUrl: string, key: string | undefined) {
-  if (!key) return; // a local development server needs no key
+  if (!key) return; // a local development server without Clerk keys needs no key
   await page.goto(`${baseUrl}/enter#key=${key}`);
   await page.waitForURL((u) => u.pathname === "/" && !u.hash, { timeout: 20000 });
 }
@@ -106,27 +135,29 @@ export async function missingControls(page: Page, dims: Dimension[]): Promise<st
   return out;
 }
 
-/** The person settles: pick the second-ranked vendor when there is one (so the choice cannot be guessed), then save. */
+/** The person settles: move the sliders, then press Settle (preview) or pick the second-ranked vendor and save (price). */
 export async function settle(page: Page, dims: Dimension[]): Promise<{ chosen: string | null; outputs: Record<string, unknown> | null; error: string | null }> {
-  // Move every dimension to a value 1.5 times its start, clamped to the range, through the exact-value field.
+  // Move every slider through the exact-value field: a price slider to 1.5 times its start, a kit slider halfway to its top.
   for (const d of dims) {
-    const field = page.locator(`.control:has([id="${d.id}"]) input.value`);
-    if (await field.count()) {
-      await field.fill(String(Math.min(d.max, Math.round(d.initial * 1.5))));
-      await page.waitForTimeout(150);
-    }
+    const price = page.locator(`.control:has([id="${d.id}"]) input.value`);
+    const kit = page.locator(`[data-control="${d.id}"] input[type="number"]`);
+    if (await price.count()) await price.fill(String(Math.min(d.max, Math.round(d.initial * 1.5))));
+    else if (await kit.count()) await kit.fill(String(Math.round((d.initial + d.max) / 2)));
+    await page.waitForTimeout(150);
   }
-  // kit: click the settle button and read the named outputs, for example from a JSON script element.
-  const settleButton = page.locator("button[data-settle]");
+  // A preview playground: press Settle and read the named outputs as the page shows them.
+  const settleButton = page.getByRole("button", { name: /^Settle/ });
   if (await settleButton.count()) {
-    await settleButton.click();
-    await page.waitForTimeout(1500);
-    const raw = await page.locator("[data-outputs-json]").first().textContent().catch(() => null);
+    if (await settleButton.first().isDisabled()) return { chosen: null, outputs: null, error: "the Settle button is disabled (no owner access, or already settled)" };
+    await page.waitForTimeout(1600); // the exploration summary is sent after a pause
+    await settleButton.first().click();
     try {
-      return { chosen: null, outputs: raw ? (JSON.parse(raw) as Record<string, unknown>) : null, error: raw ? null : "the page shows no outputs after settle" };
+      await page.waitForSelector("[data-settled]", { timeout: 15000 });
     } catch {
-      return { chosen: null, outputs: null, error: "the outputs on the page are not JSON" };
+      return { chosen: null, outputs: null, error: "the page did not confirm the settle" };
     }
+    const outputs = Object.fromEntries(await page.locator("[data-output]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-output"), e.textContent ?? ""])));
+    return { chosen: null, outputs, error: Object.keys(outputs).length ? null : "the page shows no outputs after settle" };
   }
   const rows = page.locator(PAGE.ranked);
   const n = await rows.count();

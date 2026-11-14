@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { creation, directAnswer, fileMatches, lastBuild, namesChoice, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
+import { dimensions } from "./adapter.ts";
 import { CASES } from "./requests.ts";
 
 const dim = (id: string, min: number, max: number, initial: number, label = id, unit = "units") => ({ id, label, unit, min, max, initial });
@@ -53,6 +54,21 @@ test("ranges: the control is found by id, label or unit; a missing control fails
   assert.equal(ranges([{ about: /input/i, value: 40 }], [dim("cached_input", 0, 100, 10), dim("input", 0, 400, 40)]).status, "pass");
 });
 
+test("dimensions: read from the spec of the create call, replaced by a later revise; both tool shapes", () => {
+  const metric = (id: string, initial: number) => ({ id, label: id, unit: "u", describe: "x", min: 0, max: 100, initial });
+  const spec = call("create_playground", { id: "p1", view: { type: "price_ranking" }, data: { price_pages: { metrics: [metric("emails", 30)], vendors: [] } } });
+  assert.deepEqual(dimensions([spec], "p1")?.map((d) => [d.id, d.initial]), [["emails", 30]]);
+  const revised = call("revise_playground", { playground_id: "p1", data: { price_pages: { metrics: [metric("emails", 30), metric("seats", 4)] } } });
+  assert.deepEqual(dimensions([spec, revised, call("revise_playground", { playground_id: "p1", title: "x" })], "p1")?.map((d) => d.id), ["emails", "seats"]);
+  assert.deepEqual(dimensions([spec, { ...revised, isError: true }], "p1")?.map((d) => d.id), ["emails"]);
+  const preview = call("create_playground", { id: "p2", view: { type: "preview" }, controls: [{ id: "radius", type: "slider", label: "Radius", unit: "px", min: 0, max: 24, initial: 2 }, { id: "shadow", type: "toggle", initial: false }] });
+  assert.deepEqual(dimensions([preview], "p2"), [{ id: "radius", label: "Radius", unit: "px", min: 0, max: 24, initial: 2 }]);
+  // The price config from before the kit.
+  const legacy = [call("create_playground", { id: "p3", metrics: [metric("mau", 12)] }), call("revise_playground", { playground_id: "p3", add_metrics: [metric("sso", 5)], remove_metric_ids: ["mau"] })];
+  assert.deepEqual(dimensions(legacy, "p3")?.map((d) => d.id), ["sso"]);
+  assert.equal(dimensions([spec], "other"), null);
+});
+
 test("tool use: a build case needs the create tool, a no-playground case must not build", () => {
   assert.equal(toolUse(byId("price-email"), [call("create_playground")], null).status, "pass");
   const none = toolUse(byId("price-email"), [call("read_playground")], null);
@@ -73,6 +89,10 @@ test("tool use: return visits work on the prepared playground", () => {
   const compare = byId("return-compare");
   assert.equal(toolUse(compare, [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "ses", name: "Amazon SES" }] })], "p1").status, "pass");
   assert.match(toolUse(compare, [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "sendgrid", name: "SendGrid" }] })], "p1").reason, /did not add/);
+  // The spec shape: a revise gives the whole new vendor list.
+  const vendors = (...names: string[]) => ({ playground_id: "p1", data: { price_pages: { vendors: names.map((name) => ({ id: name.toLowerCase().replace(/ /g, "-"), name })) } } });
+  assert.equal(toolUse(compare, [call("revise_playground", vendors("Resend", "Postmark", "Mailgun", "Amazon SES"))], "p1").status, "pass");
+  assert.match(toolUse(compare, [call("revise_playground", vendors("Resend", "Postmark", "Mailgun"))], "p1").reason, /did not add/);
 });
 
 test("creation: a failed build, a repaired build, and a problem left untold", () => {
@@ -117,6 +137,10 @@ test("hand-back comparison: the file must change and hold every settled output e
   assert.match(fileMatches(before, good.replace("22.5", "225"), outputs).reason, /spring.damping/);
   assert.equal(fileMatches(before, good.replace("22.5", "22.50"), outputs).status, "pass");
   assert.match(fileMatches(before, good, {}).reason, /no outputs/);
+  // Outputs as the page shows them: texts. A JSON text is compared value by value; other text may differ in line breaks only.
+  const shown = { className: "bg-blue-600 px-4 py-2\n  rounded-lg shadow-sm", spring: '{"stiffness": 260, "damping": 22.5, "mass": 1}' };
+  assert.equal(fileMatches(before, good, shown).status, "pass");
+  assert.match(fileMatches(before, good.replace("260", "250"), shown).reason, /lacks the settled spring.stiffness/);
 });
 
 test("no-playground cases: the direct answer or the direct edit", () => {
