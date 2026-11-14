@@ -165,7 +165,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     const parsed = parseSpec(args);
     if (!parsed.ok) return fail(`The spec is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
     // The id asked for may be taken (by anyone): the playground then gets that id with a suffix, and the result says so.
-    const again = { existing: "You already have a playground with this id and exactly this spec: this is it. Nothing was created or read again. To change it, call revise_playground." };
+    const again = { existing: "You already have a playground with exactly this spec: this is it, nothing was created. Pages that were not read before are being read now (see build). To change it, call revise_playground." };
     const renamed = (id: string) => (id === parsed.domain.id ? {} : { id_note: `The id "${parsed.domain.id}" was taken, so this playground got the id "${id}". Use "${id}" in every later call.` });
     try {
       if (parsed.kind === "preview") {

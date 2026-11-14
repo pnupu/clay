@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { canWrite, currentActor, currentUserId, isExample, playgroundCapMessage, type Account } from "./accounts.ts";
+import { currentUserId, isExample, playgroundCapMessage, type Account } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -70,6 +70,30 @@ export function workStatus(p: Pick<Playground, "work">, now = Date.now()) {
   if (!w) return null;
   const status = w.finishedAt ? ("done" as const) : now - Date.parse(w.startedAt) > WORK_STALE_MS ? ("stalled" as const) : ("running" as const);
   return { status, kind: w.kind, startedAt: w.startedAt, pending: w.finishedAt ? [] : w.pending, stop: w.stop };
+}
+
+/**
+ * Start tracked work on some sources. Work that still runs on the playground (a build that a revision overlaps) keeps
+ * its sources in the pending list: they are still being read, and the report must not call them "not read".
+ */
+export function startWork(p: Pick<Playground, "work">, id: string, kind: Work["kind"], ids: string[], now = Date.now()): void {
+  const carried = workStatus(p, now)?.status === "running" ? p.work!.pending.filter((x) => !ids.includes(x)) : [];
+  p.work = { id, kind, startedAt: new Date(now).toISOString(), pending: [...ids, ...carried], finishedAt: null, stop: null };
+}
+/** One source has arrived (read, or failed). The work has ended when none is pending. */
+export function sourceArrived(p: Pick<Playground, "work"> | undefined, source: string, now = Date.now()): void {
+  const w = p?.work;
+  if (!w || w.finishedAt) return;
+  w.pending = w.pending.filter((x) => x !== source);
+  if (!w.pending.length) w.finishedAt = new Date(now).toISOString();
+}
+/** The run that started the work `id` has ended: its own sources are no longer pending, whatever became of them. */
+export function endWork(p: Pick<Playground, "work"> | undefined, id: string, ids: string[], stop: string | null, now = Date.now()): void {
+  const w = p?.work;
+  if (!w || w.id !== id) return; // newer work on the same playground keeps its own mark
+  w.pending = w.pending.filter((x) => !ids.includes(x));
+  w.stop = stop ?? w.stop;
+  if (!w.pending.length) w.finishedAt ??= new Date(now).toISOString();
 }
 
 export type Playground = {
@@ -231,11 +255,16 @@ export function freeId(wanted: string, taken: (id: string) => boolean, random = 
  */
 export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean } | { refused: string }> {
   return update((s) => {
-    // A repeated create (the answer of the first one was lost): the caller's own playground with this id and exactly this
-    // spec is the one they mean. Nothing is inserted or read again. Only the caller's own: for anyone else the id is just taken.
-    const mine = s.playgrounds[domain.id];
-    const same = (a: Playground, b: Playground) => JSON.stringify([a.domain, a.kit?.kit ?? null]) === JSON.stringify([b.domain, b.kit?.kit ?? null]);
-    if (mine && !isExample(mine) && canWrite(currentActor(), mine) && same(mine, make(domain))) return { id: domain.id, existed: true };
+    // A repeated create (the answer of the first one was lost): the caller's own playground with exactly this spec, under
+    // the id asked for or under that id with a suffix (the first create may have been renamed), is the one they mean.
+    // Nothing is inserted. "Own" is the same owner, not "may write": the admin may write everything, and must not be
+    // handed somebody else's playground.
+    const owner = currentUserId();
+    const wanted = make(domain);
+    const spec = (p: Playground) => JSON.stringify([{ ...p.domain, id: "" }, p.kit?.kit ?? null]);
+    const renamed = `${domain.id.slice(0, 33)}-`;
+    const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && (p.owner ?? null) === owner && spec(p) === spec(wanted));
+    if (mine) return { id: mine.domain.id, existed: true };
     const refused = playgroundCapMessage(s.playgrounds);
     if (refused) return { refused };
     const id = freeId(domain.id, (x) => !!s.playgrounds[x]);

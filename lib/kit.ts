@@ -243,7 +243,7 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   for (const [where, text] of [["view.html", html], ["view.css", css]] as const)
     for (const n of names(text)) {
       const inner = controls.filter((c) => c.id === n).flatMap(nestedNames);
-      if (inner.length) errors.push(`${where}: {{${n}}} stands for a text that holds {{${inner[0]}}}. That is filled in outputs only, not in the preview. Use {{${inner[0]}}} directly in ${where}, or build that part in view.js from clay.values.`);
+      if (inner.length) errors.push(`${where}: {{${n}}} stands for a text that holds ${[...new Set(inner)].map((x) => `{{${x}}}`).join(", ")}. That is filled in outputs only, not in the preview. Use ${[...new Set(inner)].map((x) => `{{${x}}}`).join(", ")} directly in ${where}, or build that part in view.js from clay.values.`);
     }
   for (const c of controls) {
     // Bound: named in the preview's html or css, or returned by an output (also inside a toggle or option text there).

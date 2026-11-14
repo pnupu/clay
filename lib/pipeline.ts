@@ -5,7 +5,7 @@ import { extractionInstructions, extractionSchema, normalise, type Domain, type 
 import { brand, ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
-import { insertPlayground, load, newPlayground, publicBase, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
+import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
 const hash = (text: string) => createHash("sha256").update(text.replace(/\s+/g, " ").trim()).digest("hex");
@@ -162,9 +162,7 @@ const readSig = (d: Domain, id: string): string | null => {
 };
 
 /** One source of tracked work has arrived (read, or failed): it is no longer pending. */
-const arrived = (p: Playground | undefined, id: string) => {
-  if (p?.work && !p.work.finishedAt) p.work.pending = p.work.pending.filter((x) => x !== id);
-};
+const arrived = (p: Playground | undefined, id: string) => sourceArrived(p, id);
 
 /**
  * Run web reads for some vendors of a playground as tracked work (store.ts, Work): the playground says which sources are
@@ -177,16 +175,14 @@ export async function tracked(pg: string, kind: Work["kind"], ids: string[], run
   try {
     await update((s) => {
       const p = s.playgrounds[pg];
-      if (p) p.work = { id, kind, startedAt: new Date().toISOString(), pending: ids, finishedAt: null, stop: null };
+      if (p) startWork(p, id, kind, ids);
     });
     stop = await run();
   } catch (e) {
     stop = message(e);
   }
   await update((s) => {
-    const p = s.playgrounds[pg];
-    // Newer work on the same playground (a revision that came in meanwhile) keeps its own mark.
-    if (p?.work?.id === id) Object.assign(p.work, { pending: [], finishedAt: new Date().toISOString(), stop });
+    endWork(s.playgrounds[pg], id, ids, stop);
   }).catch(() => {});
   return stop;
 }
@@ -219,8 +215,15 @@ export async function collectAll(pg: string, origin: string, ids?: string[]): Pr
  */
 export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> | null; existed?: boolean } | { refused: string }> {
   const r = await insertPlayground(domain, (d) => newPlayground(d));
-  // `existed`: the caller already has exactly this playground (a repeated call after a lost answer): nothing is read again.
-  return "refused" in r ? r : { id: r.id, work: r.existed ? null : collectAll(r.id, origin), existed: r.existed };
+  if ("refused" in r) return r;
+  if (!r.existed) return { id: r.id, work: collectAll(r.id, origin) };
+  // The caller already has exactly this playground (a repeated call after a lost answer or a failed build). Pages that
+  // were read stay; pages that are missing and that nothing reads now (a build that failed, stopped or was cut off) are
+  // read again, so a retry repairs instead of returning a broken playground.
+  const p = await playground(r.id);
+  const reading = new Set(workStatus(p)?.status === "running" ? p.work!.pending : []);
+  const missing = p.domain.vendors.filter((v) => !p.sources[v.id]?.snapshot && !reading.has(v.id)).map((v) => v.id);
+  return { id: r.id, work: missing.length ? collectAll(r.id, origin, missing) : null, existed: true };
 }
 
 // ---- Preview playgrounds (lib/kit.ts). The only web read is the brand of data.brand, once, at creation or when its domain changes.
@@ -276,14 +279,18 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ preview
     if (!p?.kit) throw new NotFound(`Playground "${domain.id}" does not exist.`);
     const same = (id: string) => JSON.stringify(p.kit!.kit.controls.find((c) => c.id === id)) === JSON.stringify(kit.controls.find((c) => c.id === id));
     const kept = Object.fromEntries(Object.entries(p.kit.exploration?.controls ?? {}).filter(([id]) => same(id)));
-    // The brand that is stored is reused; another brand (or one that never arrived) is read again, after this update.
-    const reread = !!kit.brand && p.kit.brandData?.domain !== kit.brand.domain;
-    const read = !kit.brand ? { brandData: null, brandError: null, brandSince: null } : reread ? { brandData: null, brandError: BRAND_PENDING, brandSince: since } : { brandData: p.kit.brandData, brandError: null, brandSince: null };
+    // The brand that is stored is reused, and a read of the same brand that still runs is left to end. Another brand, or
+    // one whose read failed, is read (again) after this update.
+    const sameBrand = (p.kit.kit.brand?.domain ?? null) === (kit.brand?.domain ?? null);
+    const waiting = sameBrand && brandPending(p.kit);
+    const reread = !!kit.brand && !waiting && !(sameBrand && p.kit.brandData);
+    const read = !kit.brand ? { brandData: null, brandError: null, brandSince: null } : waiting ? { brandData: null, brandError: BRAND_PENDING, brandSince: p.kit.brandSince } : reread ? { brandData: null, brandError: BRAND_PENDING, brandSince: since } : { brandData: p.kit.brandData, brandError: null, brandSince: null };
     // A revision of words only (title, notes, labels, meanings) runs the same code with the same values: the preview that
     // was verified stays verified. While the outputs also render the same text, the page that is open keeps working (same
     // rev) and the settled result stands. Changed outputs get a new rev: an open page shows the old output text, so its
     // settle must be refused until it is reloaded.
-    const previewKept = runSignature(p.kit.kit) === runSignature(kit) && !reread;
+    // The brand's domain is part of the signature; whether its colours have arrived does not change how the preview runs.
+    const previewKept = runSignature(p.kit.kit) === runSignature(kit);
     const outputsKept = previewKept && JSON.stringify(p.kit.kit.outputs.map((o) => [o.id, o.template])) === JSON.stringify(kit.outputs.map((o) => [o.id, o.template]));
     const settledCleared = !!p.kit.settled && !outputsKept;
     p.domain = domain;

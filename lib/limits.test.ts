@@ -73,8 +73,10 @@ test("parallel creates by one person cannot pass the playground cap, and a taken
   const parsed = parseSpec(preview("mine"));
   assert.ok(parsed.ok);
   if (!parsed.ok) return;
-  // The step every create path shares (lib/pipeline.ts): one store update that checks the allowance, takes a free id and inserts.
-  const create = () => insertPlayground(parsed.domain, (d) => newPlayground(d));
+  // The step every create path shares (lib/pipeline.ts): one store update that checks the allowance, takes a free id and
+  // inserts. Each create is another playground (another title): identical ones by one person are one playground.
+  let n = 0;
+  const create = () => insertPlayground({ ...parsed.domain, question: `${parsed.domain.question} (${++n})` }, (d) => newPlayground(d));
   // Somebody else already owns "mine".
   bindActor().actor = { kind: "user", userId: "other", via: "key" };
   assert.deepEqual(await create(), { id: "mine" });
@@ -111,4 +113,11 @@ test("a repeated create of the caller's own playground with the same spec is the
   const theirs = await insertPlayground(a.domain, (d) => newPlayground(d));
   assert.ok("id" in theirs && /^idem-[0-9a-f]{6}$/.test(theirs.id) && !theirs.existed);
   assert.equal(Object.values((await load()).playgrounds).filter((p) => p.owner === "u7").length, 2);
+  // Their first create was renamed (the id was taken) and its answer was lost: the retry finds that playground.
+  assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: (theirs as { id: string }).id, existed: true });
+  // The admin may write every playground, but is not handed somebody else's: an identical spec gets its own.
+  bindActor().actor = { kind: "admin" };
+  const admins = await insertPlayground(a.domain, (d) => newPlayground(d));
+  assert.ok("id" in admins && !admins.existed && admins.id !== "idem" && admins.id !== (theirs as { id: string }).id);
+  assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: (admins as { id: string }).id, existed: true });
 });

@@ -82,7 +82,7 @@ export function collectionReport(p: Playground) {
   // value above every self-serve plan), not hand it over.
   // It is judged at the STARTING values (the build as the agent designed it), not where the person left the controls: a
   // person who ticks a must-have that one vendor has must not make a healthy playground look broken at hand-back.
-  const start = rankingReport(p, { usage: Object.fromEntries(p.domain.metrics.map((m) => [m.id, m.initial])), required: [] });
+  const start = p.exploration ? rankingReport(p, { usage: Object.fromEntries(p.domain.metrics.map((m) => [m.id, m.initial])), required: [] }) : ranking;
   if (!pending.size && read.length && start.ranked_cheapest_first.length < 2) {
     const gaps = p.domain.metrics.map((m) => ({ id: m.id, vendors: start.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => x.startsWith(`${m.id}:`))).length })).filter((g) => g.vendors > 0).sort((a, b) => b.vendors - a.vendors);
     const custom = start.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => /custom pricing|base price not stated/.test(x))).length;
