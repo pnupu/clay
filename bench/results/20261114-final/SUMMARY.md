@@ -2,6 +2,11 @@
 
 Run `20261114-final` · source commit `b3d97f8` · 2026-11-14T00:14:20+00:00 to 2026-11-14T00:29:58+00:00 · CLI versions: claude 2.1.321 (Claude Code), codex codex-cli 0.167.0
 
+> **Read with these numbers.** The 6 repeat-1 `csv-totals` runs are unscored ("+1 unscored" per model):
+> their first hidden check put `rates.json` in another directory than the instruction implies, and the
+> runs could not be re-checked after the fix (`adjustments.json`). They count for time, tokens and errors,
+> not for pass rate. Every scored run passed, so this run separates models by time and tokens only.
+
 120 runs. Pass rate counts only scored runs; see the method note in `bench/METHOD.md`. Seconds are wall time of the whole CLI process, including start-up, for all runs (passed or not). Tokens are means per run as the CLI reports them; input includes cached input.
 
 ## Per model

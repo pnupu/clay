@@ -2,6 +2,15 @@
 
 Run `20261114-hard` · source commit `3e94167` · 2026-11-14T01:54:03+00:00 to 2026-11-14T02:28:16+00:00 · CLI versions: claude 2.1.321 (Claude Code), codex codex-cli 0.167.0
 
+> **Read with these numbers.** The hard task set was calibrated before this run: each task was tried on
+> claude-opus-5-5 and gpt-6-luna (`20261114-hard-calib1`, 16 runs), six tasks that both passed were made
+> harder, and four were tried again (`20261114-hard-calib2`, 8 runs). Calibrating on two of the six measured
+> models is a form of tuning (see `bench/METHOD.md`). All 3 gpt-6.1-terra failures are one **disputed**
+> check (`bank-import`, Nordea amounts with fewer than two decimals, a form the task's docs do not show);
+> they count as failures here, and "Disputed failures" below gives the rate without them. The 95%
+> intervals treat the 24 runs per model as independent; the 3 repeats of a task are correlated, so the
+> real uncertainty is larger.
+
 144 runs. Pass rate counts only scored runs; see the method note in `bench/METHOD.md`. Seconds are wall time of the whole CLI process, including start-up, for all runs (passed or not). Tokens are means per run as the CLI reports them; input includes cached input.
 
 ## Per model

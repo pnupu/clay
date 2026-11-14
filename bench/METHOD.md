@@ -3,6 +3,14 @@
 This note says what the numbers in `results/<run-id>/` measure, how they were made, and what they cannot
 support. The numbers carry no prices. The product multiplies them by live prices.
 
+**What is published.** Each run directory has `runs.jsonl` (one record per agent run), `manifest.json`
+(the exact commands, versions and settings), `adjustments.json` where a result was set aside or disputed,
+and the summaries made from them by `summarize.py`. Paths of the machine that ran the bench are replaced by
+placeholders (`<home>`, `<clone>`, `<scratch>`, `<tmp>`, `<global-agents-md>`; see `scrub.py`), and
+`check-public.py` checks that no such path or key is in a committed file. The agents' full transcripts are
+**not** published: they hold that machine's paths and session data. Where a statement below rests on
+the transcripts alone, it says so.
+
 ## What was measured
 
 Each run gives one coding agent CLI one task, in a fresh copy of the task's starting directory, with no
@@ -71,7 +79,7 @@ once on Claude Opus 5.5 and once on gpt-6-luna (expected as the strongest and th
 runs, `results/20261114-hard-calib1`). Result: 14 of 16 passed. Changes made after that probe:
 
 - `job-queue`: the retry-order test was ambiguous with a retry delay of 0 (Opus's reading was fair), so
-  the test now uses a 10 ms delay. Luna stopped after describing the bugs without editing anything.
+  the test now uses a 10 ms delay. Luna's run changed no file (`no-change` in its record).
 - The six tasks that both models passed were hardened, each by a rule that the task's own docs or code
   state: a third cause in `batch-invoices`, end-of-month subscriptions in `billing-schedule`, role
   addresses and one-word names in the matching rules of `dedupe-perf`, two more differences between the
@@ -138,16 +146,19 @@ number with `-` became `null`; 1 × `job-queue`, a retry ran before its delay) a
   instead of crashing that run, and keeps a
   run whose work directory holds links, sockets or unreadable files.
 
-So `bench_sha256` in the run's manifest is the hash of the task set before these changes. When the run started, `tasks-hard/` was not committed yet (`source_dirty` in the
-manifest); the code that ran is in the commit that added these results.
+So `bench_sha256` in the run's manifest is the hash of the task set before these changes. When the run
+started, `tasks-hard/` was not committed yet (`source_dirty` in the manifest); the code that ran is in the
+commit that added these results (`cd616de`).
 
 **Sandbox, first real run.** Before the full run, one real agent per CLI ran a probe script inside the
-new sandbox (`results/20261114-sandbox-probe`; the probe task itself lived in a scratch directory). Both
-reported every hidden check, the repository's `.git`, `~/.claude/projects`, `~/.codex/sessions`, `~/.t3`
-and `/tmp` as unreachable, writes outside the work directory as blocked, and Node working; codex also
-showed PID 1 as `bwrap`. `~/agent-runs` showed only the empty mount point of the hidden checkout (0
-files). Both probe runs "failed" their own check only because of that mount point. No transcript of the
-hard run mentions the bench path.
+new sandbox (`results/20261114-sandbox-probe`; the probe task is in `probe-task/`, with placeholders for
+its paths). Both reports list `~/.claude/projects`, `~/.codex/sessions`, `~/.t3` and the scratch
+directory as hidden, writes outside the work directory as blocked, PID 1 as `bwrap` and Node working
+(the end of each report is in `check_output` of `runs.jsonl`; the first lines, which list the two hidden
+check files and the repository's `.git` as hidden, are in the transcripts only). `~/agent-runs` showed only
+the empty mount point of the hidden checkout (0 files, checked outside the agent runs). Both probe runs
+"failed" their own check only because of that mount point. `transcript_mentions_bench_dir` is false in
+all 144 records of the hard run.
 
 ## How the agents were run
 
@@ -181,8 +192,8 @@ and in agent session stores that can hold the transcript of whoever wrote the ta
 commit `e4557ab`, the whole repository checkout, `~/agent-runs`, `~/.claude/projects`, `~/.codex/sessions`
 and `~/.t3` are hidden behind empty tmpfs mounts (and `~/.claude` for codex). In runs `20261114-main` and
 `20261114-final`, only `bench/` was hidden, so an agent *could* have reached a check through `.git` or a
-session store. An audit of all 124 transcripts found no tool call that names a check or reference file,
-`.git`, `agent-runs`, `.claude/projects`, `.codex/sessions` or `.t3`.
+session store. An audit of all 124 transcripts of those runs (not published) found no tool call that
+names a check or reference file, `.git`, `agent-runs`, `.claude/projects`, `.codex/sessions` or `.t3`.
 
 Two choices differ from the CLIs' built-in sandboxes, for reasons found on this machine:
 
@@ -193,8 +204,8 @@ Two choices differ from the CLIs' built-in sandboxes, for reasons found on this 
   `results/20261114-main/ABORTED.md`). Codex's own sandbox cannot run inside another user namespace here.
   So codex runs with its sandbox switched off inside bubblewrap, which shows an empty file in place of the
   global AGENTS.md and hides `~/.codex/skills` and `~/.agents/skills`. The difference from codex's
-  `workspace-write` mode is that shell commands keep network access. The codex system prompt also says
-  that it has full access, which can change its behaviour a little.
+  `workspace-write` mode is that shell commands keep network access. With its sandbox off, codex may also
+  describe its own permissions differently to the model, which can change its behaviour a little.
 
 Each record has `transcript_mentions_bench_dir`, which is true if the bench path appears anywhere in
 the CLI's output. It should be false for every run.
@@ -202,8 +213,8 @@ the CLI's output. It should be false for every run.
 ## Limits
 
 - **Small sample.** Easy set: 10 tasks × 2 repeats = 20 runs per model; hard set: 8 tasks × 3
-  repeats = 24 runs per model (see "How uncertain a rate from 24 runs is"). One pass or failure moves a pass rate by
-  5 points. Differences of less than about 15 points between models are not evidence of a difference.
+  repeats = 24 runs per model (see "How uncertain a rate from 24 runs is"). On the easy set, one pass or
+  failure moves a pass rate by 5 points; on the hard set, by about 4. Differences of less than about 15 points between models are not evidence of a difference.
 - **Easy tasks saturate.** Small, well-specified tasks are what teams give agents every day, but strong
   models pass most of them. In run `20261114-final` every scored run passed (114 of 114), the two
   "hard" tasks included, so this run separates models only by time and tokens, not by success. A pass
@@ -221,7 +232,7 @@ the CLI's output. It should be false for every run.
 - **Subscription logins** can have their own rate limits and routing. API use can differ.
 - **One task-check flaw was found during the run.** The first `csv-totals` check put `rates.json` in a
   different directory from the agent's script. The instruction does not say where that file lives, and
-  all three Claude models read it from the script's directory. The check was fixed during the run, before
+  all three Claude models read it from the script's directory (seen in the transcripts). The check was fixed during the run, before
   any repeat-2 `csv-totals` run. The 6 repeat-1 `csv-totals` runs could not be re-checked (their
   directories were already deleted). They count for time, tokens and errors, but not for pass rate
   (`results/20261114-final/adjustments.json`).
@@ -239,6 +250,7 @@ the CLI's output. It should be false for every run.
 ```bash
 python3 bench/validate.py                                   # every check fails on start/ and passes on ref/
 python3 bench/validate.py tasks-hard
+python3 bench/check-public.py                               # no machine path, host name or key in a committed file
 python3 bench/run.py --run-id <new-id> --repeats 2 --concurrency 3
 python3 bench/run.py --run-id <new-id> --task-set tasks-hard --repeats 3 --concurrency 3
 python3 bench/summarize.py bench/results/<new-id>          # add --overwrite to regenerate an existing summary

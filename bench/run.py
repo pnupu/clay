@@ -10,6 +10,7 @@ instruction and a hard time limit, then run the hidden check (tasks/<id>/check, 
 never sees) against that directory. Results go to results/<run-id>/runs.jsonl; full CLI transcripts
 go to results/<run-id>/transcripts/ (git-ignored).
 """
+from scrub import scrub, scrub_obj  # committed files get placeholders, not this machine's paths
 import argparse, concurrent.futures as cf, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
 from datetime import datetime, timezone
 
@@ -390,19 +391,29 @@ def main():
         plan = plan[: a.max_runs]
     stopped, lock = {}, threading.Lock()
     runs_path = os.path.join(out_dir, "runs.jsonl")
+    # runs.jsonl and manifest.json are committed, so they hold placeholders (see scrub.py); the same records with
+    # this machine's real paths go to private/, which is git-ignored, like the transcripts.
+    private = os.path.join(out_dir, "private")
+    os.makedirs(private, exist_ok=True)
+
+    def write_record(rec):
+        with open(runs_path, "a") as f:
+            f.write(json.dumps(scrub_obj(rec)) + "\n")
+        with open(os.path.join(private, "runs.local.jsonl"), "a") as f:
+            f.write(json.dumps(rec) + "\n")
+
     reused = 0
     if a.reuse:
         src_id = os.path.basename(os.path.dirname(os.path.abspath(a.reuse)))
         keys = {(t, ag, m, r) for t, ag, m, r in plan}
-        with open(runs_path, "a") as f:
-            for line in open(a.reuse):
-                rec = json.loads(line)
-                k = (rec["task"], rec["agent"], rec["model"], rec["repeat"])
-                if rec["agent"] == a.reuse_agent and k in keys:
-                    rec["reused_from_run"] = src_id
-                    f.write(json.dumps(rec) + "\n")
-                    keys.discard(k)
-                    reused += 1
+        for line in open(a.reuse):
+            rec = json.loads(line)
+            k = (rec["task"], rec["agent"], rec["model"], rec["repeat"])
+            if rec["agent"] == a.reuse_agent and k in keys:
+                rec["reused_from_run"] = src_id
+                write_record(rec)
+                keys.discard(k)
+                reused += 1
         plan = [p for p in plan if p in keys]
         plan = plan[: a.max_runs]
 
@@ -422,8 +433,7 @@ def main():
         with lock:
             if rec["error_class"] == "rate_or_usage_limit" and (ag, m) not in stopped:
                 stopped[(ag, m)] = rec["error_text"]
-            with open(runs_path, "a") as f:
-                f.write(json.dumps(rec) + "\n")
+            write_record(rec)
             print(f"{t:17} {ag}:{m:22} r{r} {'PASS' if rec['passed'] else 'fail'} {rec['wall_seconds'] or 0:7.1f}s "
                   f"{rec['error_class']} in={rec['input_tokens']} out={rec['output_tokens']}", flush=True)
         return rec
@@ -433,7 +443,8 @@ def main():
     manifest.update({"finished_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                      "agent_runs": len(done), "planned_runs": len(plan), "reused_records": reused, "reused_from": a.reuse,
                      "stopped_subjects": {f"{ag}:{m}": txt for (ag, m), txt in stopped.items()}})
-    json.dump(manifest, open(os.path.join(out_dir, "manifest.json"), "w"), indent=2)
+    json.dump(scrub_obj(manifest), open(os.path.join(out_dir, "manifest.json"), "w"), indent=2)
+    json.dump(manifest, open(os.path.join(private, "manifest.local.json"), "w"), indent=2)
     print(f"done: {len(done)} runs -> {runs_path}")
 
 

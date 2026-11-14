@@ -1,4 +1,6 @@
-# Raw CLI transcripts stay local; runs.jsonl, manifest.json and summaries are committed.
+# Raw CLI transcripts and the records with this machine's real paths stay local; runs.jsonl, manifest.json and
+# summaries are committed, with placeholders for paths (scrub.py).
 results/*/transcripts/
+results/*/private/
 results/smoke-*/
 __pycache__/

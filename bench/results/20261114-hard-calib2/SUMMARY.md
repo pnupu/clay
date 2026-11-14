@@ -2,6 +2,9 @@
 
 Run `20261114-hard-calib2` · source commit `3e94167` · 2026-11-14T01:51:36+00:00 to 2026-11-14T01:53:50+00:00 · CLI versions: claude 2.1.321 (Claude Code), codex codex-cli 0.167.0
 
+> **Calibration runs, not measured results.** These runs tuned the hard task set before run `20261114-hard`
+> (see the calibration paragraph in `bench/METHOD.md`); tasks changed after them, so their numbers are not comparable.
+
 8 runs. Pass rate counts only scored runs; see the method note in `bench/METHOD.md`. Seconds are wall time of the whole CLI process, including start-up, for all runs (passed or not). Tokens are means per run as the CLI reports them; input includes cached input.
 
 ## Per model

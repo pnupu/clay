@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Replace machine-specific absolute paths with stable placeholders, for every file the bench commits.
+
+Placeholders:
+  <clone>              the repository checkout that ran the bench
+  <scratch>            a session scratch directory under the system temp directory
+  <tmp>                the temp directory of the run (TMPDIR or the system default)
+  <global-agents-md>   the file that ~/.codex/AGENTS.md points to (it can name a private repository)
+  <home>               the home directory of the user who ran the bench
+
+Only path text changes: numbers, ids, model names, versions and timings stay as they are, and a JSON
+document stays valid JSON because no placeholder holds a quote or a backslash.
+
+Usage: python3 bench/scrub.py <file> ...   rewrites each file in place (prints the files that changed)
+"""
+import os
+import re
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+
+
+def _rules():
+    home = os.path.expanduser("~")
+    agents_md = os.path.realpath(os.path.join(home, ".codex", "AGENTS.md"))
+    rules = []
+    if os.path.exists(agents_md) and agents_md != os.path.join(home, ".codex", "AGENTS.md"):
+        rules.append((re.escape(agents_md), "<global-agents-md>"))
+    rules += [
+        (re.escape(REPO), "<clone>"),
+        # Any bench clone of this or another session: <home>/agent-runs/clay-bench-<stamp>-<id>
+        (r"/home/[^/\s\"']+/agent-runs/clay-bench-[0-9TZ]+-[0-9a-f]+", "<clone>"),
+        # Claude Code session scratchpads: /tmp/claude-<uid>/<project>/<session>/scratchpad
+        (r"/tmp/claude-\d+/[^/\s\"']+/[0-9a-f-]{36}/scratchpad", "<scratch>"),
+        (r"/tmp/claude-\d+", "<tmp>"),
+        # The temp directory the run used (TMPDIR, or the system default); a bare "/tmp" as in bwrap's
+        # "--tmpfs /tmp" is the sandbox's own /tmp and stays.
+        (re.escape(tempfile.gettempdir().rstrip("/")) + r"/", "<tmp>/"),
+        (re.escape(home) + r"(?=[/\s\"'.,;:)\]}]|$)", "<home>"),
+        (r"/home/[^/\s\"'<>]+(?=[/\s\"'.,;:)\]}]|$)", "<home>"),
+    ]
+    return [(re.compile(p), r) for p, r in rules]
+
+
+RULES = _rules()
+
+
+def scrub(text):
+    for pat, rep in RULES:
+        text = pat.sub(rep, text)
+    return text
+
+
+def scrub_obj(value):
+    """scrub() for a JSON-like value: every string inside it, keys included."""
+    if isinstance(value, str):
+        return scrub(value)
+    if isinstance(value, list):
+        return [scrub_obj(v) for v in value]
+    if isinstance(value, dict):
+        return {scrub(k): scrub_obj(v) for k, v in value.items()}
+    return value
+
+
+if __name__ == "__main__":
+    for path in sys.argv[1:]:
+        if os.path.basename(path) in ("scrub.py", "check-public.py"):  # their patterns would be rewritten
+            continue
+        old = open(path, encoding="utf-8").read()
+        new = scrub(old)
+        if new != old:
+            open(path, "w", encoding="utf-8").write(new)
+            print(path)

@@ -11,6 +11,8 @@ No prices: those come live from the web in the product.
 """
 import fnmatch, json, math, os, statistics, sys
 
+from scrub import scrub, scrub_obj  # every file written here is committed: no machine paths in it
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ERROR_CLASSES = ["none", "timeout", "rate_or_usage_limit", "tool_or_cli_error", "refused", "harness_error"]
 
@@ -119,6 +121,15 @@ def fmt(x):
     return "–" if x is None else (f"{x:,}" if isinstance(x, int) else str(x))
 
 
+def insert_notes(md, notes):
+    """Put a run directory's hand-written NOTES.md (what a reader must know beside the numbers) under the run lines."""
+    if not notes or not notes.strip():
+        return md
+    head, sep, rest = md.partition("\n\n")          # the title
+    runs, sep2, rest2 = rest.partition("\n\n")      # the run lines
+    return f"{head}{sep}{runs}{sep2}{notes.strip()}\n\n{rest2}"
+
+
 def markdown(rows, per_task, manifests, recs):
     out = ["# Agent and model benchmark: summary", ""]
     for mf in manifests:
@@ -190,9 +201,11 @@ def main():
     rows, per_task = summarize(recs)
     manifests = [json.load(open(os.path.join(d, "manifest.json"))) for d in dirs if os.path.exists(os.path.join(d, "manifest.json"))]
     out = dirs[-1]
-    json.dump({"runs": len(recs), "run_ids": [m["run_id"] for m in manifests], "models": rows, "tasks": per_task},
+    json.dump(scrub_obj({"runs": len(recs), "run_ids": [m["run_id"] for m in manifests], "models": rows, "tasks": per_task}),
               open(os.path.join(out, "summary.json"), "w"), indent=2)
-    open(os.path.join(out, "SUMMARY.md"), "w").write(markdown(rows, per_task, manifests, recs))
+    notes_path = os.path.join(out, "NOTES.md")
+    notes = open(notes_path).read() if os.path.exists(notes_path) else ""
+    open(os.path.join(out, "SUMMARY.md"), "w").write(scrub(insert_notes(markdown(rows, per_task, manifests, recs), notes)))
     inline = [{"model": r["model"], "agent": r["agent"], "effort": r["effort"], "runs": r["runs"], "scored_runs": r["scored_runs"],
                "passed": r["passed"], "pass_rate": r["pass_rate"], "median_seconds": r["median_seconds"],
                "p90_seconds": r["p90_seconds"], "input_tokens_per_task": r["per_task"]["input_tokens"],
@@ -203,7 +216,7 @@ def main():
                "cached_input_tokens_per_passed_task": r["per_passed_task"]["cached_input_tokens"],
                "output_tokens_per_passed_task": r["per_passed_task"]["output_tokens"],
                "disputed_failures": r["disputed_failures"]} for r in rows]
-    json.dump(inline, open(os.path.join(out, "clay-inline.json"), "w"), indent=1)
+    json.dump(scrub_obj(inline), open(os.path.join(out, "clay-inline.json"), "w"), indent=1)
     if easy_dir:
         # One row per model; the easy and the hard set stay separate fields, never averaged together.
         easy_rows, _ = summarize(load([easy_dir]))
@@ -221,7 +234,7 @@ def main():
             f"{pre}_disputed_failures": r["disputed_failures"]}
         combined = [{"model": r["model"], "agent": r["agent"], "effort": r["effort"],
                      **fields(easy.get((r["agent"], r["model"])), "easy"), **fields(r, "hard")} for r in rows]
-        json.dump(combined, open(os.path.join(out, "clay-inline-combined.json"), "w"), indent=1)
+        json.dump(scrub_obj(combined), open(os.path.join(out, "clay-inline-combined.json"), "w"), indent=1)
     print(open(os.path.join(out, "SUMMARY.md")).read())
 
 
