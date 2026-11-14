@@ -175,7 +175,7 @@ What this still does not do: nothing wakes an agent by itself; the issue waits f
 | `recheck_playground` | Price labs: re-reads every pricing page now. Returns what changed and whether the saved decision still holds. |
 | `revise_playground` | Changes a lab in place. Each part given (title, notes, controls, view, outputs, a data source) replaces that whole part; the result is validated like a new spec. |
 
-The full descriptions are in `lib/mcp.ts`. They are the product's API for another model. The server also sends `instructions`: many clients load tool descriptions on demand and show the agent only the tool names, and without the instructions a real agent answered from memory and never called a tool (see `run/MANIFEST.md`).
+The full descriptions are in `lib/mcp.ts`. They are the product's API for another model. The server also sends `instructions`: many clients load tool descriptions on demand and show the agent only the tool names, and without the instructions a real agent answered from memory and never called a tool.
 
 ### The spec
 
@@ -455,3 +455,7 @@ Everything that depends on Sorvi's tool names, tool results and page markup is i
 `evals/heldout.ts` holds 6 more requests that were written after the fixes of the first "just works" pass (`--set heldout`); write new ones for a new pass. The checker waits for a running build to end, as a person would, and it compares only texts when a preview animates on its own.
 
 Use the owner key (`CLAY_ACCESS_KEY`) as the key: the harness also acts as the person in a browser, through the owner link. With a per-person agent key the agent legs work, but the person's steps (save, settle) need a signed-in browser, which the harness does not have yet. Run against a fresh store, or expect a void sample when an agent picks the id of a lab that an earlier run left behind. Each CLI keeps its default tool-call timeout (about 60 s) on purpose: a build that outlasts it is reported as its own failure cause.
+
+## Licence
+
+MIT, see `LICENSE`. That covers Sorvi's own code. The typefaces in `public/fonts/` and the design kit in `public/assets/` are other people's work under their own licences; `public/credits.txt` names them.

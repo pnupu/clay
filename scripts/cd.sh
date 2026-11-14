@@ -10,4 +10,5 @@ args=(-sS -X "$M" "https://api.context.dev/v1$P" -H "Authorization: Bearer $CONT
 out=$(curl "${args[@]}")
 meta=$(printf '%s' "$out" | tail -n1)
 printf '%s' "$out" | sed '$d'
+mkdir -p run
 printf '{"at":"%s","via":"cd.sh","method":"%s","path":"%s","status":%s,"ms":%s}\n' "$(date -u +%FT%TZ)" "$M" "$P" "${meta% *}" "$(awk "BEGIN{print int(${meta#* }*1000)}")" >> run/requests.jsonl
