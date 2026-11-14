@@ -53,6 +53,8 @@ test("the reference teaches the parts the sheet styles, and the sheet has no tex
   }
   assert.deepEqual([...css.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1])).filter((n) => n < 12), []);
   assert.equal(css.includes("</"), false); // it stands inside a <style> element
+  // The head of a column of numbers may wrap, or five columns do not fit a frame of about 500 px (worked example 3).
+  assert.match(css, /:where\(thead th\)\.num \{ white-space: normal; \}/);
   assert.match(KIT_REFERENCE, /## A data view \(view\.data: true\)/);
 });
 
@@ -104,8 +106,10 @@ test("a page of data in styles of its own is a problem for the agent that builds
   assert.deepEqual(data(".a { color: rgb(1 10 0); border-color: rgb( 1  10 0 ); background: rgb(0 0 0 / 0.5); outline-color: rgb(0 0 0/0.5); fill: rgb(0 0 0 /0.5) }"), []);
   // Two colours that differ only in where their spaces are stay two colours: with a third, three.
   assert.match(data(".a { color: rgb(1 10 0); background: rgb(11 0 0); outline-color: #2a78d6 }")[0], /3 colours of its own \(rgb\(1 10 0\), rgb\(11 0 0\), #2a78d6\)/);
-  // A comment in view.css is not a style.
-  assert.deepEqual(data("/* font: 10px x; color: #111 #222 #333 */ .a { margin: 0 }"), []);
+  // A comment is not a style: in view.css, in a style attribute, and one that is never closed.
+  assert.deepEqual(data("/* td { font: 10px x; color: #111; background: #222; border-color: #333; } */ .a { margin: 0 }"), []);
+  assert.deepEqual(data(".a { margin: 0 } /* old: td { font: 10px x; color: #111; background: #222; border-color: #333; }"), []);
+  assert.deepEqual(styleProblems({ preview: { html: '<p style="/* font: 10px x; color: #111 */ margin: 0">x</p>', css: "", data: true } }), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });
