@@ -183,9 +183,25 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
 .eyebrow a { color: inherit; }
 
 /* Touch screens: small buttons get a target a finger can hit. */
-@media (pointer: coarse) { button.small-btn { padding: 7px 12px; } .check { padding: 7px 0; } }
+@media (pointer: coarse) {
+  button.small-btn { padding: 7px 12px; }
+  .check { padding: 7px 0; }
+  .control .value { padding: 7px 8px; }
+  .control input[type="range"] { min-height: 32px; }
+  .chart-head select { padding: 7px 8px; }
+  button.link { padding: 6px 0; }
+}
 /* The price screen on a narrow screen: the answer stays in view while the controls above the ranking are moved. */
-.answer-bar { display: none; }
+.answer-bar, .verdict-bar { display: none; }
+.vendor-head .buy { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+#standing { scroll-margin-top: 70px; }
+/* Where the standing decision is below the ranking (two columns or one): its verdict in one line at the top. */
+@media (max-width: 1100px) {
+  .verdict-bar { display: block; grid-column: 1 / -1; order: -2; margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+  .verdict-bar.ok { background: var(--ok-bg); color: var(--ok); }
+  .verdict-bar.bad { background: var(--bad-bg); color: var(--bad); }
+  .verdict-bar a { color: inherit; white-space: nowrap; }
+}
 @media (max-width: 700px) {
   .answer-bar { display: block; order: -1; position: sticky; top: 0; z-index: 5; margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 18px rgb(0 0 0 / 0.16); font-size: 15px; }
 }
@@ -197,3 +213,14 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
   .embedded-playground .side { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 }
 .embedded-playground h2.question { font-size: 24px; line-height: 1.2; margin: 2px 0 0; text-wrap: balance; }
+
+/* The price screen on a narrow screen: a vendor row is name and badges, then the plan, then the cost with its button. */
+@media (max-width: 700px) {
+  .vendor-head .plan { flex-basis: 100%; margin-left: 18px; white-space: normal; }
+  .vendor-head .buy { flex-basis: 100%; margin-left: 18px; justify-content: space-between; }
+  .vendor-head .buy .cost { margin-left: 0; }
+  .vendor .cost, ol.rank .vendor:first-child .cost { font-size: 24px; }
+  .vendor details, .vendor > p { margin-left: 18px; }
+  .chart-head { flex-wrap: wrap; }
+  .top .actions { flex-wrap: wrap; }
+}

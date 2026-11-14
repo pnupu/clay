@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { viewer } from "@/app/api/respond";
 import { canWrite, isExample } from "@/lib/accounts";
+import { cardText } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
 import { load, type Playground } from "@/lib/store";
 import Kit from "./kit";
@@ -18,14 +19,6 @@ const detailOf = (p: AnyPlayground) => (!p.kit && p.domain?.vendors?.length ? p.
 
 // What a gallery card says about an example. All of it is optional, so an example of any kind, with any note, gets a card.
 const noteOf = (p: AnyPlayground) => (p.kit?.kit.notes ?? p.domain?.note ?? "").trim();
-/** The person's own words, when the note starts with them: Someone told their agent: "...". */
-// The closing quote is the first one that a new sentence or the end follows, so a quoted word inside the request stays in it.
-const requestOf = (note: string) => /^Someone told their agent:\s*["“]([\s\S]{3,240}?)["”][.,]?(?=\s+[A-Z"“]|\s*$)/.exec(note)?.[1].trim() ?? null;
-/** Without that pattern: the first sentence of the note, cut short. */
-const blurbOf = (note: string) => {
-  const first = note.split(/(?<=[.!?])\s/)[0] ?? "";
-  return first.length > 140 ? `${first.slice(0, 139).trimEnd()}…` : first;
-};
 /** The controls a visitor gets. A price playground shows only the metrics and features that a page it has read mentions (app/playground.tsx). */
 function controlsOf(p: AnyPlayground): string[] {
   if (p.kit) return p.kit.kit.controls.map((c) => c.label);
@@ -88,13 +81,13 @@ export default async function Home() {
         {examples.length ? (
           <ul className="gallery">
             {examples.map(([id, p]) => {
-              const note = noteOf(p);
-              const request = requestOf(note);
+              // The person's request in quotes, else the start of the note; never cut inside a word (lib/card.ts).
+              const said = cardText(noteOf(p));
               const controls = controlsOf(p);
               return (
                 <li key={id} className="card">
                   <p className="eyebrow">{kindOf(p)}</p>
-                  {request ? <blockquote>“{request}”</blockquote> : note && <p className="blurb">{blurbOf(note)}</p>}
+                  {said && ("quote" in said ? <blockquote>“{said.quote}”</blockquote> : <p className="blurb">{said.blurb}</p>)}
                   <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
                   {detailOf(p) && <p className="small muted">{detailOf(p)}</p>}
                   {controls.length > 0 && <p className="small muted">You move: {controls.slice(0, 6).join(", ")}{controls.length > 6 ? ` and ${controls.length - 6} more` : ""}</p>}

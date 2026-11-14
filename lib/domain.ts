@@ -25,7 +25,7 @@ export const DOMAIN: Domain = {
   question: "Which auth provider should a B2B SaaS use?",
   product: "authentication product for a business-to-business SaaS customer",
   notes: "An SSO price per user or per MAU belongs to sso_users, never to sso_connections.",
-  note: "Four real vendors, read from their own pricing pages, and one fictional vendor, Northwind Auth (marked Demo): its price can be changed on purpose, to show how a saved decision is judged again when a price changes.",
+  note: "Four real vendors, read from their own pricing pages, and one fictional vendor, Northwind Auth (marked Demo). Its price can be changed on purpose, to show how a saved decision is judged again when a price changes.",
   metrics: [
     {
       id: "mau",

@@ -262,6 +262,13 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
         </section>
       ) : (
         <div className="grid">
+          {/* Narrow screens only (globals.css): the saved decision's verdict in one line near the top. On a phone the full
+              panel comes after the ranking and the chart, long after the "Saved choice" badge in the ranking. */}
+          {decision && savedStand && (
+            <p className={`verdict-bar ${savedStand.holds ? "ok" : "bad"}`} data-verdict-bar>
+              {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values. <a href="#standing">Details</a>
+            </p>
+          )}
           {/* Narrow screens only (globals.css): the answer in one line, in view while the controls are moved. */}
           {ranking.ranked[0] && <p className="answer-bar" aria-hidden="true">Cheapest: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month</p>}
           <section className="card controls">
@@ -347,7 +354,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           </section>
 
           <aside className="side">
-            <section className="card">
+            <section className="card" id="standing">
               <h2>Standing decision</h2>
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
@@ -470,8 +477,11 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
         {cheapest && <span className="badge" data-cheapest style={{ borderColor: "var(--axis)", color: "var(--ink-2)", whiteSpace: "nowrap" }}>Cheapest at these values</span>}
         {saved && <span className="badge saved" style={{ whiteSpace: "nowrap" }}>{own ? "Your saved choice" : "Saved choice"}</span>}
         <span className="plan" title={p?.plan}>{p ? <>{products ? "product" : "plan"}: <b>{p.plan}</b></> : <span className="muted">no eligible plan</span>}</span>
-        <span className="cost">{p ? (place ? money(p.cost) : `≥ ${money(p.cost)}`) : "—"}<span className="muted small"> / month</span></span>
-        {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
+        {/* The cost and its button are one unit: on a narrow screen they take a line of their own (globals.css). */}
+        <span className="buy">
+          <span className="cost">{p ? (place ? money(p.cost) : `≥ ${money(p.cost)}`) : "—"}<span className="muted small"> / month</span></span>
+          {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
+        </span>
       </div>
       {effect && <p className="small warn">{effect}</p>}
       {products && p && <p className="small warn" data-products>This price is for <b>{p.plan}</b>, the cheapest of {names.length} separate products on this page that fits your values. Also there: {others.slice(0, 4).join(", ")}{others.length > 4 ? ` and ${others.length - 4} more` : ""}.</p>}
@@ -577,7 +587,17 @@ function DemoEditor({ page, busy, onPublish }: { page: PricingModel | null; busy
 // ---- Cost curves along one metric, with crossovers. Form: lines over a continuous axis (change of a magnitude along a control).
 function Chart({ models, a, axis, cross, names }: { models: Record<string, PricingModel | null>; a: Assumptions; axis: MetricDef; cross: { at: number }[]; names: Record<string, string> }) {
   const { color } = useContext(Dom);
-  const W = 640, H = 250, L = 56, R = 12, T = 10, B = 28;
+  // The chart is drawn at the width it has on the screen, so the labels keep their size on a phone (a fixed 640 px drawing
+  // scaled down to 310 px made them 5 px high).
+  const plot = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    if (!plot.current) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(260, Math.round(e.contentRect.width))));
+    ro.observe(plot.current);
+    return () => ro.disconnect();
+  }, []);
+  const H = 250, L = 56, R = 12, T = 10, B = 28;
   const v = a.usage[axis.id] ?? axis.initial;
   const log = isLog(axis);
   // Window around the current value, so nearby crossovers stay readable.
@@ -607,7 +627,7 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
       <ul className="legend">
         {series.map((s) => <li key={s.id}><span className="swatch" style={{ background: color(s.id) }} />{names[s.id]}</li>)}
       </ul>
-      <div className="plot">
+      <div className="plot" ref={plot}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Monthly cost per vendor along ${lower(axis.label)}`}
           onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover(inv(((e.clientX - r.left) / r.width) * W)); }} onMouseLeave={() => setHover(null)}>
           {yt.map((y, i) => <g key={`${i}:${y}`}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="grid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
