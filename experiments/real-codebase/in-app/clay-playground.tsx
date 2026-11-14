@@ -25,7 +25,7 @@ export type ClayControl = {
 );
 export type ClayValues = Record<string, number | boolean | string>;
 /** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props. */
-export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean };
+export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean; /** The chosen level. At "variant" a call site's own classes still win in the real code: put `className` before them. */ level?: ClayLevel["id"] };
 /** One real place where the component is used, with the props and the markup around it copied from that call site. */
 export type ClayUse = { id: string; /** Path from the repository root with the line: "src/app/x/page.tsx:42". */ file: string; label?: string; render: (a: ClayApplied) => ReactNode };
 export type ClayLevel = {
@@ -73,7 +73,9 @@ export function ClayPlayground(props: {
   const [state, setState] = useState<"idle" | "saving" | "settled" | "failed">("idle");
   const [error, setError] = useState("");
   const tried = useRef<Tried>({});
-  const level = levels.find((l) => l.id === levelId);
+  // The off-scale text as typed. The stored value is trimmed, so the box keeps its own text: "oklch(0.9 0 0)" has spaces.
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const level =levels.find((l) => l.id === levelId);
   // The controls of the chosen level: token controls on the level "token", the others on the other levels.
   const active = controls.filter((c) => !level || (level.id === "token") === !!c.token);
   const moved = active.filter((c) => values[c.id] !== initial[c.id]);
@@ -81,10 +83,10 @@ export function ClayPlayground(props: {
   const now = { ...initial, ...Object.fromEntries(active.map((c) => [c.id, values[c.id]])) } as ClayValues;
 
   // A use that the level changes gets the changed values only: scale classes as className, off-scale values as style.
-  const same: ClayApplied = { className: "", style: {}, values: initial, changes: false };
+  const same: ClayApplied = { className: "", style: {}, values: initial, changes: false, level: level?.id };
   const style: Record<string, string> = {};
   for (const c of moved) if (c.type === "scale" && !c.token && !onScale(c)) style[c.css] = String(values[c.id]);
-  const changed: ClayApplied = { className: moved.filter((c) => c.type === "scale" && !c.token && onScale(c)).map((c) => values[c.id]).join(" "), style: style as CSSProperties, values: now, changes: true };
+  const changed: ClayApplied = { className: moved.filter((c) => c.type === "scale" && !c.token && onScale(c)).map((c) => values[c.id]).join(" "), style: style as CSSProperties, values: now, changes: true, level: level?.id };
   const changes = (u: ClayUse) => !level || level.uses.includes(u.id);
 
   // The level "token": the variable is set on the page root, as the theme file would set it. The browser decides what changes.
@@ -180,7 +182,7 @@ export function ClayPlayground(props: {
                 {c.options.map((o) => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
               </select>
             )}
-            {c.type === "scale" && <input type="text" data-clay-off-scale-input placeholder="or a value off the scale, e.g. 14px" value={onScale(c) ? "" : (values[c.id] as string)} onChange={(e) => set(c, e.target.value.trim() || c.initial)} style={S.select} />}
+            {c.type === "scale" && <input type="text" data-clay-off-scale-input placeholder="or a value off the scale, e.g. 14px" value={onScale(c) ? "" : (typed[c.id] ?? (values[c.id] as string))} onChange={(e) => { const text = e.target.value; setTyped((t) => ({ ...t, [c.id]: text })); set(c, text.trim() || c.initial); }} style={S.select} />}
             {c.type === "color" && <input type="color" value={values[c.id] as string} onChange={(e) => set(c, e.target.value)} />}
           </label>
         ))}

@@ -109,11 +109,19 @@ if (!created && flag("in-app") && local) {
     // The person first chooses the level of the change (--level instance | variant | token; a list means the first that is offered).
     inApp.levels = await page.locator("[data-clay-level]").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-clay-level"), blocked: e.hasAttribute("data-clay-level-blocked"), text: (e.textContent ?? "").slice(0, 400) })));
     const want = (flag("level") ?? "").split(",").filter(Boolean).find((l) => (inApp.levels as { id: string; blocked: boolean }[]).some((x) => x.id === l && !x.blocked));
-    if (flag("level")) { inApp.level = want ?? null; if (want) await page.locator(`[data-clay-level="${want}"] input`).check().catch(() => {}); await page.waitForTimeout(300); }
+    // A level that is blocked, absent or not selected: the person moves nothing and does not settle, so no hand-back is made at another level.
+    let levelOk = true;
+    if (flag("level")) {
+      inApp.level = want ?? null;
+      const radio = page.locator(`[data-clay-level="${want}"] input`);
+      levelOk = !!want && (await radio.check().then(() => radio.isChecked(), () => false));
+      if (!levelOk) inApp.levelError = `the level "${flag("level")}" is not offered or could not be chosen: nothing was moved or settled`;
+      await page.waitForTimeout(300);
+    }
     inApp.uses = await page.locator("[data-clay-use]").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-clay-use"), changes: e.getAttribute("data-clay-changes") })));
     inApp.controls = await page.locator("[data-clay-control]").evaluateAll((els) => els.map((e) => e.getAttribute("data-clay-control")));
     // The person: every slider halfway to its top, every select to its next option, every colour to another grey, then Settle.
-    for (const c of await page.locator("[data-clay-control]").all()) {
+    for (const c of levelOk ? await page.locator("[data-clay-control]").all() : []) {
       const range = c.locator('input[type="range"]'), select = c.locator("select");
       if (await range.count()) await range.evaluate((el) => { const r = el as HTMLInputElement; const step = Number(r.step) || 1; const to = Math.round((Number(r.value) + Number(r.max)) / 2 / step) * step; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(r, String(to === Number(r.value) ? Math.max(Number(r.min), to - step) : to)); r.dispatchEvent(new Event("input", { bubbles: true })); });
       else if (await select.count()) await select.evaluate((el) => { const s = el as HTMLSelectElement; const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!; set.call(s, s.options[(s.selectedIndex + 1) % s.options.length].value); s.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -121,7 +129,7 @@ if (!created && flag("in-app") && local) {
       await page.waitForTimeout(150);
     }
     await page.screenshot({ path: join(out, "in-app-moved.png"), fullPage: true }).catch(() => {});
-    if (kit) { await page.locator("[data-clay-settle]").click().catch(() => {}); inApp.settled = await page.waitForSelector("[data-clay-settled]", { timeout: 15_000 }).then(() => true, () => false); }
+    if (kit && levelOk) { await page.locator("[data-clay-settle]").click().catch(() => {}); inApp.settled = await page.waitForSelector("[data-clay-settled]", { timeout: 15_000 }).then(() => true, () => false); }
     inApp.errors = errors;
   } finally { await browser.close(); }
   const files = (spawnSync("bash", ["-c", `find ${JSON.stringify(repo)} -path '*/node_modules' -prune -o -path '*/.clay/settled/*.json' -print`], { encoding: "utf8" }).stdout ?? "").split("\n").filter(Boolean);
