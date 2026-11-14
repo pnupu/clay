@@ -208,7 +208,9 @@ export function namedInProse(choice: string, text: string): boolean {
   // A code names a thing only when it is specific: letters with digits (h100, l40s), or a number of 4 digits or more (4090).
   // A version such as 4.5 is shared by other options.
   const codes = parts.filter((p) => (/[a-z]/.test(p) && /\d/.test(p)) || /^\d{4,}$/.test(p));
-  return codes.length ? codes.some((p) => said.includes(p)) : parts.length > 0 && parts.every((p) => said.includes(p));
+  // A code is matched as a whole word: "8gb" is not found in "128gb".
+  const word = (p: string) => new RegExp(`(^|[^a-z0-9])${p.replace(/\./g, "\\.")}($|[^a-z0-9])`).test(said);
+  return codes.length ? codes.some(word) : parts.length > 0 && parts.every((p) => said.includes(p));
 }
 
 /**

@@ -268,7 +268,10 @@ export function webChanges(k: KitState) {
   // A build read is not a re-check: it is the state the person settled on.
   const rechecked = states.length > 0 && states.every((s) => !!s?.read && !s.error && !!s.recheckedAt && (!since || s.recheckedAt > since));
   if (changes.length) return { since: period, changes, judge: since ? "These facts changed after the person settled. Work out, with the settled values and the new facts, whether the settled result still holds. If it does, say so with the numbers. If it does not, say what changed and send the person back to the url to settle again; do not pick for them." : "These facts changed since the build. The page shows the new values." };
-  if (!rechecked) return { since: period, changes, judge: `The pages were not all read again since ${since ? "the person settled" : "the build"} (or a re-read failed, see data), so it is not known whether a fact changed. Call recheck_playground before you say that the result still holds.` };
+  // Not an instruction to re-check at every hand-back: the facts are as old as their read, and the agent decides when
+  // that is too old for the question (a hand-back minutes after the build needs no re-check; "does it still hold?" does).
+  const oldest = states.map((s) => s?.read?.fetchedAt ?? "").filter(Boolean).sort()[0] ?? null;
+  if (!rechecked) return { since: period, changes, judge: `No re-check has read every page again since ${since ? "the person settled" : "the build"}${states.some((s) => s?.error) ? " (a re-read failed, see data)" : ""}. The facts are as read${oldest ? ` on ${oldest}` : ""}. When the person asks whether the result still holds, or the read is old, call recheck_playground first; do not say that nothing changed without it.` };
   return { since: period, changes, judge: since ? "Every page was read again after the person settled and no fact changed: the settled result stands on today's facts." : "Every page was read again and no fact changed since the build." };
 }
 

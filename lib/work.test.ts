@@ -123,11 +123,11 @@ test("nothing changed is said only when every page was read again after the sett
   const state = (over: object, settledAt: string | null) => ({ kit: k.kit, rev: "r", brandData: null, brandError: null, preview: { status: "ok" as const, error: null, at: null }, settled: settledAt ? { values: { seats: 8 }, outputs: { seats: "8" }, at: settledAt } : null, exploration: null, web: { plan: { url: read.url, foundVia: "spec" as const, read, error: null, lastCheckedAt: "2026-11-14T01:00:01.000Z", changes: [], ...over } } });
   const settledAt = "2026-11-14T02:00:00.000Z";
   // Settled, never re-checked: not known. Re-checked before the settle: not known. Re-checked after it: nothing changed.
-  assert.match(webChanges(state({}, settledAt)).judge, /not known whether a fact changed\. Call recheck_playground/);
-  assert.match(webChanges(state({ recheckedAt: "2026-11-14T01:30:00.000Z" }, settledAt)).judge, /not known/);
+  assert.match(webChanges(state({}, settledAt)).judge, /No re-check has read every page again since the person settled\. The facts are as read on 2026-11-14T01:00:00.000Z\. .* do not say that nothing changed without it/);
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T01:30:00.000Z" }, settledAt)).judge, /No re-check has read every page again/);
   assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z" }, settledAt)).judge, /no fact changed: the settled result stands/);
   // A re-read that failed is not a re-check; a change after the settle is for the agent to judge; one before it is not listed.
-  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge, /not known/);
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge, /a re-read failed, see data/);
   const change = (at: string) => ({ at, source: "plan", path: "seat", field: "seat", before: 8, after: 10 });
   const after = webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", changes: [change("2026-11-14T03:00:00.000Z"), change("2026-11-14T01:30:00.000Z")] }, settledAt));
   assert.deepEqual([after.changes.length, /whether the settled result still holds/.test(after.judge)], [1, true]);

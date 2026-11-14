@@ -112,3 +112,20 @@ test("a yes/no fact that turns to yes is a change, and a row name may hold any t
   const gone = confirmChanges(tiers, before, less, less);
   assert.deepEqual([gone.changes.map((x) => [x.row, x.after]), gone.read.rows!.length], [[["GPT / Turbo", ROW_GONE]], 2]);
 });
+
+test("second review round: multipliers, tiny numbers, and unique keys for rows that share a name", () => {
+  // A plain number is not found where the page writes it with a multiplier: 5 is not "5k", 2 is not "2 million".
+  assert.equal(numberOnPage(5, "up to 5k requests"), false);
+  assert.equal(numberOnPage(2, "2 million tokens included"), false);
+  assert.equal(numberOnPage(3, "3M tokens"), false);
+  assert.equal(numberOnPage(5, "5 seats, 5 GB"), true);
+  assert.equal(numberOnPage(20, "20/mo"), true);
+  // A number that prints with an exponent is searched as the page writes it.
+  assert.equal(numberOnPage(4e-7, "0.0000004 USD per token"), true);
+  assert.equal(numberOnPage(4e-7, "0.000004 USD per token"), false);
+  // Two rows with one name: each keeps its own quote and its own quarantine path.
+  const tiers: WebSource = { id: "tiers", url: "https://example.org/pricing", rows: { describe: "one row per tier", fields: [{ id: "name", type: "text", describe: "tier name" }, { id: "price", type: "number", describe: "price" }] } };
+  const r = guard(tiers, { rows: [{ name: "Opus", price: 15, quote: "Opus 15" }, { name: "Opus", price: 99, quote: "Opus batch" }] }, "Opus 15, Opus batch 7.5", { url: tiers.url!, fetchedAt: "2026-11-14T00:00:00.000Z" });
+  assert.deepEqual(r.quotes, { "rows.Opus": "Opus 15", "rows.Opus (2)": "Opus batch" });
+  assert.deepEqual(r.quarantined, [{ path: "Opus (2) / price", value: 99 }]);
+});

@@ -147,8 +147,8 @@ const plain = (s: string) => s.toLowerCase().replace(/(\d),(?=\d{3}(\D|$))/g, "$
  * Only spellings of the same value: no rounding (0.0004 is not "0.00", 2.996 is not "3.00").
  */
 function numberForms(n: number): { text: string; unit: boolean }[] {
-  const plainText = String(n);
-  if (plainText.includes("e")) return [{ text: plainText, unit: false }];
+  // A very small or very large number prints with an exponent; a page writes it out (0.0000004).
+  const plainText = String(n).includes("e") ? n.toFixed(20).replace(/0+$/, "").replace(/\.$/, "") : String(n);
   const decimals = plainText.includes(".") ? plainText.split(".")[1].length : 0;
   const forms = [plainText, ...[1, 2, 3].filter((d) => d > decimals).map((d) => n.toFixed(d))];
   if (Math.abs(n) > 0 && Math.abs(n) < 1) forms.push(...forms.map((f) => f.replace(/^(-?)0\./, "$1.")));
@@ -165,7 +165,9 @@ export function numberOnPage(n: number, pageText: string): boolean {
       const [a, b, c] = [page[i - 1] ?? "", page[i + f.length] ?? "", page[i + f.length + 1] ?? ""];
       // Not a part of a longer number: no digit or decimal point before it, no digit after it, no decimal part after it.
       // A k or M form must end there: the "m" of "1MB" and the "k" of "5kg" are units of something else.
-      if (!/[\d.]/.test(a) && !/\d/.test(b) && !(b === "." && /\d/.test(c)) && !(unit && /[a-z]/.test(b))) return true;
+      // A plain number must not carry a multiplier: the 5 of "5k" and the 2 of "2 million" are other numbers.
+      const multiplied = !unit && (/^[kmb](?![a-z])/.test(page.slice(i + f.length, i + f.length + 2)) || /^\s?(thousand|million|billion)/.test(page.slice(i + f.length, i + f.length + 9)));
+      if (!/[\d.]/.test(a) && !/\d/.test(b) && !(b === "." && /\d/.test(c)) && !(unit && /[a-z]/.test(b)) && !multiplied) return true;
     }
     return false;
   });
@@ -232,11 +234,17 @@ export function guard(s: WebSource, raw: unknown, pageText: string, meta: { url:
     return { ...base, fields };
   }
   const rows: WebRow[] = [];
+  const names = new Map<string, number>();
   for (const r of (Array.isArray(data.rows) ? data.rows : []).slice(0, WEB_LIMITS.rows)) {
     if (!isObj(r)) continue;
     // The key is the row's own text, so a path names the row before its numbers are checked.
     const texts = Object.fromEntries(s.rows!.fields.filter((f) => f.type !== "number").map((f) => [f.id, value(f, r[f.id], f.id)]));
-    const key = rowKey(s, texts, rows.length);
+    // The same unique key as rowKeys() gives: a name that repeats gets its count, so quotes and quarantine paths of a
+    // standard and a batch row of one model do not fall on each other.
+    const name = rowKey(s, texts, rows.length);
+    const nth = (names.get(name) ?? 0) + 1;
+    names.set(name, nth);
+    const key = nth === 1 ? name : `${name} (${nth})`;
     const row: WebRow = Object.fromEntries(s.rows!.fields.map((f) => [f.id, f.type === "number" ? value(f, r[f.id], `${key} / ${f.id}`) : texts[f.id]]));
     if (Object.values(row).every((v) => v == null)) continue;
     if (typeof r.quote === "string" && r.quote.trim()) quotes[`rows.${key}`] = cut(r.quote, WEB_LIMITS.quote);

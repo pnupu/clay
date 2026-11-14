@@ -244,7 +244,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           web_changes: webChanges(now.kit!),
           data: dataReport(now.kit!, webReading(now)),
           problems: webProblems(now.kit!, webReading(now)),
-          tell_person: (w.value?.changes.length ?? 0) > 0 ? "The page shows the new values after a reload, with what changed since they settled." : w.value?.stop || webProblems(now.kit!, []).length || Object.values(now.kit!.web ?? {}).some((x) => x.error) ? "Not every page could be read again: say so, and do not say that nothing changed." : "Every page was read again and nothing changed.",
+          // One statement, taken from web_changes, so the two cannot disagree.
+          tell_person: (w.value?.changes.length ?? 0) > 0 ? "The page shows the new values after a reload, with what changed since they settled." : `Nothing new to show on the page. ${webChanges(now.kit!).judge}`,
           note: WEB_NOTE,
         });
       }

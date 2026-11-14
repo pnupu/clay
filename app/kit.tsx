@@ -47,7 +47,8 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
   const { kit } = state;
   // The owner comes back to where they left the controls. Anyone else gets the start values: an example opens on the
   // unsatisfying state that the person asked about, whatever its owner tried later.
-  const heldKey = `${id}:${state.rev ?? ""}`;
+  // Per view: the owner's page, a visitor's page and the embedded example each keep their own.
+  const heldKey = `${id}:${state.rev ?? ""}:${canWrite ? "owner" : "visitor"}:${embedded ? "embedded" : "page"}`;
   const [values, setValues] = useState<Values>(() => held.get(heldKey) ?? (canWrite ? valuesNow(state) : initialValues(kit.controls)));
   useEffect(() => {
     held.set(heldKey, values);

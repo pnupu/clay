@@ -402,12 +402,15 @@ export async function collectWeb(pg: string, ids: string[]): Promise<string | nu
  * (confirmChanges). The changes are stored on the source and returned.
  */
 export function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
-  // Re-checks of one playground in this instance run one after the other: each starts from what the one before stored.
-  const run = (webRechecks.get(pg) ?? Promise.resolve()).then(() => recheckWebOnce(pg));
-  webRechecks.set(pg, run.then(() => {}, () => {}));
+  // One re-check of a playground at a time in this instance. A call that comes while one runs joins it: a repeated
+  // recheck_playground (the first answered "running") must not start another pass of reads behind it.
+  const running = webRechecks.get(pg);
+  if (running) return running;
+  const run = recheckWebOnce(pg).finally(() => webRechecks.delete(pg));
+  webRechecks.set(pg, run);
   return run;
 }
-const webRechecks = new Map<string, Promise<void>>();
+const webRechecks = new Map<string, Promise<{ changes: WebChange[]; stop: string | null }>>();
 
 async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
   const k = (await playground(pg)).kit;
@@ -420,6 +423,8 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
         // A source that was never read is read now; nothing can have changed.
         if (!was?.read || !was.url) {
           const r = await readWeb(src, was);
+          // A first read that worked is today's page: it counts as re-checked.
+          if (r.state.read) r.state.recheckedAt = r.state.read.fetchedAt;
           await storeWeb(pg, src, r.state);
           return r.stop;
         }
@@ -428,7 +433,8 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
         try {
           const page = await scrape(was.url);
           if (!page.markdown.success || !page.markdown.data) throw new Error("Page text not readable: the page was not re-checked.");
-          state.recheckedAt = new Date().toISOString();
+          // The time of the capture, not of this call: a capture from the reader's cache may be older than the settle.
+          state.recheckedAt = new Date(Date.now() - (page.cache_metadata?.age_ms ?? 0)).toISOString();
           if (pageHash(page.markdown.data) !== was.read.textHash) {
             const first = await extractWeb(src, was.url);
             if (!diffWeb(src, was.read, first).length) state.read = first;
