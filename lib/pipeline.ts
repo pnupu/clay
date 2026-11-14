@@ -231,7 +231,8 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
       // revision can overlap it). A read that was made for other metrics, features or another page is dropped: the
       // revision reads the vendor itself, and its pending mark is its own.
       if (!now || readSig(now.domain, id) !== asked) return;
-      now.sources[id] = { ...src, monitor: now.sources[id]?.monitor ?? src.monitor };
+      // The monitor and its settings may have been written while this read ran (the watch route): the stored ones stand.
+      now.sources[id] = { ...src, monitor: now.sources[id]?.monitor ?? src.monitor, ...(now.sources[id] ? { watch: now.sources[id].watch } : {}) };
       arrived(now, id);
     });
   }

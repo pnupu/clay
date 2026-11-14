@@ -9,8 +9,9 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /**
  * Start watching: one Context.dev page monitor per source, with a signed webhook back to this deployment. Needs a public URL.
  * A monitor runs once a day and reads the page without a wait, unless the source says otherwise. The body may set that
- * per source, {"sources": {"vastai": {"minutes": 60, "waitMs": 5000}}}: it is stored with the source and used for the
- * monitor that this call, or a later one, creates for it. A monitor that already runs is not changed.
+ * per source, {"sources": {"vastai": {"minutes": 60, "waitMs": 5000}}}: it is stored with the source, in place of what was
+ * stored for it, and used for the monitor that this call, or a later one, creates for it. A monitor that already runs
+ * is not changed.
  */
 export async function POST(req: Request, { params }: Ctx) {
   const no = await refused(req);
@@ -18,15 +19,28 @@ export async function POST(req: Request, { params }: Ctx) {
   const { pg } = await params;
   const base = publicBase();
   if (!base) return Response.json({ error: "This app has no public URL. Context.dev can only deliver webhooks to a public URL." }, { status: 409 });
-  const body = (await req.json().catch(() => null)) as { sources?: unknown } | null;
-  const asked = parseWatch(body?.sources, Object.keys((await load()).playgrounds[pg]?.sources ?? {}));
+  // No body means "start with the stored settings". A body that cannot be read, or that says something else than
+  // "sources", is refused: started with the defaults, a monitor would have to be stopped and started again.
+  const text = (await req.text().catch(() => "")).trim();
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return Response.json({ error: 'The body is not JSON. Send no body, or {"sources": {"<source id>": {"minutes": 60, "waitMs": 5000}}}.' }, { status: 400 });
+    }
+    const other = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body).filter((k) => k !== "sources") : ["(not an object)"];
+    if (other.length) return Response.json({ error: `Only "sources" can be sent, not: ${other.join(", ")}.` }, { status: 400 });
+  }
+  const asked = parseWatch((body as { sources?: unknown } | null)?.sources, Object.keys((await load()).playgrounds[pg]?.sources ?? {}));
   if (!asked.ok) return Response.json({ error: asked.error }, { status: 400 });
   if (Object.keys(asked.watch).length) {
     await update((s) => {
       for (const [id, w] of Object.entries(asked.watch)) {
         const src = s.playgrounds[pg]?.sources[id];
-        // An empty object puts the source back to the default.
-        if (src) src.watch = Object.keys(w).length ? { ...src.watch, ...w } : null;
+        // What is sent is the whole setting of the source: a field that is left out is the default again, and an
+        // empty object puts the source back to the default.
+        if (src) src.watch = Object.keys(w).length ? w : null;
       }
     });
   }

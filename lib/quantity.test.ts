@@ -103,6 +103,33 @@ test("the built-in domain and the fixture metrics read the same way", () => {
   assert.equal(say("API calls (monthly)", "calls", 1_500_000), "1.5 million API calls");
   // A unit that is only part of a longer word in the label is not "named" by it.
   assert.equal(say("Username lookups", "users", 20), "20 users");
+  // Exactly one: plain plurals only, and the number that is said decides.
+  assert.equal(say("Private repositories", "repositories", 1), "1 private repository");
+  assert.equal(say("Search queries", "queries", 1), "1 search query");
+  assert.equal(say("Mailboxes", "mailboxes", 1), "1 mailbox");
+  assert.equal(say("Active time series", "series", 1), "1 active time series");
+  assert.equal(say("Latency budget", "ms", 1), "1 ms of latency budget");
+  assert.equal(sayMetric({ label: "Requests per day", unit: "requests" }, 1.004, { approx: true }), "about 1 request per day");
+  // A short name for a counted thing is not a unit of measure: the label says what is counted.
+  assert.equal(say("Monthly active users", "MAU", 20_000), "20,000 monthly active users");
+  assert.equal(say("Monthly spend", "USD", 500), "500 USD of monthly spend");
+  assert.equal(say("Monthly active users", "MAU", 1), "1 monthly active user");
+  // Capitals that are a rate or a size, with a label that names no counted thing: the unit is said.
+  assert.equal(say("Rate limit", "RPM", 500), "500 RPM");
+  assert.equal(say("Disk performance", "IOPS", 3_000), "3,000 IOPS");
+  assert.equal(say("Compute", "CU", 4), "4 CU");
+  // Exactly one, with "of": the unit is singular too.
+  assert.equal(say("Build time", "hours", 1), "1 hour of build time");
+  assert.equal(say("Neon compute (CU-hours/month)", "CU-hours", 1, ["Neon"]), "1 CU-hour of Neon compute");
+  assert.equal(say("Edge caches", "caches", 1), "1 edge cache");
+  assert.equal(say("Batches per month", "batches", 1), "1 batch");
+  assert.equal(say("Cookies", "cookies", 1), "1 cookie");
+  // A first word with a hyphen is an ordinary word too.
+  assert.equal(say("Sign-ups per month", "sign-ups", 500), "500 sign-ups");
+  assert.equal(say("Read-only replicas", "replicas", 2), "2 read-only replicas");
+  // The unit as a note in the label is not what is counted.
+  assert.equal(say("Storage (GB) per month", "GB", 30), "30 GB of storage");
+  assert.equal(say("Storage in GB", "GB", 30), "30 GB of storage");
 });
 
 test("numbers: exact below a million, three figures above, and 'about' only when the number was cut", () => {
@@ -121,4 +148,9 @@ test("numbers: exact below a million, three figures above, and 'about' only when
   assert.equal(sayNumber(999_999), "about 1 million");
   assert.equal(sayNumber(999_000), "999,000");
   assert.equal(sayNumber(0), "0");
+  // A value below 1 keeps its figures; the noise of a sum of fractions is not a cut; a trillion is said.
+  assert.equal(sayNumber(0.004), "0.004");
+  assert.equal(sayNumber(0.004, true), "0.004");
+  assert.equal(sayNumber(0.1 + 0.2), "0.3");
+  assert.equal(sayNumber(1_200_000_000_000), "1.2 trillion");
 });
