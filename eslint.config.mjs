@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Benchmark task fixtures: plain CommonJS start and check code that coding agents are asked to fix, not app code.
+    "bench/tasks/**",
   ]),
 ]);
 
