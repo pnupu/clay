@@ -104,18 +104,22 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   // The account's rate limit (10 request units per minute) is shared by every function instance and every person, so the
   // pacing in slot() cannot always prevent a 429. Builds run in the background (lib/mcp.ts answers the agent early), so a
   // wait is cheap and a stopped build is not: a 429 RATE_LIMITED is sent again after the wait the API states, up to 3 times.
+  // The first attempt is reserved at once, so a request over the cap is refused without waiting in the pacing queue.
+  await reserve();
   for (let attempt = 0; ; attempt++) {
     // An urgent request does not queue behind the paced ones: it is a single request that a person is waiting for (the
     // brand of a preview playground) while a price build may hold the queue for minutes. It is still counted as a start,
     // and a 429 is retried below like any other.
     if (opts.urgent) starts.push(Date.now());
     else await slot();
+    // A retry is a new request sent: it is reserved too. Reached here, the earlier attempts were sent, and no more are.
+    if (attempt > 0)
+      await reserve().catch((e) => {
+        if (e instanceof ContextDevError) throw new ContextDevError(e.status, e.code, `${e.message} (${attempt} earlier ${attempt === 1 ? "attempt was" : "attempts were"} sent and rate-limited; no more are sent.)`);
+        throw e;
+      });
+    // Nothing is awaited between this check and pending++, so parallel requests cannot pass the request cap together.
     overCap();
-    await reserve().catch((e) => {
-      // Reached while retrying after a rate limit: the earlier attempts were sent, and no more are.
-      if (attempt > 0 && e instanceof ContextDevError) throw new ContextDevError(e.status, e.code, `${e.message} (${attempt} earlier ${attempt === 1 ? "attempt was" : "attempts were"} sent and rate-limited; no more are sent.)`);
-      throw e;
-    });
     const t0 = Date.now();
     pending++;
     let res: Response | null = null;

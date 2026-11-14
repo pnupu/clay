@@ -14,8 +14,8 @@ export const WEB_LIMITS = { sources: 6, fields: 20, rows: 60, text: 200, unit: 4
  * row (so at most max(fields, rows) entries) and WEB_LIMITS.quoteBytes characters per source; per playground at most
  * WEB_LIMITS.sources times that. A quote of a removed row or an unknown key is dropped.
  */
-export function keptQuotes(s: WebSource, quotes: Record<string, string>, rows: WebRow[] | undefined): Record<string, string> {
-  const wanted = s.fields ? s.fields.map((f) => f.id) : rowKeys(s, rows ?? []).map((k) => `rows.${k}`);
+export function keptQuotes(s: WebSource, quotes: Record<string, string>, rowKeysKept: string[] | undefined): Record<string, string> {
+  const wanted = s.fields ? s.fields.map((f) => f.id) : (rowKeysKept ?? []).map((k) => `rows.${k}`);
   const out: Record<string, string> = {};
   let bytes = 0;
   for (const k of wanted) {
@@ -339,9 +339,11 @@ export function confirmChanges(s: WebSource, old: WebRead, first: WebRead, secon
     }
     if (c.row && second.quotes[`rows.${c.row}`]) read.quotes[`rows.${c.row}`] = second.quotes[`rows.${c.row}`];
   }
+  // At most WEB_LIMITS.rows rows stay, and only their quotes, under the keys they were stored with (a removal must not
+  // shift a repeated name's "(n)" onto another row's quote).
+  rows = rows.slice(0, WEB_LIMITS.rows);
   read.rows = rows.map((r) => r.row);
-  // Only the quotes of the rows that stay: without this, the quotes of removed rows piled up with every change.
-  read.quotes = keptQuotes(s, read.quotes, read.rows);
+  read.quotes = keptQuotes(s, read.quotes, rows.map((r) => r.key));
   return { read, changes, unconfirmed };
 }
 

@@ -45,7 +45,7 @@ const unreachableUntil = new Map<string, number>();
  * A refusal is remembered for KEY_CHECK_MS in this instance, so a test or blocked account that keeps trying costs no Clerk
  * call per request. lean: per instance; a cold instance asks Clerk once more.
  */
-const refusedUntil = new Map<string, { verdict: "revoked" | "test"; until: number }>();
+const refusedUntil = new Map<string, { verdict: "revoked" | "test"; until: number; at: number }>();
 /**
  * The one eligibility rule for a person who may create or spend, by agent key or by browser session: Clerk confirms at
  * most every 10 minutes that the account exists, is not banned and is not a Clerk test account on a public app.
@@ -53,7 +53,8 @@ const refusedUntil = new Map<string, { verdict: "revoked" | "test"; until: numbe
 async function confirmPerson(userId: string, checkedAt: string | null | undefined): Promise<Confirmed> {
   const now = Date.now();
   const refused = refusedUntil.get(userId);
-  if (refused && refused.until > now) return refused.verdict;
+  // A confirmation stored after this refusal (another instance, or a new key) wins over the remembered refusal.
+  if (refused && refused.until > now && !(checkedAt && Date.parse(checkedAt) > refused.at)) return refused.verdict;
   if (!needsCheck({ checkedAt }, now)) return "ok";
   let run = pending.get(userId);
   if (!run) {
@@ -76,7 +77,7 @@ async function checkKey(userId: string, checkedAt: string | null | undefined): P
         if (a) s.users[userId] = { ...a, keyHash: null, keyCreatedAt: null, checkedAt: null };
       } else s.users[userId] = { ...(a ?? { keyHash: null, keyCreatedAt: null, usage: null }), checkedAt: d.checkedAt }; // a session-only person gets a record too: only the Clerk id and the time
     });
-  if (d.revoke) refusedUntil.set(userId, { verdict: verdict === "test" ? "test" : "revoked", until: now + KEY_CHECK_MS });
+  if (d.revoke) refusedUntil.set(userId, { verdict: verdict === "test" ? "test" : "revoked", until: now + KEY_CHECK_MS, at: now });
   if (refusedUntil.size > 10_000) refusedUntil.clear();
   return d.allow ? "ok" : d.revoke ? (verdict === "test" ? "test" : "revoked") : "unavailable";
 }
@@ -87,7 +88,7 @@ async function checkKey(userId: string, checkedAt: string | null | undefined): P
  * sent and matched nothing, so the caller can say so instead of acting as a visitor. Works on route requests and, with
  * the headers of the page request, in server components.
  */
-export type Bad = null | "key" | "blocked" | "revoked" | "unavailable";
+export type Bad = null | "key" | "blocked" | "revoked" | "test" | "unavailable";
 export async function identify(h: { get(name: string): string | null }, req?: Request): Promise<{ actor: Actor; bad: Bad }> {
   const key = process.env.CLAY_ACCESS_KEY;
   const authorization = h.get("authorization");
@@ -102,7 +103,7 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
       const confirmed = await confirmPerson(userId, users[userId]?.checkedAt);
       // A refused person's key is removed, also when the refusal came from the remembered verdict (no new Clerk call).
       if (confirmed === "test" || confirmed === "revoked") await update((s) => void (s.users[userId]?.keyHash && (s.users[userId] = { ...s.users[userId], keyHash: null, keyCreatedAt: null, checkedAt: null })));
-      return confirmed === "ok" ? { actor: { kind: "user", userId, via: "key" }, bad: null } : { actor: VISITOR, bad: confirmed === "test" ? "revoked" : confirmed };
+      return confirmed === "ok" ? { actor: { kind: "user", userId, via: "key" }, bad: null } : { actor: VISITOR, bad: confirmed };
     }
     const ip = clientIp(h);
     if (guesses.blocked(ip)) return { actor: VISITOR, bad: "blocked" };
@@ -145,6 +146,7 @@ export function badKey(bad: Bad, req: Request): Response | null {
   // The full address, so an agent can give the person a link instead of a page name.
   const connect = `${publicBase() ?? new URL(req.url).origin}/connect`;
   if (bad === "blocked") return Response.json({ error: `Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from ${connect}` }, { status: 429 });
+  if (bad === "test") return Response.json({ error: `${TEST_ACCOUNT_LOOK_ONLY} ${connect.replace(/\/connect$/, "/sign-up")}` }, { status: 403 });
   if (bad === "revoked") return Response.json({ error: `This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in and create a new key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   if (bad === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
   if (bad === "key") return Response.json({ error: `This key is not valid. It may have been regenerated or revoked. Get a new agent key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
@@ -200,11 +202,12 @@ export async function refused(req: Request): Promise<Response | null> {
   if (badAnswer) return badAnswer;
   // A browser session meets the same eligibility rule as an agent key before it may create or spend (an agent key met it in
   // identify()). Signing in and looking at pages need nothing more.
-  if (actor.kind === "user" && actor.via === "session") {
+  // Revoking one's own key spends nothing and must work during a Clerk outage: it is exempt.
+  if (actor.kind === "user" && actor.via === "session" && !(req.method === "DELETE" && new URL(req.url).pathname === "/api/agent-key")) {
     const confirmed = await confirmPerson(actor.userId, (await load()).users[actor.userId]?.checkedAt);
     if (confirmed === "test") return Response.json({ error: `${TEST_ACCOUNT_LOOK_ONLY} ${`${publicBase() ?? new URL(req.url).origin}/sign-up`}` }, { status: 403 });
     if (confirmed === "revoked") return Response.json({ error: "This account is deleted or blocked, so it cannot build or change playgrounds." }, { status: 403 });
-    if (confirmed === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
+    if (confirmed === "unavailable") return badKey("unavailable", req);
   }
   if (actor.kind === "visitor") return Response.json({ error: `Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one at ${publicBase() ?? new URL(req.url).origin}/connect` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   // Decoded, so an encoded form of an admin-only path (for example /api/p/x/%77atch) is recognised too.
