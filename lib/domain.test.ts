@@ -88,7 +88,7 @@ test("price reads are bounded before they are stored", async () => {
   const { normalise, PRICE_LIMITS } = await import("./domain.ts");
   const big = "q".repeat(500_000);
   const m = normalise({ vendor: "Fixture", currency: "USD", plans: Array.from({ length: 200 }, (_, i) => ({ name: `Plan ${i} ${big}`, base_price: 10, price_quote: big, custom_pricing: false, meters: { emails: { included: 0, overage_allowed: true, tiers: Array.from({ length: 100 }, () => ({ up_to: null, price: 1, per_units: 1000 })), quote: big } }, features: {} })) } as never);
-  assert.ok(m.plans.length <= PRICE_LIMITS.plans);
+  assert.ok(m.plans!.length <= PRICE_LIMITS.plans);
   assert.ok(JSON.stringify(m).length <= PRICE_LIMITS.bytes);
-  assert.ok(m.plans.every((p) => (p.price_quote ?? "").length <= PRICE_LIMITS.quote && p.name.length <= PRICE_LIMITS.name));
+  assert.ok(m.plans!.every((p) => (p.price_quote ?? "").length <= PRICE_LIMITS.quote && p.name.length <= PRICE_LIMITS.name));
 });
