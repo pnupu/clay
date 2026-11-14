@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { STANDING_INSTRUCTION } from "@/connect/standing-instruction";
+import { KEY_PLACEHOLDER, maskKey } from "@/lib/mask";
 
 /** What a person types to their agent: the sentence that asks for a playground, once for a look or feel and once for a decision on prices. */
 const EXAMPLES = [
@@ -16,6 +17,11 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  /**
+   * The key is hidden by default: the page may be on a shared screen or in a recording. While it is hidden, the page holds
+   * only the masked text (lib/mask.ts); the real key stays in this component's memory, for Copy and for "Show key".
+   */
+  const [visible, setVisible] = useState(false);
 
   async function call(method: "POST" | "DELETE") {
     if (method === "POST" && since && !confirm("A new key replaces the old one. An agent that uses the old key stops working until you add the new one. Go on?")) return;
@@ -29,6 +35,8 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
       if (!r.ok) throw new Error(body?.error ?? `The request failed (${r.status}).`);
       setKey(body?.key ?? null);
       setSince(body?.createdAt ?? null);
+      // A new key starts hidden, also when the one before it was shown.
+      setVisible(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -36,17 +44,27 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
     }
   }
 
-  const shown = key ?? "<your agent key>";
-  // Without a secure context (http on another machine's address) there is no clipboard: say so instead of doing nothing.
-  const copy = (id: string, text: string) => (navigator.clipboard ? navigator.clipboard.writeText(text).then(() => setCopied(id), () => setCopied(`failed:${id}`)) : setCopied(`failed:${id}`));
-  const label = (id: string) => (copied === id ? "Copied" : copied === `failed:${id}` ? "Select and copy by hand" : "Copy");
-  /** A command or text block with its own Copy button. Commands with the key need the key first. */
-  const block = (id: string, text: string, needsKey = true) => (
+  /** The key as the page shows it: the placeholder without a key, the masked form while it is hidden, the key when asked. */
+  const shown = !key ? KEY_PLACEHOLDER : visible ? key : maskKey(key);
+  /** The text of a command with a key in it: for the page (the shown key) and for Copy (always the real key). */
+  const withKey = (make: (k: string) => string) => ({ text: make(shown), real: make(key ?? KEY_PLACEHOLDER) });
+  // Without a clipboard (http on another machine's address, or a refusal) the person must select the text by hand. A
+  // masked command selected by hand would be a broken command, so the key is shown first, and the button says so.
+  const byHand = (id: string) => {
+    setCopied(`failed:${id}`);
+    if (key) setVisible(true);
+  };
+  const copy = (id: string, real: string) => (navigator.clipboard ? navigator.clipboard.writeText(real).then(() => setCopied(id), () => byHand(id)) : byHand(id));
+  const label = (id: string) => (copied === id ? "Copied" : copied === `failed:${id}` ? (key ? "Key shown: select and copy by hand" : "Select and copy by hand") : "Copy");
+  /** A command or text block with its own Copy button. `real` is what Copy copies when it differs from what is shown. Commands with the key need the key first. */
+  const block = (id: string, text: string, needsKey = true, real = text) => (
     <div className="command copyable">
       <pre className="code" data-command={id}>{text}</pre>
-      <button className="small-btn" onClick={() => copy(id, text)} disabled={needsKey && !key} title={needsKey && !key ? "Create a key first: the command needs it" : undefined}>{label(id)}</button>
+      <button className="small-btn" onClick={() => copy(id, real)} disabled={needsKey && !key} title={needsKey && !key ? "Create a key first: the command needs it" : undefined}>{label(id)}</button>
     </div>
   );
+  const claude = withKey((k) => `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${k}"`);
+  const codex = withKey((k) => `export CLAY_AGENT_KEY=${k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var CLAY_AGENT_KEY`);
 
   return (
     <>
@@ -54,11 +72,15 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         <h2>1. Your agent key</h2>
         {key ? (
           <>
-            <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it.</p>
+            <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it. It stays on this page, hidden, until you leave the page.</p>
             <div className="command copyable">
-              <pre className="code" data-testid="agent-key">{key}</pre>
+              <pre className="code" data-testid="agent-key">{shown}</pre>
               <button className="small-btn primary" onClick={() => copy("key", key)}>{label("key")}</button>
             </div>
+            <p className="row wrap">
+              <button className="small-btn" aria-pressed={visible} onClick={() => setVisible(!visible)} data-testid="show-key">{visible ? "Hide key" : "Show key"}</button>
+              <span className="small muted">Copy puts the real key on your clipboard, also while it is hidden here and in the commands below.</span>
+            </p>
           </>
         ) : since ? (
           <p>You have a key, created on {new Date(since).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}. Clay cannot show it again, so the commands below show a placeholder and cannot be copied. To fill them in, create a new key (the old one then stops working).</p>
@@ -76,12 +98,12 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
       <section className="card">
         <h2>2. Add Clay to your agent</h2>
         <h3>Claude Code</h3>
-        {block("claude", `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${shown}"`)}
+        {block("claude", claude.text, true, claude.real)}
         <p className="small muted"><code>--scope user</code> makes Clay available in every folder, not only the one you are in.</p>
         <p className="small muted">The first time your agent uses each Clay tool, Claude Code asks you to allow it. Allow it.</p>
 
         <h3>Codex</h3>
-        {block("codex", `export CLAY_AGENT_KEY=${shown}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var CLAY_AGENT_KEY`)}
+        {block("codex", codex.text, true, codex.real)}
         <p className="small muted">Codex reads the key from <code>CLAY_AGENT_KEY</code> each time it starts. Also put the export line in your shell profile (for example <code>~/.zshrc</code>).</p>
         <p className="small muted">For <code>codex exec</code> (no questions asked): add this line under <code>[mcp_servers.clay]</code> in <code>~/.codex/config.toml</code>, or Clay&apos;s tools are refused:</p>
         {block("codex-approve", `default_tools_approval_mode = "approve"`, false)}
