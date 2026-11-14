@@ -110,14 +110,13 @@ if (!created && flag("in-app") && local) {
     // The person first chooses the level of the change (--level instance | variant | token; a list means the first that is offered).
     inApp.levels = await page.locator("[data-clay-level]").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-clay-level"), blocked: e.hasAttribute("data-clay-level-blocked"), text: (e.textContent ?? "").slice(0, 400) })));
     const want = (flag("level") ?? "").split(",").filter(Boolean).find((l) => (inApp.levels as { id: string; blocked: boolean }[]).some((x) => x.id === l && !x.blocked));
-    // A level that is blocked or not selected: the person moves nothing and does not settle, so no hand-back is made at another level.
-    // A playground that has no levels at all (a page, a motion) is settled as before.
+    // A level that is blocked, absent or not selected: the person moves nothing and does not settle, so no hand-back is made at another level.
     if (flag("level")) {
       const radio = page.locator(`[data-clay-level="${want}"] input`);
-      const chosen = !!want && (await radio.check().then(() => radio.isChecked(), () => false));
-      levelOk = chosen || (kit && (inApp.levels as unknown[]).length === 0);
-      inApp.level = chosen ? want : null;
-      if (!levelOk) inApp.levelError = kit ? `the level "${flag("level")}" is not offered or could not be chosen: nothing was moved or settled` : "the playground page did not render, so no level could be chosen";
+      levelOk = !!want && (await radio.check().then(() => radio.isChecked(), () => false));
+      inApp.level = levelOk ? want : null;
+      const why = !kit ? "the playground page did not render" : (inApp.levels as unknown[]).length === 0 ? "the playground has no levels" : "it is not offered or could not be chosen";
+      if (!levelOk) inApp.levelError = `the level "${flag("level")}": ${why}. Nothing was moved or settled`;
       await page.waitForTimeout(300);
     }
     inApp.uses = await page.locator("[data-clay-use]").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-clay-use"), changes: e.getAttribute("data-clay-changes") })));
@@ -134,9 +133,8 @@ if (!created && flag("in-app") && local) {
     if (kit && levelOk) { await page.locator("[data-clay-settle]").click().catch(() => {}); inApp.settled = await page.waitForSelector("[data-clay-settled]", { timeout: 15_000 }).then(() => true, () => false); }
     inApp.errors = errors;
   } finally { await browser.close(); }
-  const files = (spawnSync("bash", ["-c", `find ${JSON.stringify(repo)} -path '*/node_modules' -prune -o -path '*/.clay/settled/*.json' -print`], { encoding: "utf8" }).stdout ?? "").split("\n").filter(Boolean);
-  // Without a chosen level the person did not settle: a settled file that is there (the agent's own test) is not the person's.
-  if (!levelOk) files.length = 0;
+  // Only after the person's Settle is confirmed: a settled file that is there without it (the agent's own test of its route) is not the person's.
+  const files = !inApp.settled ? [] : (spawnSync("bash", ["-c", `find ${JSON.stringify(repo)} -path '*/node_modules' -prune -o -path '*/.clay/settled/*.json' -print`], { encoding: "utf8" }).stdout ?? "").split("\n").filter(Boolean);
   inApp.settledFile = files[0]?.slice(repo.length + 1) ?? null;
   if (files[0]) { inApp.settledText = (spawnSync("cat", [files[0]], { encoding: "utf8" }).stdout ?? "").slice(0, 3000); spawnSync("cp", [files[0], join(out, "settled.json")]); }
   // What the agent built, before the hand-back removes it: the playground as a diff that `git apply` can restore.

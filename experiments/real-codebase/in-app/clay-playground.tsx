@@ -25,7 +25,7 @@ export type ClayControl = {
 );
 export type ClayValues = Record<string, number | boolean | string>;
 /** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props. */
-export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean; /** The chosen level. At "variant" a call site's own classes still win in the real code: put `className` before them. */ level?: ClayLevel["id"] };
+export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean; /** The chosen level. At "variant" a call site's own classes still win in the real code: put `className` before them, and leave out of `style` each property that the call site sets itself. */ level?: ClayLevel["id"] };
 /** One real place where the component is used, with the props and the markup around it copied from that call site. */
 export type ClayUse = { id: string; /** Path from the repository root with the line: "src/app/x/page.tsx:42". */ file: string; label?: string; render: (a: ClayApplied) => ReactNode };
 export type ClayLevel = {
@@ -182,7 +182,7 @@ export function ClayPlayground(props: {
                 {c.options.map((o) => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
               </select>
             )}
-            {c.type === "scale" && <input type="text" data-clay-off-scale-input placeholder="or a value off the scale, e.g. 14px" value={onScale(c) ? "" : (typed[c.id] ?? (values[c.id] as string))} onChange={(e) => { const text = e.target.value; setTyped((t) => ({ ...t, [c.id]: text })); set(c, text.trim() || c.initial); }} style={S.select} />}
+            {c.type === "scale" && <input type="text" data-clay-off-scale-input placeholder="or a value off the scale, e.g. 14px" value={onScale(c) ? "" : (typed[c.id]?.trim() ? typed[c.id] : (values[c.id] as string))} onChange={(e) => { const text = e.target.value; setTyped((t) => ({ ...t, [c.id]: text })); set(c, text.trim() || c.initial); }} style={S.select} />}
             {c.type === "color" && <input type="color" value={values[c.id] as string} onChange={(e) => set(c, e.target.value)} />}
           </label>
         ))}
