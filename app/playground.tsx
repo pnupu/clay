@@ -133,6 +133,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
 
   const a: Assumptions = useMemo(() => ({ usage, required }), [usage, required]);
   const ranking = useMemo(() => rank(models, a), [models, a]);
+  // Rows that change places glide to their new place (app/flip.ts), on this page as in the landing page's hero.
+  const rankList = useFlip<HTMLOListElement>(ranking.ranked.map((v) => v.id).join(" "));
   const axisDef = domain.metrics.find((m) => m.id === axis) ?? domain.metrics[0];
   const cross = useMemo(() => crossovers(models, a, axisDef.id, axisDef.min, axisDef.max), [models, a, axisDef]);
   const nextCross = cross.find((c) => c.at > (usage[axisDef.id] ?? 0));
@@ -222,7 +224,9 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     saveBox.current?.querySelector<HTMLButtonElement>("button.primary")?.focus({ preventScroll: true });
   };
   /** What a Select means, said at the selected row: where to save it, or that an example saves nothing. */
-  const selectedNext: ReactNode = !canWrite ? null : unsaved ? (
+  const selectedNext: ReactNode = !canWrite ? (
+    <p className="small select-next" data-select-try>Nothing is saved: this is an example. On your own playground you save this choice; your agent then keeps it in your repository ({recordPath(domain.id)}) and any later session re-checks it when prices change. <Link href="/connect" prefetch={false}>Connect your own agent</Link></p>
+  ) : unsaved ? (
     <p className="small select-next" data-select-next>Not saved yet. <button className="linkbtn" onClick={toSave}>Save this choice ↓</button></p>
   ) : null;
   /**
@@ -248,14 +252,11 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
         <div>
           <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · data read from the web by Context.dev</> : (byTeam ? "An example by the Clay team · prices read from the web by Context.dev" : "An example · prices read from the web by Context.dev")}</p>
           {embedded ? <h2 className="question">{domain.question}</h2> : <h1>{domain.question}</h1>}
-          {domain.note && <p className="muted" style={{ maxWidth: "70ch", margin: "6px 0 0" }}>{domain.note}</p>}
         </div>
         <div className="actions">
           {busy ? <span className="muted">{busy}…</span> : reading ? (
             <span className="live" data-building><i />{work.kind === "recheck" ? `Re-reading the pricing pages: ${work.pending.length} to go…` : `Reading the pricing pages: ${collected.length} of ${domain.vendors.length} read…`}</span>
-          ) : collected.length > 0 && (
-            <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest read {ago(oldestRead, now)}</span>
-          )}
+          ) : null}
           {!collectedAll && !reading && canWrite && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
           {collected.length > 0 && canWrite && <button disabled={!!busy} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
         </div>
@@ -275,20 +276,31 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           <p>Collect reads each vendor&apos;s public pricing page with Context.dev (search to find the page, then structured extraction). It takes about 10 seconds and uses about 6 credits per vendor.</p>
         </section>
       ) : (
+        <>
+          {/* The first screen answers three things without a paragraph: what is being decided (the headline), what the
+              answer is now (this line, which follows every move), and what to do (the person's own numbers, next). On a
+              narrow screen this line stays in view while the controls are moved (clay.css). */}
+          {ranking.ranked[0] && (
+            <p className="answer" data-answer>
+              At these numbers the cheapest{maybeCheaper.length ? " of the fully priced vendors" : ""} is <b>{sources[ranking.ranked[0].id]?.name}</b>, <b>{money(ranking.ranked[0].best!.cost)}</b> a month
+              {ranking.ranked[1] ? (cents(gap) === 0 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${amount(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
+              {maybeCheaper.length > 0 && <span className="warn"> {maybeCheaper.map((v) => sources[v.id]?.name).join(", ")} could be cheaper: a price is unknown.</span>}
+              {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {lower(axisDef.label)}.</span>}
+            </p>
+          )}
         <div className="pgrid">
-          {/* Narrow screens only (globals.css): the saved decision's verdict in one line near the top. On a phone the full
-              panel comes after the ranking and the chart, long after the "Saved choice" badge in the ranking. */}
-          {decision && savedStand && (
+          {/* The owner's saved decision in one line (screens where its block is far below). A visitor of an example gets no
+              such line: the saved choice is not theirs, and moving the numbers is what the page is for. */}
+          {canWrite && decision && savedStand && (
             <p className={`verdict-bar ${savedStand.holds ? "ok" : "bad"}`} data-verdict-bar>
-              {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values: {why(savedStand, canWrite, decision.chosen)}.{" "}
+              {savedStand.holds ? "✓" : "✕"} Your saved choice <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values: {why(savedStand, canWrite, decision.chosen)}.{" "}
               {/* A button, not a hash link: the screen is also embedded in the landing page, whose URL must not change. */}
               <button className="linkbtn" onClick={() => standingPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Details</button>
             </p>
           )}
-          {/* Narrow screens only (globals.css): the answer in one line, in view while the controls are moved. */}
-          {ranking.ranked[0] && <p className="answer-bar" aria-hidden="true">Cheapest: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month</p>}
           <section className="pane controls">
-            <h2>Your situation</h2>
+            <h2>Your numbers</h2>
+            <p className="small muted">{canWrite ? "Set these to your situation. The answer and the ranking follow at once." : "Move these to your own numbers. The answer and the ranking follow at once."}</p>
             {metrics.map((m) => (
               <div className="control" key={m.id}>
                 <label htmlFor={m.id}>{m.label}</label>
@@ -304,34 +316,21 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                 {f.label}
               </label>
             ))}
-            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop. {canWrite ? "A short summary of what you tried is kept for your agent." : "Nothing you try here is saved."}</p>
+            {/* The operator looking at a playground (admin) is not the person whose agent gets the summary: no such line. */}
+            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop.{admin ? "" : canWrite ? " A short summary of what you tried is kept for your agent." : " Nothing you try here is saved."}</p>
           </section>
 
           <section className="results">
             <div className="pane">
-              <h2>Monthly cost under these assumptions</h2>
-              {decision && triedStand && (
-                <p className="small" data-trying style={{ border: "1px solid var(--warn)", borderRadius: 8, padding: "8px 12px", margin: "0 0 10px" }}>
-                  <b>{canWrite ? "You are trying other values than you saved:" : "You are trying other values than the saved ones:"}</b> {triedWords}. At these values {standSentence(triedStand, nameOf(decision.chosen)!, nameOf(triedStand.cheapest), true, h.humanize, canWrite)} {canWrite ? "Your saved decision is unchanged." : "The saved decision is unchanged."}{" "}
-                  <button className="linkbtn" onClick={loadSaved}>{canWrite ? "Back to my saved values" : "Back to the saved values"}</button>
-                </p>
-              )}
-              {ranking.ranked[0] && (
-                <p className="answer">
-                  {maybeCheaper.length ? "Cheapest of the fully priced vendors" : "Cheapest"}: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month
-                  {ranking.ranked[1] ? (cents(gap) === 0 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${amount(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
-                  {maybeCheaper.length > 0 && <span className="warn"> {maybeCheaper.map((v) => sources[v.id]?.name).join(", ")} could be cheaper: a price is unknown.</span>}
-                  {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {lower(axisDef.label)}.</span>}
-                </p>
-              )}
+              <h2>Monthly cost at these numbers</h2>
               {productVendors.length > 0 && (
                 <p className="small warn" data-not-like-for-like>
                   Not like-for-like: {productVendors.map((x) => x.name).join(", ")} {productVendors.length === 1 ? "lists" : "list"} separate products on {productVendors.length === 1 ? "its" : "their"} page (for example different GPU models), not tiers of one product. Each row shows the cheapest product of that vendor that fits your values, so the ranking does not compare the same thing. Each row names the product its price is for.
                 </p>
               )}
-              <ol className="rank">
+              <ol className="rank" ref={rankList}>
                 {ranking.ranked.map((v, i) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={canWrite && pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={canWrite ? () => setChosen(pick === v.id ? null : v.id) : undefined} next={pick === v.id ? selectedNext : null} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={() => setChosen(pick === v.id ? null : v.id)} next={pick === v.id ? selectedNext : null} />
                 ))}
               </ol>
               {ranking.unranked.length > 0 && <h3>Cannot be ranked</h3>}
@@ -368,11 +367,18 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                 </ul>
               )}
             </div>
-          </section>
 
-          <aside className="side">
+            {/* Everything about a saved decision, in one block: whose it is, whether it holds now, the history. */}
             <section className="pane standing" ref={standingPanel} data-standing>
-              <h2>Standing decision</h2>
+              <h2>A saved decision, re-checked when prices change</h2>
+              {!canWrite && decision && <p className="small" data-saved-example>{byTeam ? "The saved choice below is the Clay team’s example." : "The saved choice below belongs to this example."} What you move on this page is not saved and does not change it.</p>}
+              {canWrite && decision && triedStand && (
+                <p className="small" data-trying style={{ border: "1px solid var(--warn)", borderRadius: 8, padding: "8px 12px", margin: "0 0 10px" }}>
+                  <b>You are trying other values than you saved:</b> {triedWords}. At these values {standSentence(triedStand, nameOf(decision.chosen)!, nameOf(triedStand.cheapest), true, h.humanize, canWrite)} Your saved decision is unchanged.{" "}
+                  <button className="linkbtn" onClick={loadSaved}>Back to my saved values</button>
+                </p>
+              )}
+
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
               ) : (
@@ -401,6 +407,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
 
             <section className="pane">
               <h2>Sources</h2>
+              {collected.length > 0 && !reading && <p className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest read {ago(oldestRead, now)}</p>}
+              {domain.note && <p className="small" style={{ maxWidth: "78ch" }}>{domain.note}</p>}
               <ul className="sources">
                 {Object.values(sources).map((s) => (
                   <li key={s.id}>
@@ -441,8 +449,9 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
             </section>
 
             {sources.demo?.demo && admin && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
-          </aside>
+          </section>
         </div>
+        </>
       )}
     </Shell>
     </Dom.Provider>
@@ -528,7 +537,7 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
   const products = productLike(names);
   const others = names.filter((n) => n !== p?.plan);
   return (
-    <li className={chosen ? "vendor chosen" : "vendor"}>
+    <li className={chosen ? "vendor chosen" : "vendor"} data-flip={v.id}>
       {/* The head wraps: with two badges and a long product name the cost and the button must stay inside the card. */}
       <div className="vendor-head" style={{ flexWrap: "wrap", rowGap: 2 }}>
         <span className="dot" style={{ background: color(v.id) }} />

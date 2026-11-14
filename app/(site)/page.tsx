@@ -58,9 +58,6 @@ export default async function Home() {
   const priceHero = priceHeroOf(examples[0]);
   const hero = examples.find(([, p]) => p.kit) ?? null;
   const first = hero?.[0];
-  const firstKit = hero?.[1].kit;
-  // The marquee's words: the first two controls of each preview example, short ones only, each once.
-  const moved = [...new Set(examples.flatMap(([, p]) => (p.kit?.kit.controls ?? []).map((c) => c.label).filter((l) => l.length <= 22).slice(0, 2)))].slice(0, 14);
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
   // A returning person with playgrounds sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
@@ -147,14 +144,6 @@ export default async function Home() {
                 <div className="demo__step"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
               </div>
             )}
-            {moved.length > 5 && (
-              <div className="asked">
-                <p className="t-label">What people move in these examples</p>
-                <div data-moment="marquee-row" data-moment-opts='{"speed": 36}'>
-                  <ul className="mo-mq__track">{moved.map((label) => <li key={label}>{label}</li>)}</ul>
-                </div>
-              </div>
-            )}
           </div>
         </section>
 
@@ -218,7 +207,6 @@ export default async function Home() {
               <div><h2 id="close-h">Connect your agent with one command</h2><p className="t-lead">Your agent runs on your own model subscription. Clay needs no AI key. {me.kind === "visitor" ? "Sign up, get your agent key, and add Clay." : "Get your agent key and add Clay."}</p></div>
               <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>
             </div>
-            <p className="close__word" aria-hidden="true">Clay</p>
           </div>
           <div className="closing__links">
             <div className="grid">

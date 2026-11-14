@@ -2,8 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
-import { orderExamples } from "@/lib/accounts";
-import { load } from "@/lib/store";
+import { exampleGroups } from "@/app/example-groups";
 import { ROOT_CSS } from "@/app/tokens";
 import KitScripts from "./kit-scripts";
 import "@/app/clay.css";
@@ -16,7 +15,7 @@ import "./site.css";
 // type: software (site-kind software)
 // deal: hero triptych, nav nav-mega, close close-word, footer footer-columns, rhythm surface-pairs, buttons tonal,
 //       mark stack, ground sand, radius sharp, palette stone-blueprint, type gabarito (Gabarito / Figtree + DM Mono)
-// moments: marquee-row (#steps), counter-rolls (#decisions)
+// moments: counter-rolls (#decisions). The dealt marquee-row and the close's large word were removed on Ilkka's review.
 
 export const metadata: Metadata = {
   title: "Clay: playgrounds your coding agent builds for you",
@@ -28,24 +27,7 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#dfdedb" };
 
-const KIT_CSS = ["system.css", "ui/cards.css", "motion/motion.css", "backgrounds/backgrounds.css", "layout/layout.css", "icons/icon.css", "moments/marquee-row/moment.css", "moments/counter-rolls/moment.css"];
-
-/** The examples in the nav's panel, by what each is built on. */
-async function exampleGroups() {
-  const examples = orderExamples((await load()).playgrounds);
-  const groups: { label: string; items: { id: string; title: string; line: string }[] }[] = [
-    { label: "Tuned by hand", items: [] },
-    { label: "On live web data", items: [] },
-    { label: "Price decisions", items: [] },
-  ];
-  for (const [id, p] of examples) {
-    const title = p.domain?.question ?? id;
-    if (!p.kit) groups[2].items.push({ id, title, line: (p.domain?.vendors ?? []).map((v) => v.name).slice(0, 3).join(", ") });
-    else if (p.kit.kit.web?.length) groups[1].items.push({ id, title, line: "Prices read from the vendors' pages" });
-    else groups[0].items.push({ id, title, line: p.kit.kit.controls.slice(0, 3).map((c) => c.label).join(", ") });
-  }
-  return groups.filter((g) => g.items.length);
-}
+const KIT_CSS = ["system.css", "ui/cards.css", "motion/motion.css", "backgrounds/backgrounds.css", "layout/layout.css", "icons/icon.css", "moments/counter-rolls/moment.css"];
 
 async function Header() {
   const me = await viewer();

@@ -260,6 +260,11 @@ window.addEventListener("message", function (e) {
   values = v;
   draw();
   for (var i = 0; i < listeners.length; i++) call(listeners[i]);
+  // New values can change the height of the content. A browser pauses resize observation in a frame that is outside the
+  // screen (the preview under a long list of controls on a phone), so the height is also measured here, at once and
+  // once more after code that draws a moment later. reportHeight keeps its limit of one message per second.
+  reportHeight();
+  setTimeout(reportHeight, 150);
 });
 window.clay = Object.freeze({
   get values() { return view(); },

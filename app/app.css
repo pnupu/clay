@@ -7,23 +7,33 @@ html, body { margin: 0; }
 body { background: var(--p-bg); min-height: 100svh; -webkit-font-smoothing: antialiased; }
 img, svg { max-width: 100%; }
 
-header.bar { border-bottom: 1px solid var(--c-line); background: var(--p-bg); }
+header.bar { position: relative; z-index: 20; border-bottom: 1px solid var(--c-line); background: var(--p-bg); }
 .bar__in { width: min(100% - 2 * var(--c-gut), 1280px); margin: 0 auto; height: 72px; display: flex; align-items: center; gap: 32px; }
-.clay a.bar__logo { display: inline-flex; align-items: center; gap: 8px; font: 500 22px/1 var(--font-display); letter-spacing: -0.02em; text-decoration: none; flex: none; }
+.clay header.bar a.bar__logo { display: inline-flex; align-items: center; gap: 8px; font: 500 22px/1 var(--font-display); letter-spacing: -0.02em; text-decoration: none; flex: none; }
 .bar__mark { width: 24px; height: 24px; flex: none; background: var(--p-action); -webkit-mask: var(--bar-mark) center / contain no-repeat; mask: var(--bar-mark) center / contain no-repeat;
   --bar-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2.5' width='20' height='5.5' rx='2.75'/%3E%3Crect x='2' y='9.25' width='14' height='5.5' rx='2.75'/%3E%3Crect x='2' y='16' width='8' height='5.5' rx='2.75'/%3E%3C/svg%3E"); }
 .bar__links { display: flex; align-items: center; gap: 4px; margin-right: auto; }
-.clay .bar__links a, .clay a.bar__word { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font: 500 15px/1 var(--font-text); text-decoration: none; border-radius: var(--c-r-btn); white-space: nowrap; }
-.clay .bar__links a:hover, .clay a.bar__word:hover { background: var(--c-tone); }
+.clay header.bar .bar__links > a, .clay header.bar a.bar__word, .clay header.bar .bar__menu > summary { display: inline-flex; gap: 6px; cursor: pointer; list-style: none; color: var(--p-ink); align-items: center; min-height: 44px; padding: 0 12px; font: 500 15px/1 var(--font-text); text-decoration: none; border-radius: var(--c-r-btn); white-space: nowrap; }
+.clay header.bar .bar__links > a:hover, .clay header.bar a.bar__word:hover, .clay header.bar .bar__menu > summary:hover { background: var(--c-tone); }
+.clay header.bar .bar__menu > summary::-webkit-details-marker { display: none; }
+.clay header.bar .bar__menu > summary::before { content: none; }
+.clay header.bar .bar__menu[open] > summary svg { transform: rotate(180deg); }
+/* The Examples panel: the full width of the header, under it. */
+.bar__panel { position: absolute; left: 0; right: 0; top: 100%; background: var(--p-bg); border-top: 1px solid var(--c-line); border-bottom: 1px solid var(--c-line); padding: 24px max(var(--c-gut), calc((100% - 1280px) / 2)) 32px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.clay header.bar .bar__panel p { margin: 0 0 8px; font: 500 13px/1.4 var(--font-text); color: var(--p-muted); }
+.clay header.bar .bar__panel a { display: block; padding: 8px 0; min-height: 44px; font: 500 15px/1.35 var(--font-text); text-decoration: none; }
+.clay header.bar .bar__panel a span { display: block; font-weight: 400; font-size: 14px; color: var(--p-muted); }
+.clay header.bar .bar__panel a:hover { text-decoration: underline; text-decoration-color: var(--c-line-2); text-underline-offset: 3px; }
+@media (max-width: 767px) { .bar__panel { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
 .bar__actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .clay .bar__actions a.button { min-height: 44px; }
 .narrow-only { display: none; }
 @media (max-width: 639px) {
   .bar__in { height: 56px; gap: 8px; }
-  .clay a.bar__logo { font-size: 20px; }
+  .clay header.bar a.bar__logo { font-size: 20px; }
   .wide-only { display: none; }
   .narrow-only { display: inline; }
-  .clay .bar__links a, .clay a.bar__word { padding: 0 8px; }
+  .clay header.bar .bar__links > a, .clay header.bar a.bar__word, .clay header.bar .bar__menu > summary { padding: 0 8px; }
   .clay .shell { padding: 20px 0 72px; }
 }
 /* Inside another page's frame the header would show twice. */

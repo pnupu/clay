@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ClerkProvider } from "@clerk/nextjs";
 import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
+import { exampleGroups } from "@/app/example-groups";
 import { ROOT_CSS } from "@/app/tokens";
 import "@/app/clay.css";
 import "@/app/app.css";
@@ -18,12 +19,28 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 async function Header() {
   const me = await viewer();
+  const groups = await exampleGroups();
   return (
     <header className="bar">
       <div className="bar__in">
         <Link href="/" className="bar__logo"><span className="bar__mark" aria-hidden="true" />Clay</Link>
         <nav className="bar__links" aria-label="Main">
-          <Link href="/#examples">Examples</Link>
+          {/* The same list as the website's Examples panel: the fastest way from one example to the next. */}
+          {groups.length > 0 ? (
+            <details className="bar__menu">
+              <summary>Examples <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></summary>
+              <div className="bar__panel">
+                {groups.map((g) => (
+                  <div key={g.label}>
+                    <p>{g.label}</p>
+                    {g.items.slice(0, 5).map((x) => <a href={`/p/${x.id}`} key={x.id}>{x.title}<span>{x.line}</span></a>)}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : (
+            <Link href="/#examples">Examples</Link>
+          )}
           {me.kind !== "visitor" && <Link href="/#yours"><span className="wide-only">Your playgrounds</span><span className="narrow-only">Yours</span></Link>}
         </nav>
         <div className="bar__actions">

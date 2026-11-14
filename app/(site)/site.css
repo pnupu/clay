@@ -36,8 +36,9 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
 .live .k-head .eyebrow { margin: 0; font: 500 13px/1.3 var(--font-text); letter-spacing: 0; text-transform: none; color: var(--p-muted); }
 .live .k-stage { grid-area: 2 / 1 / 3 / -1; padding: 0; position: static; box-shadow: none; }
 .live .k-stage > div:first-child { display: none; }
-.live .k-stage > div:last-child { padding: 0; background: #fff; max-height: 420px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
-.live .k-stage iframe { flex: none; width: 100%; display: block; border: 0; border-radius: 0; box-shadow: none; }
+/* The frame is as tall as its content, here too: it follows the content both ways and nothing is cut. */
+.live .k-stage > div:last-child { padding: 0; background: #fff; }
+.live .k-stage iframe { width: 100%; display: block; border: 0; border-radius: 0; box-shadow: none; }
 .live .k-controls { grid-area: 3 / 1; padding: 14px 16px; position: static; }
 .live .k-controls > p:last-child { display: none; }
 .live .k-out { grid-area: 3 / 2; padding: 14px 16px; }
@@ -60,7 +61,6 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
 @media (max-width: 639px) {
   .live .k-controls { grid-column: 1 / -1; }
   .live .k-out { display: none; }
-  .live .k-stage > div:last-child { max-height: 260px; }
   .live input[type="range"] { height: 44px; }
   .live label.check { min-height: 44px; }
   .live .k-root button { min-height: 44px; }
@@ -70,9 +70,6 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
 .shot { height: 100%; padding: var(--s-5); display: flex; flex-direction: column; justify-content: center; gap: var(--s-3); font: 14px/1.5 var(--font-mono); color: var(--p-ink); background: var(--c-pane); }
 .shot p { margin: 0; overflow-wrap: anywhere; } .shot .muted { color: var(--p-muted); } .shot b { font-weight: 500; color: var(--p-action); }
 .shot pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100%; overflow: hidden; }
-.asked { margin-top: var(--s-8); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); min-width: 0; }
-.asked > * { min-width: 0; }
-.asked .mo-mq .mo-mq__track { color: var(--ink); }
 
 /* ---- Examples: one list in two columns that share their edges. */
 #examples .section-head { max-width: none; }
@@ -89,9 +86,8 @@ html[data-type] .decisions__text .stats { grid-template-columns: repeat(2, minma
 .shot__path { font-weight: 500; } .shot__ask { margin-top: var(--s-4) !important; } .shot__answer { color: var(--ok); }
 @media (max-width: 1023px) { .shot--file { margin-top: var(--s-7); padding: var(--s-5); font-size: 14px; } }
 
-/* ---- The close: the action, the word, the links, stacked at their own heights. */
+/* ---- The close: the action, then the links, stacked at their own heights. */
 html[data-type] footer.closing > .wrap { display: grid; grid-template-rows: auto auto; row-gap: var(--s-8); }
-html[data-type] footer.closing .close__word { font-size: clamp(64px, min(14.5vw, 24svh), 216px); padding-bottom: 0.2em; margin-top: var(--s-7); }
 
 /* ---- The owner's list on the landing page. */
 .mine .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }

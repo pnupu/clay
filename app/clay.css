@@ -97,8 +97,8 @@
 .clay .dot, .clay .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
 /* The price playground: the person's situation, the ranking, the standing decision. */
-.clay .pgrid { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
-.clay .results, .clay .side { display: grid; gap: 24px; min-width: 0; }
+.clay .pgrid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start; }
+.clay .results { display: grid; gap: 24px; min-width: 0; }
 .clay .controls { position: sticky; top: 16px; }
 .clay .control { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 2px 8px; align-items: center; margin-bottom: 16px; }
 .clay .control label { font-size: 15px; color: var(--p-ink); }
@@ -106,7 +106,9 @@
 .clay .control input[type="range"] { grid-column: 1 / -1; }
 .clay .control .number-note, .clay .tolerance .number-note { grid-column: 1 / -1; display: block; }
 .clay .check { display: flex; gap: 10px; align-items: center; padding: 4px 0; font-size: 15px; }
-.clay .answer { font: var(--display-weight) 24px/1.25 var(--font-display); letter-spacing: -0.02em; margin: 0 0 16px; text-wrap: balance; }
+/* The answer now: the first thing under the question, in the display face. */
+.clay p.answer { font: var(--display-weight) clamp(22px, 1.4vw + 12px, 34px)/1.2 var(--font-display); letter-spacing: -0.02em; margin: 0 0 24px; max-width: 34ch; text-wrap: balance; }
+.clay .answer b { font-weight: 500; }
 .clay .answer .muted, .clay .answer .warn { display: block; margin-top: 6px; font: 15px/1.45 var(--font-text); letter-spacing: 0; }
 .clay .vendor { border-top: 1px solid var(--c-line); padding: 14px 0; }
 .clay .vendor:first-child { border-top: 0; }
@@ -180,35 +182,34 @@
 .clay .save p { margin: 0; }
 .clay .tolerance input { width: 84px; margin: 0 6px 0 2px; }
 .clay .standing { scroll-margin-top: 72px; }
-/* The price screen on a narrow screen: one line says the cheapest, and stays in view while the controls are moved. */
-.clay .answer-bar, .clay .verdict-bar { display: none; }
+/* The owner's saved decision in one line, above the controls. */
+.clay .verdict-bar { display: block; }
 .clay .verdict-bar { grid-column: 1 / -1; order: -2; margin: 0; padding: 10px 14px; border-radius: var(--c-r-md); font-size: 15px; }
 .clay .verdict-bar button.linkbtn { color: inherit; font: inherit; white-space: nowrap; }
 @media (max-width: 1100px) {
   .clay .pgrid { grid-template-columns: 280px minmax(0, 1fr); }
-  .clay .side { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
   .clay .verdict-bar { display: block; }
 }
 .clay .embedded-playground .verdict-bar { display: block; }
 @media (max-width: 700px) {
   .clay .pgrid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .clay .results, .clay .side { gap: 16px; }
+  .clay .results { gap: 16px; }
   .clay .controls { position: static; }
   .clay .pane { padding: 16px; }
-  .clay .answer-bar { display: block; order: -1; position: sticky; top: 0; z-index: 5; margin: 0 calc(-1 * var(--c-gut)); padding: 12px var(--c-gut); background: var(--p-bg); border-bottom: 1px solid var(--c-line); font-size: 15px; }
+  /* On a phone the answer stays in view while the numbers under it are moved: one line of feedback, the full width. */
+  .clay p.answer { position: sticky; top: 0; z-index: 5; margin: 0 calc(-1 * var(--c-gut)) 16px; padding: 10px var(--c-gut); max-width: none; background: var(--p-bg); border-bottom: 1px solid var(--c-line); font-size: 18px; }
+  .clay .answer .muted, .clay .answer .warn { font-size: 14px; }
   .clay .vendor-head { flex-wrap: wrap; }
   .clay .vendor-head .plan { flex-basis: 100%; margin-left: 20px; }
   .clay .vendor-head .buy { flex-basis: 100%; margin-left: 20px; justify-content: space-between; }
   .clay .vendor .cost, .clay ol.rank .vendor:first-child .cost { font-size: 22px; }
   .clay .top { margin-bottom: 16px; }
   .clay .top .actions { flex-wrap: wrap; }
-  .clay .answer { font-size: 21px; }
 }
 /* A playground shown inside another page brings no page frame of its own. */
 .clay .embedded-playground .top { margin-bottom: 12px; }
 @media (min-width: 701px) {
   .clay .embedded-playground .pgrid { grid-template-columns: 280px minmax(0, 1fr); }
-  .clay .embedded-playground .side { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 }
 .clay .embedded-playground .question { font: var(--display-weight) 28px/1.15 var(--font-display); letter-spacing: var(--display-tracking); margin: 0; }
 
@@ -220,7 +221,8 @@
 .clay .auth-page > p { max-width: 400px; text-align: center; }
 
 /* The key page: a command with its Copy button. */
-.clay pre.code { margin: 8px 0; padding: 12px 14px; font: 14px/1.55 var(--font-mono); color: var(--p-ink); background: var(--p-surface); border-radius: var(--c-r-md); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A command wraps at its spaces, never inside a word; a token longer than the block (an address, a key) scrolls sideways inside the block. */
+.clay pre.code { margin: 8px 0; padding: 12px 14px; font: 14px/1.55 var(--font-mono); color: var(--p-ink); background: var(--p-surface); border-radius: var(--c-r-md); white-space: pre-wrap; overflow-wrap: normal; word-break: normal; overflow-x: auto; }
 .clay .command { margin: 8px 0 12px; }
 .clay .command.copyable { position: relative; }
 .clay .command.copyable pre.code { margin: 0; padding-right: 92px; min-height: 52px; }
