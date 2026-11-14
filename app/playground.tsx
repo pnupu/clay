@@ -242,13 +242,13 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
               )}
               <ol className="rank">
                 {ranking.ranked.map((v, i) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} place={i + 1} chosen={pick === v.id} saved={decision?.chosen === v.id} onChoose={() => setChosen(v.id)} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} chosen={pick === v.id} saved={decision?.chosen === v.id} onChoose={() => setChosen(v.id)} />
                 ))}
               </ol>
               {ranking.unranked.length > 0 && <h3>Cannot be ranked</h3>}
               <ul className="rank">
                 {ranking.unranked.map((v) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} now={now} saved={decision?.chosen === v.id} effect={v.effect} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} saved={decision?.chosen === v.id} effect={v.effect} />
                 ))}
               </ul>
               {domain.vendors.filter((v) => sources[v.id]?.error && !sources[v.id]?.snapshot).map((v) => (
@@ -374,10 +374,14 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
   );
 }
 
-function VendorRow({ v, src, now, place, chosen, saved, onChoose, effect }: { v: VendorCost; src: Src; now: number; place?: number; chosen?: boolean; saved?: boolean; onChoose?: () => void; effect?: string }) {
+function VendorRow({ v, src, required, now, place, chosen, saved, onChoose, effect }: { v: VendorCost; src: Src; required: string[]; now: number; place?: number; chosen?: boolean; saved?: boolean; onChoose?: () => void; effect?: string }) {
   const { label, humanize, color } = useContext(Dom);
   const p = v.best;
   const snap = src?.snapshot;
+  // The must-haves that this plan includes at no extra cost. Without this line, ticking a requirement that every plan
+  // meets changed nothing on the page, and the person could not tell whether it was taken into account.
+  const facts = snap?.model.plans?.find((x) => x.name === p?.plan)?.features ?? [];
+  const meets = required.filter((f) => facts.some((x) => x.feature === f && x.status === "included"));
   return (
     <li className={chosen ? "vendor chosen" : "vendor"}>
       <div className="vendor-head">
@@ -390,6 +394,7 @@ function VendorRow({ v, src, now, place, chosen, saved, onChoose, effect }: { v:
         {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
       </div>
       {effect && <p className="small warn">{effect}</p>}
+      {meets.length > 0 && <p className="small ok">Includes {meets.map((f) => lower(label(f))).join(", ")}.</p>}
       {p && (
         <details>
           <summary className="small muted">
