@@ -259,6 +259,13 @@ export async function settle(page: Page, dims: Dimension[]): Promise<{ chosen: s
       await option.nth(pick).click();
     }
     else if (await c.locator('input[type="checkbox"]').count()) await c.locator('input[type="checkbox"]').click();
+    else if (await c.locator("select").count()) {
+      // A dropdown (a select with many options): the first option that is not the one shown.
+      const sel = c.locator("select");
+      const now = await sel.inputValue();
+      const other = (await sel.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))).find((v) => v !== now);
+      if (other !== undefined) await sel.selectOption(other);
+    }
     await page.waitForTimeout(150);
   }
   // A preview playground: press Settle and read the named outputs as the page shows them.

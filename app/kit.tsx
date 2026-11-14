@@ -442,10 +442,22 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
   if (c.type === "select") {
     return (
       <div className={css.field} data-control={c.id} title={c.meaning}>
-        <span className={css.label}>{c.label}</span>
-        <div className={css.options} role="group" aria-label={c.label}>
-          {c.options.map((o) => <button key={o.value} className="small-btn" data-value={o.value} aria-pressed={value === o.value} onClick={() => onChange(o.value)}>{o.label}</button>)}
-        </div>
+        {c.options.length > SELECT_AS_BUTTONS ? (
+          // Many options are a list to open, not a wall of buttons that pushes the other controls off the screen.
+          <>
+            <label htmlFor={c.id}>{c.label}</label>
+            <select id={c.id} value={value as string} onChange={(e) => onChange(e.target.value)}>
+              {c.options.map((o) => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
+            </select>
+          </>
+        ) : (
+          <>
+            <span className={css.label}>{c.label}</span>
+            <div className={css.options} role="group" aria-label={c.label}>
+              {c.options.map((o) => <button key={o.value} className="small-btn" data-value={o.value} aria-pressed={value === o.value} onClick={() => onChange(o.value)}>{o.label}</button>)}
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -464,6 +476,9 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
 /** A value read from a web page. Unknown is said, never shown as a number; text from the page is shown as text only. */
 const shown = (v: WebValue | undefined) => (v == null ? <span className="warn">unknown</span> : v === true ? "yes" : v === false ? "no" : typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 6 }) : v);
 const when = (iso: string) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
+
+/** A select with more options than this is a dropdown; up to this many are buttons, all in view. */
+const SELECT_AS_BUTTONS = 5;
 
 /** More rows than this are folded: the rows the preview names are shown, the rest opens on request. */
 const FOLD_OVER = 8;
