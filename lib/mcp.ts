@@ -20,8 +20,9 @@ import { decisionRecord, guardDecision, priceGaps, recheckFile, recheckVerdict }
  * (Claude Code and Codex both), and a cut call looks like a failure although the server finished. So every tool answers
  * well inside that, and says "running" when the reads go on.
  */
-// A value that is not a number of milliseconds (a typo in the environment) counts as not set: NaN would make every wait 1 ms.
-const waitMs = (value: string | undefined, standard: number) => (value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : standard);
+// A value that is blank or not a number of milliseconds (a typo in the environment) counts as not set: NaN would make
+// every wait 1 ms, and a blank value reads as 0.
+const waitMs = (value: string | undefined, standard: number) => (value?.trim() && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : standard);
 const WAIT_MS = waitMs(process.env.CLAY_TOOL_WAIT_MS, 20_000);
 /**
  * How long a create or a revise waits for its own web reads (pricing pages, data.web) before it answers. The person waits
