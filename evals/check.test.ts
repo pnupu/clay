@@ -5,7 +5,7 @@ import { choiceHandback, namedInProse, creation, directAnswer, fileMatches, last
 import { dimensions, finalProblems, readFacts, withoutWebNumbers } from "./adapter.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES } from "./requests.ts";
-import { linkSeconds } from "./subjects.ts";
+import { linkSeconds, linkTimes } from "./subjects.ts";
 
 const dim = (id: string, min: number, max: number, initial: number, label = id, unit = "units") => ({ id, label, unit, min, max, initial });
 const call = (tool: string, input: Record<string, unknown> = {}, result: unknown = {}, isError = false): Call => ({ tool, mcp: true, input, result: typeof result === "string" ? result : JSON.stringify(result), isError });
@@ -288,4 +288,25 @@ test("time to the link: from the start of the leg to the first create result tha
   assert.equal(linkSeconds(leg), 24);
   assert.equal(linkSeconds(leg.split("\n").filter((l) => !l.includes('"c"')).join("\n")), null); // no create succeeded
   assert.equal(linkSeconds(leg.replace(/"timestamp":"[^"]*",/g, "")), null); // a transcript without timestamps
+  // Without a start, the link and the built playground are the same moment. The reply at second 50 names no URL.
+  assert.deepEqual(linkTimes(leg), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: false });
+  // With a start in the first turn, the link is its result (second 14); the build lands at 34 under the same id. The
+  // person has it when a visible reply holds the URL: second 16.
+  const said = JSON.stringify({ type: "assistant", timestamp: at(16), message: { content: [{ type: "text", text: "Open http://127.0.0.1:1/p/signup-button while I build." }] } });
+  const started = [use(13, "s", "mcp__clay__start_playground"), result(14, "s", built), said, ...leg.split("\n")].join("\n");
+  assert.deepEqual(linkTimes(started), { link: 4, built: 24, said: 6, startedFirst: true, orphanStart: false });
+  // A start that comes after the create call is not "first", and a refused start gives no link.
+  const late = [...leg.split("\n").slice(0, 3), use(22, "s", "mcp__clay__start_playground"), result(23, "s", built), ...leg.split("\n").slice(3)].join("\n");
+  assert.deepEqual(linkTimes(late), { link: 13, built: 24, said: null, startedFirst: false, orphanStart: false });
+  assert.deepEqual(linkTimes([use(13, "s", "mcp__clay__start_playground"), result(14, "s", "Nothing was started.", true), ...leg.split("\n")].join("\n")), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: false });
+  // A start that the create did not fill (another id) is not the link: the person's page never becomes the playground.
+  const other = JSON.stringify({ playground_id: "another-id", url: "http://127.0.0.1:1/p/another-id" });
+  assert.deepEqual(linkTimes([use(13, "s", "mcp__clay__start_playground"), result(14, "s", other), ...leg.split("\n")].join("\n")), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: true });
+});
+
+test("tool use: a start where no playground was right counts like a build", () => {
+  assert.deepEqual([toolUse(byId("none-fact"), [call("start_playground")], null).id, toolUse(byId("none-fact"), [call("start_playground")], null).status], ["no_playground", "fail"]);
+  // A build case still needs the create: a start alone leaves the person on a page that never becomes a playground.
+  assert.equal(toolUse(byId("price-email"), [call("start_playground")], null).status, "fail");
+  assert.equal(toolUse(byId("price-email"), [call("start_playground"), call("create_playground")], null).status, "pass");
 });

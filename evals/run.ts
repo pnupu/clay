@@ -40,7 +40,7 @@ import { CAUSE, choiceHandback, creation, directAnswer, fileMatches, lastBuild, 
 import { CHROME, checkPage, personSettles, previewWithoutWebNumbers } from "./page.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES as FIXED, type Case } from "./requests.ts";
-import { linkSeconds, parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
+import { linkTimes, parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
 
 const HERE = import.meta.dirname;
 const SECOND_LEG = "ok I'm done, go ahead";
@@ -51,8 +51,16 @@ type CaseResult = {
   firstFail: Check | null;
   checks: Check[];
   seconds: number;
-  /** Seconds from the start of the build leg to the first create result with a URL: when the person can have the link. */
+  /** Seconds from the start of the build leg to the first start_playground result (or the first create result when the agent started none): when the person can have the link. */
   linkSeconds?: number | null;
+  /** Seconds to the first create result with a URL: when the playground is built. */
+  builtSeconds?: number | null;
+  /** Seconds to the first visible reply that holds the URL: when the person really has the link (they cannot see a tool result). */
+  saidSeconds?: number | null;
+  /** A start_playground succeeded before the agent called the create tool, and the create filled the playground it started. */
+  startedFirst?: boolean;
+  /** The agent started a playground that no create filled: the person's link never becomes the playground. */
+  orphanStart?: boolean;
   tokens: { input: number; cached: number; output: number } | null;
   agentRuns: number;
   subject: SubjectName; model: string | null;
@@ -233,7 +241,10 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
 
   // ---- First leg: the request.
   const first = await leg("leg1", asked(c));
-  if (c.expect === "build") r.linkSeconds = linkSeconds(read(join(dir, "leg1.jsonl")) ?? ""); // from the saved transcript, so --from has it too
+  if (c.expect === "build") {
+    const t = linkTimes(read(join(dir, "leg1.jsonl")) ?? ""); // from the saved transcript, so --from has it too
+    Object.assign(r, { linkSeconds: t?.link ?? null, builtSeconds: t?.built ?? null, saidSeconds: t?.said ?? null, startedFirst: t?.startedFirst ?? false, orphanStart: t?.orphanStart ?? false });
+  }
   add(toolUse(c, first.calls, prepared?.id ?? null));
 
   if (c.expect === "none") {
@@ -334,6 +345,8 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
   const rate = (rs: CaseResult[]) => { const n = rs.filter((r) => r.result !== "skip"); return n.length ? `${n.filter((r) => r.result === "pass").length} of ${n.length} (${Math.round((100 * n.filter((r) => r.result === "pass").length) / n.length)}%)` : "none run"; };
   const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
   const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? Math.round((s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2) : null; };
+  /** A median for a sentence: "12 s", or "none" when no build has the value (no visible reply held the link). */
+  const medianOf = (xs: (number | null | undefined)[]) => { const m = median(xs.filter((x): x is number => x != null)); return m == null ? "none" : `${m} s`; };
   const linked = ran.filter((r) => r.linkSeconds != null);
   const tokens = (t: CaseResult["tokens"]) => (t ? `${k(t.input + t.output)} (+${k(t.cached)} cached)` : "not reported");
   const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ");
@@ -346,7 +359,7 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
     `# Clay evals: run ${meta.runId}`,
     "",
     `- First-try pass rate: **${rate(results)}**${results.length > ran.length ? `; ${results.length - ran.length} skipped` : ""}`,
-    ...(linked.length ? [`- Time until the link exists (the build leg's start to the first create result with a URL; the agent may say it later), median of ${linked.length} build(s): **${median(linked.map((r) => r.linkSeconds!))} s**. Their total time over all legs, median: ${median(linked.map((r) => r.seconds))} s.`] : []),
+    ...(linked.length ? [`- Time until the link exists (the build leg's start to the first start_playground result, or to the first create result when the agent started none), median of ${linked.length} build(s): **${median(linked.map((r) => r.linkSeconds!))} s**. Time to the built playground (the first create result with a URL), median of ${linked.filter((r) => r.builtSeconds != null).length}: ${medianOf(linked.map((r) => r.builtSeconds))}. The link in a visible reply (the person cannot see a tool result), median of ${linked.filter((r) => r.saidSeconds != null).length}: **${medianOf(linked.map((r) => r.saidSeconds))}**. Their total time over all legs, median: ${median(linked.map((r) => r.seconds))} s.`, `- start_playground first (a start succeeded before the create tool was called, and the create filled it): **${linked.filter((r) => r.startedFirst).length} of ${linked.length}** build(s).${ran.some((r) => r.orphanStart) ? ` A started playground that no create filled: ${ran.filter((r) => r.orphanStart).map((r) => r.id).join(", ")}.` : ""}`] : []),
     `- Subject: ${meta.subject}, model ${[...new Set(ran.map((r) => r.model).filter(Boolean))].join(", ") || meta.model || "the CLI's default"}. Server: ${meta.baseUrl} (kit: ${meta.kit ? "yes" : "no"}).${meta.label ? ` ${meta.label}.` : ""}`,
     `- Harness commit ${meta.commit} on ${meta.branch}, started ${meta.startedAt}. Concurrency ${meta.concurrency}, timeout ${meta.timeoutSeconds} s per agent run. Agent runs: ${results.reduce((n, r) => n + r.agentRuns, 0)}.`,
     `- Command: \`${meta.command}\``,
@@ -361,9 +374,9 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
     "",
     "## Cases",
     "",
-    "| Case | Result | First failing check | Link exists after | Time | Tokens in+out |",
-    "|---|---|---|---|---|---|",
-    ...results.map((r) => `| ${r.id} | ${r.result === "pass" ? "PASS" : r.result === "fail" ? "**FAIL**" : "skip"} | ${r.result === "skip" ? cell(r.skipReason ?? "") : r.firstFail ? cell(`${r.firstFail.id}: ${r.firstFail.reason}`) : ""} | ${r.linkSeconds != null ? `${r.linkSeconds} s` : ""} | ${r.result === "skip" ? "" : `${r.seconds} s`} | ${r.result === "skip" ? "" : tokens(r.tokens)} |`),
+    "| Case | Result | First failing check | Link exists after | Link said after | Built after | Time | Tokens in+out |",
+    "|---|---|---|---|---|---|---|---|",
+    ...results.map((r) => `| ${r.id} | ${r.result === "pass" ? "PASS" : r.result === "fail" ? "**FAIL**" : "skip"} | ${r.result === "skip" ? cell(r.skipReason ?? "") : r.firstFail ? cell(`${r.firstFail.id}: ${r.firstFail.reason}`) : ""} | ${r.linkSeconds != null ? `${r.linkSeconds} s${r.startedFirst ? " (start)" : ""}${r.orphanStart ? " (a start was not filled)" : ""}` : ""} | ${r.saidSeconds != null ? `${r.saidSeconds} s` : ""} | ${r.builtSeconds != null ? `${r.builtSeconds} s` : ""} | ${r.result === "skip" ? "" : `${r.seconds} s`} | ${r.result === "skip" ? "" : tokens(r.tokens)} |`),
     "",
     "## Failures by cause",
     "",
