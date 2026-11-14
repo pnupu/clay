@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cleanValues, explorationWords, initialValues, mergeKitExploration, renderOutputs, type KitState } from "./kit.ts";
+import { checkKit, cleanValues, explorationWords, initialValues, mergeKitExploration, renderOutputs, type KitState } from "./kit.ts";
 import { BUTTON_EXAMPLE, SPRING_EXAMPLE } from "./reference.ts";
 import { mergeSpec, parseSpec, toSpec, type Spec } from "./spec.ts";
 import { newPlayground } from "./store.ts";
@@ -118,4 +118,26 @@ test("the exploration summary keeps the path: the range tried per slider, the va
   assert.equal(mergeKitExploration(kit.controls, e, { controls: { radius: { final: 999 } } }, "t3"), null);
   assert.equal(mergeKitExploration(kit.controls, e, { controls: { weight: { final: "font-black" } } }, "t3"), null);
   assert.equal(mergeKitExploration(kit.controls, e, null, "t3"), null);
+});
+
+test("a toggle or option text may use another control's value in an output, one level deep", () => {
+  const raw = {
+    controls: [
+      { id: "accent", type: "color", label: "Accent", meaning: "accent colour of the badge", initial: "#7170ff" },
+      { id: "badge", type: "toggle", label: "Badge", meaning: "show the Most popular badge", initial: true, on: '<span className="bg-[{{accent}}]">Most popular</span>', off: "" },
+      { id: "size", type: "select", label: "Size", meaning: "text size class", initial: "text-sm", options: [{ value: "text-sm" }, { value: "text-[{{accent}}]" }] },
+    ],
+    view: { html: '<p style="color:{{accent}}">x</p>' },
+    outputs: [{ id: "code", label: "the badge", template: "<div>{{badge}}</div> {{size}}" }],
+  };
+  const r = checkKit(raw);
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  // The accent is in no output template by name, but it comes back inside the badge: no warning that it is lost.
+  assert.deepEqual(r.warnings, []);
+  assert.equal(renderOutputs(r.kit, { accent: "#ff0000", badge: true, size: "text-sm" }).code, '<div><span className="bg-[#ff0000]">Most popular</span></div> text-sm');
+  assert.equal(renderOutputs(r.kit, { accent: "#ff0000", badge: false, size: "text-[{{accent}}]" }).code, "<div></div> text-[#ff0000]");
+  // A text that names a control that does not exist, or itself, is refused with the fix.
+  const bad = checkKit({ ...raw, controls: [raw.controls[0], { ...raw.controls[1], on: "{{nope}} {{badge}}" }, raw.controls[2]] });
+  assert.ok(!bad.ok && bad.errors.some((e: string) => /controls\.badge: its text holds \{\{nope\}\}, which is not a control/.test(e)) && bad.errors.some((e: string) => /is the control itself/.test(e)));
 });

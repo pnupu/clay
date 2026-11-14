@@ -79,13 +79,23 @@ export const initialValues = (controls: Control[]): Values => Object.fromEntries
 /** The text a control value stands for in a template: the number, the option value, the colour, or the toggle's on/off text. */
 export const textOf = (c: Control, v: Value): string => (c.type === "toggle" ? (v ? c.on : c.off) : String(v));
 
-/** Fill `{{control_id}}` in a template. Unknown names stay as written; checkKit() rejects them before anything is stored. */
+/**
+ * Fill `{{control_id}}` in an output template. Unknown names stay as written; checkKit() rejects them before anything is stored.
+ * The text that a toggle or a select option stands for may itself hold placeholders of other controls (a badge that is on
+ * or off, with the accent colour inside it): they are filled too, one level deep. So an output is complete code, with no
+ * part left for the agent to patch by hand at hand-back.
+ */
 export function render(template: string, controls: Control[], values: Values): string {
-  return template.replace(PLACEHOLDER, (all, name: string) => {
+  const text = (name: string, all: string, nested: boolean): string => {
     const c = controls.find((x) => x.id === name);
-    return c && values[name] !== undefined ? textOf(c, values[name]) : all;
-  });
+    if (!c || values[name] === undefined) return all;
+    const t = textOf(c, values[name]);
+    return nested && (c.type === "toggle" || c.type === "select") ? t.replace(new RegExp(PLACEHOLDER.source, "g"), (inner, n: string) => (n === name ? inner : text(n, inner, false))) : t;
+  };
+  return template.replace(PLACEHOLDER, (all, name: string) => text(name, all, true));
 }
+/** The placeholders inside the texts that a toggle or a select can stand for. */
+const nestedNames = (c: Control): string[] => (c.type === "toggle" ? [c.on, c.off] : c.type === "select" ? c.options.map((o) => o.value) : []).flatMap((t) => [...t.matchAll(PLACEHOLDER)].map((m) => m[1]));
 /** A one-line output (a class string) loses the gaps that an empty toggle text leaves. A multi-line output (CSS, JSON) keeps its layout. */
 const tidy = (text: string) => (text.includes("\n") ? text.replace(/[ \t]+$/gm, "").trim() : text.replace(/\s+/g, " ").trim());
 export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => Object.fromEntries(kit.outputs.map((o) => [o.id, tidy(render(o.template, kit.controls, values))]));
@@ -205,12 +215,17 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
     }
   }
 
+  // ---- A toggle or option text may hold {{other_control}}: it is filled in outputs (render()), one level deep.
+  for (const c of controls) for (const n of nestedNames(c)) if (!ids.includes(n) || n === c.id) errors.push(`controls.${c.id}: its text holds {{${n}}}, which ${n === c.id ? "is the control itself" : "is not a control"}. ${known}`);
+  /** The controls an output shows: the ones in its template, and the ones inside the texts of those. */
+  const shown = (template: string) => names(template).flatMap((n) => [n, ...controls.filter((c) => c.id === n).flatMap(nestedNames)]);
+
   // ---- Every control must do something, and should come back in an output.
   const templates = [html, css, ...outputs.map((o) => String(o.template ?? ""))];
   for (const c of controls) {
-    const bound = templates.some((t) => names(t).includes(c.id));
+    const bound = templates.some((t) => shown(t).includes(c.id));
     if (!bound && !word(c.id).test(js)) errors.push(`controls.${c.id}: nothing uses this control. Bind it with {{${c.id}}} in view.html, view.css or an output, or read clay.values.${c.id} in view.js; or remove the control.`);
-    else if (!outputs.some((o) => names(String(o.template ?? "")).includes(c.id))) warnings.push(`controls.${c.id} is in no output. You will get its settled value, but no code-ready text for it.`);
+    else if (!outputs.some((o) => shown(String(o.template ?? "")).includes(c.id))) warnings.push(`controls.${c.id} is in no output. You will get its settled value, but no code-ready text for it.`);
   }
 
   if (raw.inline && JSON.stringify(raw.inline).length > KIT_LIMITS.inline) errors.push(`data.inline: at most ${KIT_LIMITS.inline} characters of JSON.`);

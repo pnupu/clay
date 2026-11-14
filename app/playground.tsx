@@ -271,8 +271,8 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
                 <p className="muted small">The cheapest vendor does not change anywhere between {num(axisDef.min)} and {num(axisDef.max)} {axisDef.unit}.</p>
               ) : (
                 <ul className="cross">
-                  {cross.map((c) => (
-                    <li key={c.at}>
+                  {cross.map((c, ci) => (
+                    <li key={`${ci}:${c.at}`}>
                       At <button className="link" onClick={() => setUsage({ ...usage, [axisDef.id]: c.at })}>{num(c.at)} {axisDef.unit}</button> the cheapest changes from <b>{c.from ? sources[c.from]?.name : "none"}</b> to <b>{c.to ? sources[c.to]?.name : "none"}</b>.
                     </li>
                   ))}
@@ -309,8 +309,8 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
                 {state.events.map((e) => (
                   <li key={e.id} className={now - Date.parse(e.at) < 30000 ? "new" : undefined}>
                     <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "demo page published" : "re-check"}</p>
-                    {e.changes.slice(0, 6).map((c) => (
-                      <p className="change" key={c.path}>{h.humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
+                    {e.changes.slice(0, 6).map((c, ci) => (
+                      <p className="change" key={`${ci}:${c.path}`}>{h.humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
                     ))}
                     {e.changes.length > 6 && <p className="small muted">and {e.changes.length - 6} more facts</p>}
                     {e.unconfirmed ? <p className="small muted">Confirmed by a second read. {e.unconfirmed} more {e.unconfirmed === 1 ? "difference" : "differences"} appeared in only one of the two reads and {e.unconfirmed === 1 ? "is" : "are"} not reported.</p> : null}
@@ -397,14 +397,14 @@ function VendorRow({ v, src, now, place, chosen, saved, onChoose, effect }: { v:
             {snap && ` · source read ${ago(snap.fetchedAt, now)}`}
           </summary>
           <Lines p={p} model={snap?.model ?? null} evidence={snap?.evidence ?? {}} url={snap?.url ?? src?.url ?? ""} age={ago(snap?.fetchedAt, now)} />
-          {v.plans.filter((x) => x.ineligible).map((x) => <p className="small muted" key={x.plan}>{x.plan} plan is out: {humanize(x.ineligible!)}.</p>)}
+          {v.plans.filter((x) => x.ineligible).map((x, i) => <p className="small muted" key={`${i}:${x.plan}`}>{x.plan} plan is out: {humanize(x.ineligible!)}.</p>)}
           {snap?.truncated && <p className="small warn">The page was too long to read in full. Some values may be missing.</p>}
-          {p.assumed.map((u) => <p className="small muted" key={u}>Counted as $0: {humanize(u)}.</p>)}
+          {p.assumed.map((u, i) => <p className="small muted" key={`${i}:${u}`}>Counted as $0: {humanize(u)}.</p>)}
         </details>
       )}
-      {p?.unknowns.map((u) => <p className="small warn" key={u}>Unknown: {humanize(u)}.</p>)}
-      {p && snap?.quarantined?.filter((q) => q.path.startsWith(p.plan + " / ")).map((q) => (
-        <p className="small warn" key={q.path}>Not used: the extraction returned {q.value} for {humanize(q.path)}, but that number is not in the page text.</p>
+      {p?.unknowns.map((u, i) => <p className="small warn" key={`${i}:${u}`}>Unknown: {humanize(u)}.</p>)}
+      {p && snap?.quarantined?.filter((q) => q.path.startsWith(p.plan + " / ")).map((q, qi) => (
+        <p className="small warn" key={`${qi}:${q.path}`}>Not used: the extraction returned {q.value} for {humanize(q.path)}, but that number is not in the page text.</p>
       ))}
     </li>
   );
@@ -421,13 +421,13 @@ function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingMo
   return (
     <table className="lines">
       <tbody>
-        {p.lines.map((l) => {
+        {p.lines.map((l, li) => {
           const q = quoteOf(l.key)?.replace(/<br\s*\/?>/g, " · ") ?? null;
           const ok = evidence[`${p.plan}/${l.key}`];
           // Text fragment link: opens the source page scrolled to the quoted words where the browser supports it.
           const frag = q ? `#:~:text=${encodeURIComponent(q.split(" · ")[0].slice(0, 80))}` : "";
           return (
-            <tr key={l.key}>
+            <tr key={`${li}:${l.key}`}>
               <td>{label(l.label.replace(" add-on", ""))}</td>
               <td className="amt">{l.amount == null ? <span className="warn">unknown</span> : money(l.amount)}</td>
               <td className="small">
@@ -532,9 +532,9 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
       <div className="plot">
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Monthly cost per vendor along ${lower(axis.label)}`}
           onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover(inv(((e.clientX - r.left) / r.width) * W)); }} onMouseLeave={() => setHover(null)}>
-          {yt.map((y) => <g key={y}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="grid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
+          {yt.map((y, i) => <g key={`${i}:${y}`}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="grid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
           {xt.map((x, i) => <text key={i} x={sx(x)} y={H - 8} textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"} className="tick">{short(x)} {i === 2 ? axis.unit : ""}</text>)}
-          {cross.filter((c) => c.at > lo && c.at < hi).map((c) => <line key={c.at} x1={sx(c.at)} x2={sx(c.at)} y1={T} y2={H - B} className="cross-line" />)}
+          {cross.filter((c) => c.at > lo && c.at < hi).map((c, i) => <line key={`${i}:${c.at}`} x1={sx(c.at)} x2={sx(c.at)} y1={T} y2={H - B} className="cross-line" />)}
           {v >= lo && v <= hi && <line x1={sx(v)} x2={sx(v)} y1={T} y2={H - B} className="here" />}
           {series.map((s) => <path key={s.id} d={path(s.ys)} fill="none" stroke={color(s.id)} strokeWidth={2} strokeLinejoin="round" />)}
           {v >= lo && v <= hi && here.rows.filter((r) => r.y.complete).map((r) => <circle key={r.id} cx={sx(v)} cy={sy(r.y.best!.cost)} r={4.5} fill={color(r.id)} className="marker" />)}

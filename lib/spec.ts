@@ -21,15 +21,15 @@ const pricePages = z.strictObject({
 const control = z.strictObject({
   id: z.string().max(40).describe("Stable id, for example radius. Lowercase letters, digits, underscores. It is the name in {{radius}} and clay.values.radius."),
   type: z.enum(["slider", "toggle", "select", "color"]).describe("slider: a number (min, max, step, initial, unit). toggle: on or off (initial, and the texts on/off that it stands for in templates). select: one of a few options (options, initial). color: a colour as #rrggbb (initial, palette, free)."),
-  label: z.string().max(80).describe("What the person sees next to the control."),
-  meaning: z.string().max(240).describe("The one thing this control changes in the real code, for example 'border-radius of the button, in px'. You read it again at hand-back."),
+  label: z.string().max(60).describe("What the person sees next to the control, 2 to 60 characters."),
+  meaning: z.string().max(200).describe("The one thing this control changes in the real code, for example 'border-radius of the button, in px'. You read it again at hand-back."),
   min: z.number().optional().describe("slider: lowest value."),
   max: z.number().optional().describe("slider: highest value. Set the range around the person's current value, not around everything possible."),
   step: z.number().optional().describe("slider: step, default 1. initial must be reachable from min in steps."),
-  unit: z.string().max(20).optional().describe("slider: unit shown after the number, for example px."),
+  unit: z.string().max(12).optional().describe("slider: unit shown after the number, for example px."),
   initial: z.union([z.number(), z.string(), z.boolean()]).describe("Starting value: the value in the person's code now. slider: number. toggle: true or false. select: the value of one option. color: #rrggbb."),
-  options: z.array(z.strictObject({ value: z.string().max(200), label: z.string().max(80).optional() })).max(KIT_LIMITS.options).optional().describe("select: 2 to 12 options. value is the text used in templates and code (for example a Tailwind class), label is what the person sees."),
-  on: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when on, for example 'shadow-md'. Default 'true'."),
+  options: z.array(z.strictObject({ value: z.string().max(200), label: z.string().max(60).optional() })).max(KIT_LIMITS.options).optional().describe("select: 2 to 12 options. value is the text used in templates and code (for example a Tailwind class), label is what the person sees."),
+  on: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when on, for example 'shadow-md', at most 200 characters. It may hold {{other_control}}, which is filled in outputs. Default 'true'."),
   off: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when off, for example ''. Default 'false'."),
   palette: z.union([z.literal("brand"), z.array(z.string().max(9)).max(KIT_LIMITS.palette)]).optional().describe("color: swatches to offer. 'brand' uses the colours of data.brand; or a list of #rrggbb."),
   free: z.boolean().optional().describe("color: true (default) lets the person pick any colour, false only the palette."),
@@ -46,7 +46,7 @@ const view = z.strictObject({
 
 const output = z.strictObject({
   id: z.string().max(40).describe("Stable id, for example classes."),
-  label: z.string().max(80).describe("What it is, for example 'className of the signup button'."),
+  label: z.string().max(60).describe("What it is, in 2 to 60 characters, for example 'className of the signup button'."),
   template: z.string().describe("The final code or values with {{control_id}} placeholders, written so that you can paste the result into the person's file: a class string, a JSON object, a CSS rule."),
 });
 
