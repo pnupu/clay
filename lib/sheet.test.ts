@@ -104,6 +104,8 @@ test("a page of data in styles of its own is a problem for the agent that builds
   assert.deepEqual(data(".a { color: rgb(1 10 0); border-color: rgb( 1  10 0 ); background: rgb(0 0 0 / 0.5); outline-color: rgb(0 0 0/0.5); fill: rgb(0 0 0 /0.5) }"), []);
   // Two colours that differ only in where their spaces are stay two colours: with a third, three.
   assert.match(data(".a { color: rgb(1 10 0); background: rgb(11 0 0); outline-color: #2a78d6 }")[0], /3 colours of its own \(rgb\(1 10 0\), rgb\(11 0 0\), #2a78d6\)/);
+  // A comment in view.css is not a style.
+  assert.deepEqual(data("/* font: 10px x; color: #111 #222 #333 */ .a { margin: 0 }"), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });

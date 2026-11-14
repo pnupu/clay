@@ -214,7 +214,8 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   }
   const out: string[] = [];
   // Every style attribute ends its last declaration, so a value is always the text between a colon and ";" or "}".
-  const styles = [preview.css, ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => `${m[1] ?? m[2]};`)].join("\n");
+  // A comment in view.css is not a style.
+  const styles = [preview.css.replace(/\/\*[\s\S]*?\*\//g, ""), ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => `${m[1] ?? m[2]};`)].join("\n");
   // A declaration, not a selector (".font:hover"), and not "font: inherit", which takes Clay's typeface.
   if (/(?<![\w.#-])font(?:-family)?\s*:(?!\s*(?:inherit|unset|initial)\b)/i.test(styles)) out.push("view.css: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
   // The size of font-size and of the font shorthand, in px or rem (16 px).

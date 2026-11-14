@@ -45,7 +45,9 @@ table { width: calc(100% + 20px); margin-left: -10px; margin-right: -10px; borde
 .scroll > table { width: 100%; margin-left: 0; margin-right: 0; }
 th { text-align: left; font-size: 13px; line-height: 1.3; font-weight: 500; color: var(--muted); padding: 0 10px 6px; vertical-align: bottom; border-bottom: 1px solid var(--line-2); }
 td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.num { text-align: right; white-space: nowrap; }
+/* A number stays on one line; the head of its column may wrap, so five columns fit a frame of about 500 px. */
+.num { text-align: right; }
+td.num { white-space: nowrap; }
 tr.pick > td { background: var(--accent-bg); font-weight: 600; }
 tr.pick > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 tr.out > td, .card.out { color: var(--muted); }
