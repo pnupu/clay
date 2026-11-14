@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Kit from "@/app/kit";
@@ -58,7 +59,7 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
       {/* The open page shows a revision by the agent with no reload: this asks for the revision, the keys below remount the screen. Only for its owner and the operator: the visitors of an example do not poll (an example changes when the operator marks it again). */}
       {canWrite(me, p) && <SelfUpdate id={pg} rev={pageRev(p)} data={dataStamp(p)} own={builtByViewer} />}
       {/* A preview playground has its own screen. Someone who does not own it starts on the start values (an example) and is not sent what the owner tried or settled. The key remounts the screen when the agent revises the playground. */}
-      <Hold stamp={screen}>{p.kit ? <Kit connected={connected} byTeam={!p.owner} key={screen} id={p.domain.id} version={pinned} title={p.domain.question} state={(canWrite(me, p) && !pinned ? p : nonOwnerView(p)).kit!} canWrite={canWrite(me, p)} builtByViewer={builtByViewer} leftOut={p.leftOut} reading={workStatus(p)?.status === "running" || brandPending(p.kit)} /> : <Playground connected={connected} byTeam={!p.owner} builtByViewer={builtByViewer} key={screen} domain={p.domain} explored={(canWrite(me, p) ? p : nonOwnerView(p)).exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}</Hold>
+      <Hold stamp={createHash("sha256").update(screen).digest("hex").slice(0, 16)}>{p.kit ? <Kit connected={connected} byTeam={!p.owner} key={screen} id={p.domain.id} version={pinned} title={p.domain.question} state={(canWrite(me, p) && !pinned ? p : nonOwnerView(p)).kit!} canWrite={canWrite(me, p)} builtByViewer={builtByViewer} leftOut={p.leftOut} reading={workStatus(p)?.status === "running" || brandPending(p.kit)} /> : <Playground connected={connected} byTeam={!p.owner} builtByViewer={builtByViewer} key={screen} domain={p.domain} explored={(canWrite(me, p) ? p : nonOwnerView(p)).exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}</Hold>
     </>
   );
 }

@@ -153,8 +153,12 @@ export function Hold({ stamp, children }: { stamp: string; children: ReactNode }
       clearTimeout(late);
       late = setTimeout(() => setDown(false), 50);
     };
-    // A press that ended outside this document (outside the window, or over the preview frame) sends no pointerup here.
-    const move = (e: PointerEvent) => void (!e.buttons && setDown(false));
+    // A move says whether a button or a finger is still down. It ends a press that was released outside this document
+    // (outside the window, or over the preview frame: no pointerup here), and keeps the hold when a second finger lifts.
+    const move = (e: PointerEvent) => {
+      if (e.buttons) press();
+      else setDown(false);
+    };
     window.addEventListener("pointerdown", press, true);
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
@@ -177,8 +181,9 @@ const IDLE_MS = 10 * 60_000;
  * Beside a built playground: asks for the revision every 4 seconds (every 30 after 10 minutes with no input) and, when
  * the agent has revised the playground (or web data of a preview has arrived), lets the server render the page again. The screens are keyed by their spec
  * (app/p/[pg]/page.tsx), so the new version mounts, and the person's control values come with it (lib/carry.ts). A drag
- * is not interrupted: while a pointer is down, the new version waits for its release. `rev` is the revision that the
- * page was rendered with.
+ * is not interrupted: Hold (above) keeps the shown screen while a pointer is down. This component also does not ask for
+ * the new version during a press, so nothing is fetched that cannot be shown. `rev` is the revision that the page was
+ * rendered with.
  * lean: only input in this document is seen. A drag inside the sandboxed preview frame (a map that is panned) does not
  * hold the new version back, and does not count as input for the slower poll. If that matters, let the frame report
  * input over its message bridge.
