@@ -17,7 +17,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, wri
 import { randomBytes } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { chromium, type Browser } from "playwright-core";
-import { MCP_PATH, TOOL, authHeader, dimensions, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, vendorId, type Dimension } from "./adapter.ts";
+import { MCP_PATH, TOOL, authHeader, dimensions, finalProblems, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, vendorId, type Dimension } from "./adapter.ts";
 import { CAUSE, creation, directAnswer, fileMatches, lastBuild, namesChoice, ranges, readBack, toolUse, verdict, type Check } from "./check.ts";
 import { CHROME, checkPage, personSettles } from "./page.ts";
 import { HELD_OUT } from "./heldout.ts";
@@ -190,9 +190,17 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   }
 
   // ---- Build cases: creation, the page, the ranges.
-  add(creation(first.calls, first.allText));
   const build = lastBuild(first.calls);
   const built = { id: build.last?.id ?? build.attempted };
+  // What the server says is wrong with the build once its reading has ended (the read tool waits 20 s per call).
+  let final: string[] | null = null;
+  for (let i = 0; built.id && build.last && i < 12 && final == null; i++) {
+    const res = await mcp("tools/call", { name: TOOL.read, arguments: { playground_id: built.id } }).catch(() => null);
+    const text = String((res?.content as { text?: string }[] | undefined)?.[0]?.text ?? "");
+    final = finalProblems(text);
+    if (final == null && !/"status": "running"/.test(text)) break; // a playground without a build (a preview), or an error
+  }
+  add(creation(first.calls, first.allText, final));
   const url = built.id ? pageUrl(built.id) : null;
   if (!built.id || !url) return finish();
   r.playground = url;

@@ -29,7 +29,20 @@ export function parseBuild(resultText: string): Build {
   }
 }
 /** The problems that mean a broken build, which the agent must repair or tell the person. The others are true findings about a page. */
-export const isBuildError = (problem: string) => /was not read|no plan was found|none states a quantity|no page states a price|no page says whether|could not be read/.test(problem);
+export const isBuildError = (problem: string) => /^BROKEN BUILD|was not read|no plan was found|none states a quantity|no page states a price|no page says whether|could not be read/.test(problem);
+/**
+ * The problems list of a read result once the build has ended, or null while it runs (or for a playground without one).
+ * A build answers the agent before every page is read, so the last create or revise result may hold an empty list that
+ * says nothing: the truth is what the server reports when the reading has ended.
+ */
+export function finalProblems(readResultText: string): string[] | null {
+  try {
+    const r = JSON.parse(readResultText) as { build?: { status?: string }; problems?: unknown };
+    return r.build && r.build.status !== "running" && Array.isArray(r.problems) ? r.problems.map(String) : null;
+  } catch {
+    return null;
+  }
+}
 /** Who a problem is about: "resend: ..." gives "resend", "metric emails: ..." gives "emails". */
 export const problemSubject = (problem: string) => problem.split(":")[0].replace(/^(metric|feature)\s+/, "").trim();
 /** The playground id a tool call works on. */

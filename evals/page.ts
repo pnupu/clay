@@ -144,7 +144,9 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     checks.push(
       !controls.length ? { id: "controls", status: "fail", reason: "the page has no controls" } :
       hidden.length ? { id: "controls", status: "fail", reason: `no control on the page for: ${hidden.join(", ")}` } :
-      dead.length ? { id: "controls", status: "fail", reason: `moving these changes nothing visible: ${dead.join(", ")}` } :
+      // lean: on a preview that animates for ever only texts are compared, so a control that changes only the animation
+      // and is in no output is reported here too. The kit warns about such a control (it returns no code-ready text).
+      dead.length ? { id: "controls", status: "fail", reason: `moving these changes nothing visible: ${dead.join(", ")}${animated.yes ? " (the preview animates on its own, so only the output texts were compared)" : ""}` } :
       { id: "controls", status: "pass", reason: `${controls.length} control(s), each changes something visible${animated.yes ? " (the preview animates on its own, so the output texts were compared, not its pixels)" : ""}` },
     );
 

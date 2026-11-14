@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
-import { dimensions } from "./adapter.ts";
+import { dimensions, finalProblems } from "./adapter.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES } from "./requests.ts";
 
@@ -117,6 +117,15 @@ test("creation: a failed build, a repaired build, and a problem left untold", ()
   assert.match(left.reason, /not told: mailgun/);
   assert.equal(creation([call("create_playground", {}, broken)], "Mailgun's page could not be read, so its row is empty.").status, "pass");
   assert.equal(creation([], "").status, "na");
+  // A build that answered "running" has an empty list; the server's list after the build ended is what counts.
+  const early = [call("create_playground", {}, { playground_id: "p1", url: "http://x/p/p1", build: { status: "running" }, problems: [] })];
+  assert.equal(creation(early, "Here is your page.").status, "pass");
+  assert.match(creation(early, "Here is your page.", ["resend: the pricing page was not read (timeout). Fix: ..."]).reason, /not told: resend/);
+  assert.equal(creation(early, "Resend could not be read, so I left it out.", ["resend: the pricing page was not read (timeout)."]).status, "pass");
+  assert.equal(creation(early, "Here is your page.", ["BROKEN BUILD: only 1 of 4 vendors can be ranked at the starting values"]).status, "fail");
+  assert.deepEqual(finalProblems(JSON.stringify({ build: { status: "running" }, problems: [] })), null);
+  assert.deepEqual(finalProblems(JSON.stringify({ build: { status: "done" }, problems: ["x: y"] })), ["x: y"]);
+  assert.deepEqual(finalProblems(JSON.stringify({ kind: "preview" })), null);
   // An id that an earlier run left on the server: the sample is void, and the cause is the harness, not the agent.
   const collided = creation([call("create_playground", { id: "p1" }, 'A playground with id "p1" already exists at http://x/p/p1. To change it, call revise_playground.', true), call("revise_playground", {}, fine)], "");
   assert.deepEqual([collided.id, collided.status], ["agent_run", "fail"]);

@@ -59,7 +59,7 @@ export function lastBuild(calls: Call[]) {
 }
 
 // ---- Did creation succeed, and were reported problems repaired or told to the person plainly?
-export function creation(calls: Call[], saidToPerson: string): Check {
+export function creation(calls: Call[], saidToPerson: string, final: string[] | null = null): Check {
   const { builds, last } = lastBuild(calls);
   if (!builds.length) return na("creation", "no build call");
   // Not a first try: the agent met a playground that an earlier run left on this server, under the id it chose.
@@ -68,7 +68,8 @@ export function creation(calls: Call[], saidToPerson: string): Check {
   if (!last && builds.every((x) => /timed out|timeout/i.test(x.result))) return fail("build_timeout", `all ${builds.length} build call(s) timed out at the agent's client ("${cut(builds[0].result, 60)}"), so the agent never saw a build result`);
   if (!last) return fail("creation", `no build call succeeded: ${cut(builds[builds.length - 1].result)}`);
   if (last.stopped) return { id: "agent_run", status: "fail", reason: `the server stopped reading: ${cut(last.stopped)}` };
-  const open = last.problems.filter(isBuildError);
+  // `final`: the server's problems list after the build has ended. Without it, the list of the agent's last build result.
+  const open = (final ?? last.problems).filter(isBuildError);
   if (!open.length) return pass("creation", `built ${last.id}${builds.length > 1 ? ` in ${builds.length} build calls` : ""}, no open build problem`);
   const said = saidToPerson.toLowerCase().replace(/[_-]/g, " ");
   const untold = open.filter((p) => !said.includes(problemSubject(p).toLowerCase().replace(/[_-]/g, " ")));

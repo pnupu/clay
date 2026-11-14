@@ -29,7 +29,7 @@ const expectations: [string, string, RegExp, string[]][] = [
   ["error-state.html", "page_loads", /the page shows an error: Alpha Mail/, []],
   ["missing.html", "page_loads", /HTTP 404/, []],
   // An animated preview: its pixels always change, so they must not make a dead control look alive.
-  ["animated-dead.html", "controls", /changes nothing visible: nothing$/, ["page_loads", "preview"]],
+  ["animated-dead.html", "controls", /changes nothing visible: nothing \(the preview animates on its own/, ["page_loads", "preview"]],
 ];
 let ok = true;
 for (const [file, id, reason, passing] of expectations) {
