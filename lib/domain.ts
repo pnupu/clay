@@ -239,9 +239,14 @@ export function normalise(raw: RawModel): PricingModel {
 
 // ---- Where to look for a vendor's pricing page.
 
-/** Does a read of a page give anything to compute with: a plan with a price, an included quantity or an unlimited metric? */
+/**
+ * Does a read of a page give anything to compute with? A plan counts when it states a base price, a price per unit, an
+ * included quantity above zero or an unlimited metric. It does not count for what the cost rules discard: the number a
+ * slider page shows at its start position (price_gap "interactive" with a base price of 0), or a metric that is only
+ * "not available".
+ */
 export const hasPrices = (m: PricingModel | null | undefined): boolean =>
-  (m?.plans ?? []).some((p) => p.base_price != null || (p.meters ?? []).some((x) => x.unlimited || x.included != null || (x.tiers ?? []).some((t) => t.price != null)));
+  (m?.plans ?? []).some((p) => (p.base_price != null && !(p.price_gap === "interactive" && !p.base_price)) || (p.meters ?? []).some((x) => x.unlimited || (x.included ?? 0) > 0 || (x.tiers ?? []).some((t) => t.price != null)));
 
 /** Host labels of side sites, which rarely carry the prices: docs.acme.com, www.stage.acme.com. */
 const OFF_SITE = /^(docs?|help|support|blog|status|community|forum|stage|staging|dev|developers?|api|app|dashboard|login|careers|investors?)$/;

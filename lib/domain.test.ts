@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { hasPrices, normalise, pricingCandidates, type RawModel } from "./domain.ts";
+import { diffModels } from "./diff.ts";
 import { planCost } from "./pricing.ts";
 
 test("the pages tried for a vendor's pricing: pricing pages of the main site, then /pricing, then the rest", () => {
@@ -70,6 +71,14 @@ test("a read counts as a pricing page only when it gives something to compute wi
   assert.equal(hasPrices(normalise(raw([plan("Enterprise", null)]))), false);
   assert.equal(hasPrices(normalise(raw([plan("Free", 0)]))), true);
   assert.equal(hasPrices(normalise(raw([plan("Team", null, { seats: { unlimited: true, included: null, overage_allowed: null, tiers: [], quote: null } })]))), true);
+  // What the cost rules discard does not count: the number a slider page shows at its start, a metric that is only "not available".
+  assert.equal(hasPrices(normalise(raw([plan("Select", 0, {}, "interactive")]))), false);
+  assert.equal(hasPrices(normalise(raw([plan("Starter", 26, {}, "interactive")]))), true);
+  assert.equal(hasPrices(normalise(raw([plan("Basic", null, { seats: { status: "not_available", included: null, overage_allowed: null, tiers: [], quote: null } })]))), false);
+  // "The price cannot be read" changes the cost, so a change of it is a change of the page's facts.
+  const before = normalise(raw([plan("Select", 0)]));
+  const after = normalise(raw([plan("Select", 0, {}, "interactive")]));
+  assert.deepEqual(diffModels(before, after), [{ path: "Select / price not readable", before: undefined, after: "interactive" }]);
   assert.equal(normalise(raw([], "interactive")).page_gap, "interactive");
   assert.equal(normalise(raw([], "anything else")).page_gap, undefined);
   assert.equal(normalise(raw([plan("Free", 0)], "not_pricing")).page_gap, undefined); // a reason only when there is no plan

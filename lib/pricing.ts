@@ -87,15 +87,12 @@ export function planCost(plan: Plan, a: Assumptions): PlanCost {
   return r;
 }
 
-/** Best plan of one vendor: the cheapest eligible plan with a fully known cost, else the eligible plan with the lowest known part (plans that state a price first). */
+/** Best plan of one vendor: the cheapest eligible plan with a fully known cost, else the eligible plan with the lowest lower bound. */
 export function vendorCost(id: string, model: PricingModel | null, a: Assumptions): VendorCost {
   const plans = (model?.plans ?? []).map((p) => planCost(p, a));
   const eligible = plans.filter((p) => !p.ineligible).sort((x, y) => x.cost - y.cost);
   const complete = eligible.find((p) => p.unknowns.length === 0);
-  // Without a fully known plan: the cheapest known part among the plans that state a price. A "contact sales" plan with
-  // nothing known comes last: it would report "at least $0", which says less than a plan whose price is partly known.
-  const partial = eligible.find((p) => !p.unknowns.some((u) => u.startsWith("custom pricing"))) ?? eligible[0];
-  return { id, best: complete ?? partial ?? null, complete: !!complete, plans };
+  return { id, best: complete ?? eligible[0] ?? null, complete: !!complete, plans };
 }
 
 export type Ranking = {
@@ -186,14 +183,28 @@ export function stand(models: Record<string, PricingModel | null>, a: Assumption
     return { ...base, state, cost, plan: v.best!.plan, gap, why: null, holds: state !== "outside" };
   }
   const u = r.unranked.find((x) => x.id === chosen);
-  if (u?.best) return { ...base, state: "unknown", cost: u.best.cost, plan: u.best.plan, gap: null, why: u.best.unknowns[0] ?? null, holds: false };
+  if (u?.best) {
+    // The cost is the vendor's lower bound. The reason is taken from a plan that states a price, when there is one: "contact
+    // sales" on an enterprise plan says less than the fact that is missing on the plan the person would buy.
+    const telling = u.plans.find((p) => !p.ineligible && p.unknowns.length > 0 && !p.unknowns.some((x) => x.startsWith("custom pricing"))) ?? u.best;
+    return { ...base, state: "unknown", cost: u.best.cost, plan: telling.plan, gap: null, why: telling.unknowns[0] ?? null, holds: false };
+  }
   if (u && models[chosen]?.plans?.length) return { ...base, state: "ineligible", cost: null, plan: null, gap: null, why: u.plans.find((p) => p.ineligible)?.ineligible ?? null, holds: false };
   return { ...base, state: "unread", cost: null, plan: null, gap: null, why: null, holds: false };
 }
 
-/** Are the controls at the assumptions of the saved decision? Only the metrics that the decision names count. */
+/**
+ * The assumptions of a saved decision for every metric of the playground. A metric that the decision does not name (it was
+ * added by a later revision) counts as 0, which is how the decision is judged: nothing is charged for it.
+ */
+export function savedAssumptions(saved: Assumptions, metricIds: string[]): Assumptions {
+  return { usage: { ...Object.fromEntries(metricIds.map((k) => [k, 0])), ...saved.usage }, required: saved.required };
+}
+
+/** Are the controls at the saved assumptions (complete them with savedAssumptions first)? Every metric and every must-have counts. */
 export function sameAssumptions(now: Assumptions, saved: Assumptions): boolean {
-  return Object.entries(saved.usage).every(([k, n]) => now.usage[k] === n) && now.required.length === saved.required.length && saved.required.every((f) => now.required.includes(f));
+  const keys = new Set([...Object.keys(saved.usage), ...Object.keys(now.usage)]);
+  return [...keys].every((k) => (now.usage[k] ?? 0) === (saved.usage[k] ?? 0)) && now.required.length === saved.required.length && saved.required.every((f) => now.required.includes(f));
 }
 
 const usd = (n: number) => "$" + fmtN(Math.round(n));
@@ -226,13 +237,17 @@ export function standSentence(s: Stand, name: string, cheapestName: string | nul
 // vendor by its cheapest plan that fits, so such a vendor's price is for its cheapest product: the page must say so.
 
 const TIER_WORD = /\b(free|hobby|starter|basic|essentials?|standard|plus|pro|professional|premium|teams?|business|growth|scale|startup|enterprise|developer|individual|personal|solo|studio|agency|advanced|ultimate|community|launch|pay[- ]as[- ]you[- ]go|payg)\b/i;
-/** A model number: letters followed by two or more digits, as in "RTX 6000", "A100" or "H100". "50K emails" is a quantity, not a model. */
-const MODEL_NUMBER = /\b[A-Za-z]{1,10}[- ]?\d{2,}/;
+/**
+ * A model name inside a plan name: capital letters fused with digits ("A100", "H100", "L4", "L40S", "GH200"), an acronym
+ * followed by a number ("RTX 6000"), or an instance type ("c5.large"). A quantity is not a model: "50k", "Up to 500
+ * contacts", "Tier 10".
+ */
+const MODEL_NAME = /(^|[\s(/-])([A-Z]{1,5}\d{1,4}[A-Za-z]{0,2}|[A-Z]{2,5} \d{3,5}|[a-z]\d[a-z]?\.[a-z0-9]+)(?=$|[\s),/-])/;
 
-/** True when most plan names of a vendor look like product names: three or more plans, most with a model number, few with a tier word. */
+/** True when most plan names of a vendor look like product names: three or more plans, most with a model name, few with a tier word. */
 export function productLike(planNames: string[]): boolean {
   if (planNames.length < 3) return false;
   const tiers = planNames.filter((n) => TIER_WORD.test(n)).length;
-  const products = planNames.filter((n) => MODEL_NUMBER.test(n) && !TIER_WORD.test(n)).length;
+  const products = planNames.filter((n) => MODEL_NAME.test(n) && !TIER_WORD.test(n)).length;
   return products * 2 > planNames.length && tiers * 3 < planNames.length;
 }

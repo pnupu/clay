@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
-import { crossovers, productLike, rank, sameAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
+import { crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import type { Exploration, PublicState } from "@/lib/store";
 
@@ -98,11 +98,14 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
       // A playground with a saved decision opens on the saved assumptions, with no row selected: the ranking and the
       // verdict then speak about the same values, and the saved vendor shows only as "Your saved choice".
       rebase.current = true;
-      setUsage((u) => ({ ...u, ...s.decision!.usage }));
+      // A metric that the decision does not name counts as 0 in it (pricing.ts, savedAssumptions).
+      setUsage(savedAssumptions(s.decision, domain.metrics.map((m) => m.id)).usage);
       setRequired(s.decision.required);
       setChosen(null);
       setTolerance(s.decision.tolerance ?? 0);
     });
+    // The metrics of a playground do not change while this screen is mounted (a revision remounts it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   // Nothing is re-checked on a timer: sources change through a webhook, a button, the agent, or a publish of the demo page.
@@ -155,10 +158,12 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   const moved = useRef(false);
   useEffect(() => {
     if (rebase.current) {
+      // The controls were put on the saved values. That is no exploring (no range is added), but it is where the controls
+      // are now, so it is reported: the agent's record then names the values the page shows.
       rebase.current = false;
       seen.current = {};
       reported.current = null;
-      moved.current = false;
+      moved.current = true;
     }
     for (const [k, v] of Object.entries(usage)) seen.current[k] = { min: Math.min(seen.current[k]?.min ?? v, v), max: Math.max(seen.current[k]?.max ?? v, v) };
     // Nothing is sent until the person changes something: opening the page is not exploring, and neither is a change of
@@ -183,14 +188,15 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   const decision = state?.decision ?? null;
   // Two separate things, never mixed on the screen (lib/pricing.ts, stand): the saved choice under the assumptions it was
   // saved with, and the same vendor under the values the person is trying now.
-  const atSaved = !decision || sameAssumptions(a, decision);
-  const savedStand = useMemo(() => (decision ? stand(models, decision, decision.chosen, decision.tolerance ?? 0) : null), [models, decision]);
+  const saved = useMemo(() => (decision ? savedAssumptions(decision, domain.metrics.map((m) => m.id)) : null), [decision, domain]);
+  const atSaved = !saved || sameAssumptions(a, saved);
+  const savedStand = useMemo(() => (decision && saved ? stand(models, saved, decision.chosen, decision.tolerance ?? 0) : null), [models, decision, saved]);
   const triedStand = useMemo(() => (decision && !atSaved ? stand(models, a, decision.chosen, decision.tolerance ?? 0) : null), [models, decision, atSaved, a]);
   /** The selection or the controls differ from the saved decision, so saving means something. */
   const unsaved = !decision || decision.chosen !== pick || (decision.tolerance ?? 0) !== tolerance || !atSaved;
   const loadSaved = () => {
-    if (!decision) return;
-    setUsage({ ...usage, ...decision.usage });
+    if (!decision || !saved) return;
+    setUsage(saved.usage);
     setRequired(decision.required);
     setChosen(null);
     setTolerance(decision.tolerance ?? 0);
@@ -205,8 +211,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   /** Assumptions in words: "120,000 emails per month; must have SSO". */
   const wordsOf = (x: Assumptions) => [Object.entries(x.usage).filter(([, n]) => n > 0).map(([k, n]) => qty(k, n)).join(", "), x.required.length ? `must have ${x.required.map((f) => lower(h.label(f))).join(", ")}` : ""].filter(Boolean).join("; ");
   /** Only what differs from the saved assumptions: "250,000 emails per month (saved: 120,000)". */
-  const triedWords = !decision ? "" : [
-    ...Object.entries(decision.usage).filter(([k, n]) => usage[k] !== n).map(([k, n]) => `${qty(k, usage[k] ?? 0)} (saved: ${num(n)})`),
+  const triedWords = !decision || !saved ? "" : [
+    ...Object.entries(saved.usage).filter(([k, n]) => (usage[k] ?? 0) !== n).map(([k, n]) => `${qty(k, usage[k] ?? 0)} (saved: ${num(n)})`),
     ...required.filter((f) => !decision.required.includes(f)).map((f) => `must have ${lower(h.label(f))} (not in the saved decision)`),
     ...decision.required.filter((f) => !required.includes(f)).map((f) => `${lower(h.label(f))} not required (it is in the saved decision)`),
   ].join(", ");
@@ -346,7 +352,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
               ) : (
-                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(decision)} atSaved={atSaved} own={canWrite} now={now} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
+                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
               {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { crossovers, meterCost, planCost, productLike, rank, sameAssumptions, stand, standSentence } from "./pricing.ts";
+import { crossovers, meterCost, planCost, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence } from "./pricing.ts";
 import type { PricingModel } from "./domain.ts";
 
 const meter = (included: number | null, tiers: [number | null, number | null, number][], overage_allowed: boolean | null = true) => ({ metric: "mau", included, overage_allowed, tiers: tiers.map(([up_to, price, per_units]) => ({ up_to, price, per_units })), quote: null });
@@ -127,23 +127,30 @@ test("a saved choice that cannot be priced under the tried values says why, and 
   assert.equal(standSentence(stand(offers, at(120_000), "nobody", 100), "Nobody", null), "Nobody has no pricing data.");
 });
 
-test("a vendor that cannot be fully priced is described by a plan that states a price, not by a contact-sales plan", () => {
+test("a vendor that cannot be fully priced: the cost is its lower bound, the reason comes from a plan that states a price", () => {
   const m: PricingModel = { vendor: null, currency: "USD", plans: [
     { name: "Pro", base_price: 20, custom_pricing: false, price_quote: null, meters: [{ metric: "mau", included: null, overage_allowed: null, tiers: [], quote: "Included in Flat Rate" }], features: [] },
     { name: "Enterprise", base_price: null, custom_pricing: true, price_quote: null, meters: [], features: [] },
   ] };
-  const v = rank({ v: m }, at(200)).unranked[0];
-  assert.deepEqual([v.best!.plan, v.best!.cost, v.best!.unknowns], ["Pro", 20, ["mau: included quantity and price not stated"]]);
-  // Only a contact-sales plan: that is what is shown.
-  assert.equal(rank({ v: { ...m, plans: [m.plans![1]] } }, at(200)).unranked[0].best!.plan, "Enterprise");
+  // The ranking keeps the true lower bound: the contact-sales plan could cost anything from $0.
+  assert.deepEqual([rank({ v: m }, at(200)).unranked[0].best!.plan, rank({ v: m }, at(200)).unranked[0].best!.cost], ["Enterprise", 0]);
+  // The sentence about a saved choice names the missing fact of the plan with a price, and still says "at least $0".
+  const s = stand({ v: m }, at(200), "v", 0);
+  assert.deepEqual([s.state, s.cost, s.plan, s.why], ["unknown", 0, "Pro", "mau: included quantity and price not stated"]);
+  // Only a contact-sales plan: that is the reason.
+  assert.equal(stand({ v: { ...m, plans: [m.plans![1]] } }, at(200), "v", 0).why, "custom pricing (contact sales)");
 });
 
-test("the controls are at the saved assumptions only when every saved metric and must-have matches", () => {
-  const saved = { usage: { mau: 120_000 }, required: ["sso"] };
-  assert.equal(sameAssumptions({ usage: { mau: 120_000, seats: 5 }, required: ["sso"] }, saved), true); // a metric added after the save does not count
-  assert.equal(sameAssumptions({ usage: { mau: 250_000 }, required: ["sso"] }, saved), false);
-  assert.equal(sameAssumptions({ usage: { mau: 120_000 }, required: [] }, saved), false);
-  assert.equal(sameAssumptions({ usage: { mau: 120_000 }, required: ["sso", "sla"] }, saved), false);
+test("the controls are at the saved assumptions only when every metric and every must-have matches", () => {
+  const decision = { usage: { mau: 120_000 }, required: ["sso"] };
+  // A metric added by a later revision is not in the decision: it counts as 0 there, as the verdict counts it.
+  const saved = savedAssumptions(decision, ["mau", "seats"]);
+  assert.deepEqual(saved, { usage: { mau: 120_000, seats: 0 }, required: ["sso"] });
+  assert.equal(sameAssumptions({ usage: { mau: 120_000, seats: 0 }, required: ["sso"] }, saved), true);
+  assert.equal(sameAssumptions({ usage: { mau: 120_000, seats: 5 }, required: ["sso"] }, saved), false); // the ranking would price 5 seats, the verdict none
+  assert.equal(sameAssumptions({ usage: { mau: 250_000, seats: 0 }, required: ["sso"] }, saved), false);
+  assert.equal(sameAssumptions({ usage: { mau: 120_000, seats: 0 }, required: [] }, saved), false);
+  assert.equal(sameAssumptions({ usage: { mau: 120_000, seats: 0 }, required: ["sso", "sla"] }, saved), false);
 });
 
 test("plans that are separate products are told apart from tiers of one product", () => {
@@ -154,4 +161,10 @@ test("plans that are separate products are told apart from tiers of one product"
   assert.equal(productLike(["10,000 emails", "50,000 emails", "100,000 emails"]), false); // volume rows are quantities, not models
   assert.equal(productLike(["Pay as you go"]), false);
   assert.equal(productLike(["A100", "H100"]), false); // two rows are too few to tell
+  assert.equal(productLike(["L4", "T4", "A100", "H100"]), true);
+  assert.equal(productLike(["c5.large", "c5.xlarge", "m5.large"]), true);
+  // Volume rows and numbered tiers are quantities of one product.
+  assert.equal(productLike(["Up to 500 contacts", "Up to 2500 contacts", "Up to 10000 contacts"]), false);
+  assert.equal(productLike(["Foundation 50k", "Foundation 100k", "Flex"]), false);
+  assert.equal(productLike(["Tier 10", "Tier 25", "Tier 100"]), false);
 });

@@ -1,6 +1,6 @@
 // Change diff between two extractions of one source, and the verdict on a saved decision. Pure.
 import type { FeatureFact, Meter, PricingModel } from "./domain";
-import { rank, type Assumptions } from "./pricing.ts";
+import { stand, type Assumptions } from "./pricing.ts";
 
 export type Fact = string | number | boolean | null;
 export type FieldChange = { path: string; before: Fact | undefined; after: Fact | undefined };
@@ -12,6 +12,8 @@ export function flatten(model: PricingModel | null): Record<string, Fact> {
     const k = `${p.name} / `;
     out[k + "base price"] = p.base_price;
     out[k + "custom pricing"] = p.custom_pricing;
+    // Why a price cannot be read changes the cost (pricing.ts, planCost), so it is a fact like the others.
+    if (p.price_gap) out[k + "price not readable"] = p.price_gap;
     for (const m of p.meters ?? []) {
       out[`${k}${m.metric} / included`] = m.included;
       if (m.unlimited) out[`${k}${m.metric} / unlimited`] = true;
@@ -77,16 +79,16 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
       for (const f of [...(o?.features ?? []), ...((p ?? q)!.features ?? [])]) keep(name, "feature", f.feature);
       return o ? [o] : [];
     }
-    const price = same([p.base_price ?? null, p.custom_pricing ?? null], [q.base_price ?? null, q.custom_pricing ?? null]);
+    const price = same([p.base_price ?? null, p.custom_pricing ?? null, p.price_gap ?? null], [q.base_price ?? null, q.custom_pricing ?? null, q.price_gap ?? null]);
     if (!price) keepBase(name);
-    const base = price ? q : (o ?? { base_price: null, custom_pricing: null, price_quote: null });
+    const base: Pick<typeof q, "base_price" | "custom_pricing" | "price_quote" | "price_gap"> = price ? q : (o ?? { base_price: null, custom_pricing: null, price_quote: null });
     return [
       {
         name,
         base_price: base.base_price,
         custom_pricing: base.custom_pricing,
         price_quote: base.price_quote,
-        ...(q.price_gap ? { price_gap: q.price_gap } : {}),
+        ...(base.price_gap ? { price_gap: base.price_gap } : {}),
         meters: entries("meter", name, (m) => m.metric, meter, o?.meters ?? [], p.meters ?? [], q.meters ?? []),
         features: entries("feature", name, (f) => f.feature, feature, o?.features ?? [], p.features ?? [], q.features ?? []),
       },
@@ -100,15 +102,11 @@ export type Decision = Assumptions & { chosen: string; savedAt: string; toleranc
 
 export type Standing = { holds: boolean; chosenCost: number | null; cheapest: string | null; cheapestCost: number | null; /** Chosen cost minus cheapest cost. */ gap: number | null; tolerance: number };
 
-/** The one "holds" rule: the chosen vendor can be fully priced and costs at most `tolerance` more per month than the cheapest fully priced vendor. */
+/** The "holds" rule, in the shape the change verdict and the agent report use. The rule itself is stand() in pricing.ts, which the page uses too. */
 export function standing(decision: Decision, models: Record<string, PricingModel | null>): Standing {
-  const r = rank(models, decision);
-  const chosenCost = r.ranked.find((v) => v.id === decision.chosen)?.best?.cost ?? null;
-  const cheapestCost = r.ranked[0]?.best?.cost ?? null;
-  const tolerance = Math.max(0, decision.tolerance ?? 0);
-  const gap = chosenCost == null || cheapestCost == null ? null : chosenCost - cheapestCost;
-  // The cheapest vendor always holds, also when a tied vendor is listed first.
-  return { holds: gap != null && (r.cheapest === decision.chosen || gap <= tolerance), chosenCost, cheapest: r.cheapest, cheapestCost, gap, tolerance };
+  const s = stand(models, decision, decision.chosen, decision.tolerance ?? 0);
+  const ranked = s.state === "cheapest" || s.state === "within" || s.state === "outside";
+  return { holds: s.holds, chosenCost: ranked ? s.cost : null, cheapest: s.cheapest, cheapestCost: s.cheapestCost, gap: s.gap, tolerance: s.tolerance };
 }
 
 export type Verdict = {

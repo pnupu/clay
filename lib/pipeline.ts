@@ -176,12 +176,16 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
       };
       const first = v.url ? ([v.url, "playground config"] as const) : src.url ? ([src.url, src.foundVia] as const) : null;
       let ok = first ? await attempt(first[0], first[1]) : false;
-      if (!ok) {
+      // A page that gave prices before and fails now (a timeout, a bad day) is not replaced: the old read stays, with the
+      // error, as before. Other pages are tried only for a vendor that has no usable read yet.
+      const hadPrices = hasPrices(prev?.snapshot?.model);
+      if (!ok && !hadPrices) {
         const results = await searchPricing(v.name, v.domain).catch((e) => {
           if (e instanceof ContextDevError && e.stop) throw e;
+          tried.push({ url: `a search on ${v.domain}`, why: message(e).slice(0, 120) });
           return [] as { url: string }[];
         });
-        for (const url of pricingCandidates(results, v.domain, tried.map((t) => t.url), 3 - tried.length)) {
+        for (const url of pricingCandidates(results, v.domain, tried.map((t) => t.url), 3 - tried.filter((t) => t.url.startsWith("https://")).length)) {
           ok = await attempt(url, results.some((r) => r.url === url) ? "context.dev search" : "site /pricing page");
           if (ok) break;
         }
@@ -190,8 +194,8 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         const said = `No price could be read for ${v.name}. Tried: ${tried.map((t) => `${t.url} (${t.why})`).join("; ") || `a search on ${v.domain}, which found no page`}.`;
         // The best read is kept, so the page can show the plan names it did find; the source says what is missing.
         const kept = best as { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null;
-        if (kept) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot });
-        src.error = said;
+        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot });
+        src.error = hadPrices ? `${v.name}'s pricing page could not be read again (${tried[0]?.why ?? "unknown reason"}). The earlier read is kept.` : said;
       }
     }
   } catch (e) {
@@ -475,7 +479,8 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       const cur = p.sources[id].snapshot;
       if (cur?.textHash !== src.snapshot!.textHash || cur?.fetchedAt !== src.snapshot!.fetchedAt) return void (event = null);
       // The demo page lives on this app's origin, which changes with the port.
-      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note, lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      // A read that gives no price keeps its explanation (collect(): what was tried and why) until a read gives one.
+      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? (hasPrices(snapshot.model) ? null : p.sources[id].error), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
     });
   }
