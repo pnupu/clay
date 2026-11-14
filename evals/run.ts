@@ -13,6 +13,12 @@
 //                         into each scratch directory as CLAUDE.md (claude) or AGENTS.md (codex), where the CLI reads its
 //                         project instructions. A personal skill is installed by the operator in the clean home
 //                         (<home>/.claude/skills/<name>/SKILL.md).
+//                     [--say build|play|slash]   the explicit path: the person ASKS for a playground. The request of every
+//                         case that expects a build is said in that form (a case that expects none keeps its request, so
+//                         it still shows that nothing is built unasked): build: "build me a playground for this: <request>";
+//                         play: "<request> ... let me play with it first"; slash: Claude Code's command for the server's
+//                         MCP prompt, "/mcp__clay__playground <request>". The checks are the same; the request that was
+//                         sent is kept in each result as `asked`.
 //                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
 //                     [--scratch-root <dir>]   put the agents' scratch directories under <dir>, outside this repository.
 //                         Use it when the operator's own agent rules forbid edits inside a shared checkout (Codex loads
@@ -39,7 +45,7 @@ const HERE = import.meta.dirname;
 const SECOND_LEG = "ok I'm done, go ahead";
 
 type CaseResult = {
-  id: string; kind: Case["kind"]; request: string; note?: string;
+  id: string; kind: Case["kind"]; request: string; /** With --say: the request as it was sent. */ asked?: string; note?: string;
   result: "pass" | "fail" | "skip";
   firstFail: Check | null;
   checks: Check[];
@@ -95,6 +101,16 @@ const scratchRoot = flag("scratch-root") ? resolve(flag("scratch-root")!) : null
 const toolSet = flag("tools") === "normal" ? "normal" : "files";
 const home = flag("home") ? resolve(flag("home")!) : undefined;
 const memory = flag("memory") ? readFileSync(resolve(flag("memory")!), "utf8") : null;
+/** --say: how the person asks for a playground (the explicit path). Only for a case that expects a build. */
+const SAY: Record<string, (request: string) => string> = {
+  build: (request) => `build me a playground for this: ${request}`,
+  play: (request) => `${request} ... let me play with it first`,
+  slash: (request) => `/mcp__clay__playground ${request}`,
+};
+const say = flag("say") ?? null;
+if (say && !SAY[say]) throw new Error("--say is build, play or slash.");
+if (say === "slash" && flag("subject") === "codex") throw new Error("--say slash is Claude Code's command form; Codex has no commands for MCP prompts.");
+const asked = (c: Case) => (say && c.expect === "build" ? SAY[say](c.request) : c.request);
 if (memory != null && toolSet !== "normal") throw new Error("--memory needs --tools normal: the files-only mode loads no project instructions.");
 if (flag("tools") && !["normal", "files"].includes(flag("tools")!)) throw new Error("--tools is normal or files.");
 if (toolSet === "normal" && !from && (!home || !scratchRoot || !relative(resolve(HERE, ".."), home).startsWith("..") || !relative(resolve(HERE, ".."), scratchRoot).startsWith(".."))) throw new Error("--tools normal needs --home <clean home> and --scratch-root <dir>, both outside this repository.");
@@ -125,7 +141,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   // A dot directory: tsc and Next.js skip it, so scratch .tsx files do not break the repository's typecheck.
   const kept = join(dir, ".ws");
   const ws = scratchRoot && !from ? join(scratchRoot, runId, c.id) : kept;
-  const r: CaseResult = { id: c.id, kind: c.kind, request: c.request, note: c.note, result: "skip", firstFail: null, checks: [], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
+  const r: CaseResult = { id: c.id, kind: c.kind, request: c.request, ...(say ? { asked: asked(c) } : {}), note: c.note, result: "skip", firstFail: null, checks: [], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
   if (c.needsKit && !kit) return { ...r, skipReason: "needs the kit, which this server does not have" };
   // --from: the earlier run's transcripts, scratch directory, playground and the person's choice are reused; no agent starts.
   const old = from ? join(from, "cases", c.id) : null;
@@ -193,7 +209,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   }
 
   // ---- First leg: the request.
-  const first = await leg("leg1", c.request);
+  const first = await leg("leg1", asked(c));
   add(toolUse(c, first.calls, prepared?.id ?? null));
 
   if (c.expect === "none") {
