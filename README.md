@@ -175,7 +175,7 @@ What this still does not do: nothing wakes an agent by itself; the issue waits f
 | `recheck_playground` | Price labs: re-reads every pricing page now. Returns what changed and whether the saved decision still holds. |
 | `revise_playground` | Changes a lab in place. Each part given (title, notes, controls, view, outputs, a data source) replaces that whole part; the result is validated like a new spec. |
 
-The full descriptions are in `lib/mcp.ts`. They are the product's API for another model. The server also sends `instructions`: many clients load tool descriptions on demand and show the agent only the tool names, and without the instructions a real agent answered from memory and never called a tool (see `run/MANIFEST.md`).
+The full descriptions are in `lib/mcp.ts`. They are the product's API for another model. The server also sends `instructions`: many clients load tool descriptions on demand and show the agent only the tool names, and without the instructions a real agent answered from memory and never called a tool.
 
 ### The spec
 
@@ -458,4 +458,4 @@ Use the owner key (`CLAY_ACCESS_KEY`) as the key: the harness also acts as the p
 
 ## Licence
 
-MIT. See `LICENSE`.
+MIT, see `LICENSE`. That covers Sorvi's own code. The typefaces in `public/fonts/` and the design kit in `public/assets/` are other people's work under their own licences; `public/credits.txt` names them.
