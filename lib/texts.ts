@@ -1,0 +1,79 @@
+// The texts an agent reads: the server instructions and the tool descriptions. They are the product's API for another model.
+// Many clients show only the first 200 characters or so of the instructions and load tool descriptions on demand
+// (Codex lists the server as a deferred namespace; Claude Code sees mostly tool names first). So the first sentence of
+// each text says WHEN to use it, and lib/texts.test.ts keeps it that way.
+import { LIMITS } from "./config.ts";
+
+export const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the saved tolerance (dollars per month, set by the person, default 0) more than the cheapest fully priced vendor.";
+
+/**
+ * Server instructions. Many MCP clients load tool descriptions only on demand and show the agent just the tool names,
+ * so this short text is what decides whether the agent thinks of the playground at all.
+ */
+export const INSTRUCTIONS = `Call create_playground BEFORE you answer from memory or search the web when a person cannot say exactly what they want: a "which one" choice on prices, or something that looks or feels off.
+
+Clay builds a playground: a web page on which a person finds out what they want by trying concrete things, alone and at full speed. You build it from prebuilt parts, the person explores it, the settled result comes back to you as a precise instruction, and you carry it out. Build one instead of guessing or asking a list of questions. Two kinds:
+
+1. A preview playground, for anything the person must see or feel to judge: a component that "looks off", an animation that "feels dead" or "too slow", spacing, colour, timing. Do not guess new values and edit their code. Read their real file, call kit_reference once (format and two worked examples), then create_playground with view.type "preview": their real code in the preview, a few controls from the kit, and outputs that render the final code. When they name a brand or a site, add data.brand: Clay reads the brand's colours live.
+
+A preview can also stand on live web facts: data.web names the facts to read from web pages (prices per model, per GPU, per seat; a limit; a version), Clay reads them with a check that every number is on the page, and your preview code combines them with the person's own numbers (data.inline, from their files). Use this when the answer is "it depends on your numbers" and the facts change: which model for their workload, which GPU, which plan for their team.
+
+2. A price playground, for "which service, vendor or plan" of a usage-priced product (an API, a SaaS product, a cloud service) with plans and usage tiers. Call create_playground with view.type "price_ranking" before you answer from memory or search the web: prices from memory are out of date, and Clay reads the current pricing pages with a source quote for every number.
+
+Give the person the URL. When they come back ("done", "I settled it", "what did I decide", "does it still hold"), call read_playground and carry out the settled result: write the outputs into their code, or report the decision. recheck_playground re-reads prices today. revise_playground repairs a playground or adds what the person now wants to try.`;
+
+export const TOOLS = {
+  create_playground: `Call this first, before you answer from memory or search the web, when the person cannot say exactly what they want: a "which one" choice on prices, a look or feel that is off, or a choice that depends on their own numbers. It builds a playground for the person: a web page where they explore one question by moving controls, at full speed, with no agent in the loop. You give them the URL; read_playground later returns what they settled on, and you carry it out.
+
+Use it when the person cannot yet say exactly what they want. People find out by trying concrete values. Do not ask a list of questions first, and do not guess and edit: build from what they said and from their real files, and let them settle it by hand.
+
+One spec describes the playground. Choose the view:
+
+view.type "preview": the person must see or feel the real thing (a component's look, colours, spacing, an animation's spring or timing). Call kit_reference before your first one. The rules:
+- Real code. Copy the person's actual markup, classes or motion code from their file into view.html, view.css and view.js, so that every control maps to a line in their file. A sketch of the thing is not the thing.
+- Controls come only from the kit: slider, toggle, select, color. Choose the 3 to 6 dimensions behind THIS person's complaint. initial is the value in their code now, so the page opens on what they have. Ranges sit around that value. Each control has one meaning.
+- Bind controls with {{control_id}} in view.html and view.css (updated in place on every move), or read clay.values.<id> in view.js. Every control must visibly change the preview or an output at the start values; one that only matters after another control is switched looks broken.
+- Brand: when the person names a brand or a site, add data.brand {"domain"}. Clay reads its colours live; a color control with palette "brand" offers them. Never write brand colours from memory.
+- Live facts: when the comparison needs facts from web pages that the price engine cannot express (which model, which GPU, a per-seat plan, one fact of one page) or needs the person's own numbers multiplied in, add data.web: the pages and the facts to read, as the pages state them. Put the person's own measurements in data.inline and say where they come from. view.js does the arithmetic and shows "unknown" for a null, never 0. Never write prices from memory. Give the person a select for the choice itself, so that the outputs can return it. kit_reference has a worked example. The result of the build lists what was read: check it against what your code joins on before you hand over.
+- Outputs are templates of the final code: the class string, the config object. At hand-back you paste them.
+- notes, when you give one, is for any reader: the playground may be shared or shown as an example. Say what was asked, what the page is built from and what to try; no "your file", and no "press Settle" (the page has the button).
+- The spec is validated before anything is built; each error says how to fix it. The preview code runs only in a browser, so the result says "unverified" until the person opens the page. read_playground then reports that it ran, or the error to repair.
+
+view.type "price_ranking": a "which vendor or plan" decision for a usage-priced product. You design the space in data.price_pages; the web supplies the facts:
+- Vendors: the ${LIMITS.vendors[0] + 1} to 5 options really worth comparing, including any the person named. Each needs a public pricing page with numbers on it. Give pricing_url when you know the page; else give domain and search finds it.
+- Metrics (sliders): the 1 to 3 usage dimensions that drive the cost for THIS person. initial is their own number when they gave one; min and max sit around what they said, not around the whole market. Write describe in the words pricing pages use, with synonyms; the extraction finds the prices with that text.
+- Features (checkboxes): the hard requirements the person mentioned, and only ones that pricing pages state per plan.
+- No facts. Never put prices, plan names or limits in the spec. They are read from each pricing page, each with a source quote and a check that the number is on the page.
+The call answers within about 20 seconds, with build.status. "done": every pricing page is read; the result lists per vendor what was read, and a problems list that says how to fix each problem. "running": the pages are still being read (5 to 40 seconds each, more when requests wait for the rate limit) and arrive by themselves; the URL works already and shows each vendor as it arrives. When it is running, first tell the person in a sentence that the comparison is being built from the live pricing pages and give them the URL to watch it fill in. Then call read_playground, which waits up to 20 seconds for the reads, and repeat it until build.status is "done"; it returns the same problems list. Never call create_playground a second time for a build that is running.
+Repair a broken first build with revise_playground before you tell the person it is ready: for a page that was not read, try once with the exact pricing_url (or only the domain); if the vendor still cannot be priced, remove it and tell the person. A vendor that "cannot be ranked" only at some values is a true finding and stays. But a page on which fewer than two vendors can be ranked at the starting values compares nothing: problems then starts with BROKEN BUILD and names the metric to remove or rewrite. Repair that before you hand over.
+
+Then give the person the URL: for a preview, "move the controls until it is right, then press Settle"; for prices, "explore, select a vendor and save the decision". When they say they are done, call read_playground. Always use the playground_id and url of the result: when the id you asked for is taken, the playground gets that id with a short suffix.`,
+
+  read_playground: `Call this when the person says they are done, comes back to a playground, or asks what they decided, and before you act on a result: it returns what they did and settled. It reads stored data and does not contact the web. With no playground_id it lists the playgrounds.
+
+Preview playground: returns settled (the values, and the outputs as code-ready text), the exploration summary, and the preview status. With data.web it also returns data (per source: the values or rows that were read, what is unknown, what was quarantined, what failed and how to repair it), build ("running" while pages are still being read: call again), problems, and web_changes (the facts that changed since the person settled; you judge whether the settled result still holds). When settled is present, carry it out: write settled.outputs into the person's file exactly as given, then say what you changed. When it is "none", the person has not pressed Settle: ask them to, and do not treat the current values as a decision. When preview.status is "failed", the error text is the browser's: repair the code with revise_playground and ask the person to reload.
+
+Price playground: returns the control values now, the cost ranking, the saved decision (vendor, assumptions, tolerance, whether it holds on the data as last read), the exploration summary, the source change events, build (where the reading of the pricing pages stands: "running", "done" or "stalled") and problems (what to repair with revise_playground). While build.status is "running", this call waits up to 20 seconds for the reads; call it again until it says "done", then act on problems. ${HOLDS_RULE} For "does it still hold today", call recheck_playground too.
+
+The exploration summary gives, per control, the range the person tried and the value they settled on. Use it: "tried 4 to 16, settled on 10" tells you their real range and how sure they are. A control they never moved was not examined by them: leave its value in their code as it is.`,
+
+  recheck_playground: `Call this when the person asks whether a decision or a settled result still holds today, or wants current facts before they act: it reads the web pages of a playground again now, and reports what changed since the last read.
+
+Preview playground with data.web: every source is read again; a fact changes only when two fresh reads agree on it. The result and read_playground give web_changes: the facts that changed since the person settled, with the old and the new value. Clay has no rule for what a change means. You are the judge: take the settled values and the new facts, work out whether the settled result still holds, and tell the person with the numbers; when it does not hold, say what changed and send them back to the playground URL. A preview without data.web has nothing to re-check.
+
+Price playground: every pricing page is read again, and the result says whether the saved decision still holds.
+
+Use it when the person asks if a decision is still valid, or wants current prices before they act. It spends web requests, so do not call it on every turn. It answers within about 20 seconds: with the result, or with status "running" when the pages are still being read. Then tell the person that today's prices are being read, and call read_playground until its build.status is "done": its change_events and saved_decision then hold the result. A change on a real page is reported only when two fresh extractions agree on it, so a reported change is one you can state to the person.
+
+${HOLDS_RULE} The result gives the verdict with the costs behind it. When the decision no longer holds, say what changed, the new cheapest vendor and the gap, and send the person back to the playground URL to look again; do not pick for them.`,
+
+  revise_playground: `Call this to repair a playground (a problem in a build result, a preview error from read_playground) or when the person wants to try something it lacks (another control, a wider range, another vendor): it changes the existing playground in place, at the same URL.
+
+Give playground_id and only the parts that change. Each part you give replaces that whole part: title, notes, controls (the full list), view (the full view), outputs (the full list), and inside data each source (data.price_pages whole, data.brand, data.inline; null removes data.brand or data.inline). Parts you leave out stay. The result is validated like a new spec. When you no longer have the spec, read_playground with include_spec returns it.
+
+Preview playground: when the preview code, the data or a control's values change, the settled result is cleared and the preview is unverified again; what the person tried is kept for the controls you did not change. A revision of words only (title, notes, labels, meanings) keeps the verified preview and the settled result. Ask the person to reload the page.
+
+Price playground: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, features, product or notes changes what is extracted, so every page is read again. As with a first build, the call answers within about 20 seconds with build.status "done" or "running"; when it is running, call read_playground until it is done. A change of only the title or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed. After one failed repair of a vendor, remove it and tell the person; do not keep trying pages. When you remove a vendor (or leave one out that the person named), say why in left_out: [{"name", "reason"}]: the reason is stored, read_playground returns it, and the page can show it, so a later session can still say why it is missing.`,
+
+  kit_reference: `Call this once before your first preview playground (create_playground with view.type "preview"): it returns the reference for preview playgrounds: the four control types, how the preview binds to them ({{control_id}} in html and css, clay.values in JavaScript), what the sandbox allows, how outputs work, and two complete worked specs (a Tailwind button with brand colours; spring physics tuned by feel). Read-only, instant, no web request. Call it once before your first create_playground with view.type "preview".`,
+};

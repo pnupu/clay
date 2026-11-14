@@ -111,6 +111,8 @@ export type Playground = {
   owner?: string | null;
   /** Marked by the admin as an example: anyone may open and use it without signing in. Missing: only the seed is one. */
   example?: boolean;
+  /** What the agent left out of this playground and why, as it said (spec left_out). Text from the agent: shown as text. */
+  leftOut?: { name: string; reason: string; at: string }[];
 };
 
 export type Store = {
@@ -236,7 +238,7 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
 export function publicState(s: Store, id: string, owner = true) {
   const p = s.playgrounds[id];
   const sources = Object.fromEntries(Object.entries(p.sources).map(([k, src]) => [k, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
-  return { id, sources, decision: p.decision, events: p.events, work: workStatus(p), demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
+  return { id, sources, decision: p.decision, events: p.events, work: workStatus(p), leftOut: p.leftOut ?? [], demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
 }
 export type PublicState = ReturnType<typeof publicState>;
 

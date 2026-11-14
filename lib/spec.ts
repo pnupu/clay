@@ -84,11 +84,14 @@ export const specShape = {
   controls: z.array(control).max(KIT_LIMITS.controls).optional().describe("For view preview: the controls, 1 to 12, only from the kit. Choose the few dimensions that matter for this person."),
   view,
   outputs: z.array(output).max(KIT_LIMITS.outputs).optional().describe("For view preview: what goes back to you when the person settles, as code-ready text. At least 1."),
+  left_out: z.array(z.strictObject({ name: upTo(60).describe("What was left out, as the person knows it: a vendor, a model, a source."), reason: upTo(200).describe("Why, in a sentence the person can read: 'its pricing page states no price per seat'.") })).max(6).optional().describe("What you left out of the playground and why: a vendor whose page could not be priced after a repair, an option the person named that does not fit. It is stored, read_playground returns it, and the page can show it, so a later session can still say why something is missing. Give the whole list; an empty list clears it."),
 };
 const spec = z.strictObject(specShape);
 export type Spec = z.input<typeof spec>;
 
-export type ParsedSpec = { ok: true; kind: "price"; domain: Domain } | { ok: true; kind: "preview"; domain: Domain; kit: Kit; warnings: string[] } | { ok: false; errors: string[] };
+/** `leftOut`: what the agent left out of the playground and why (a vendor whose page could not be priced), when the spec says so. */
+export type LeftOut = { name: string; reason: string };
+export type ParsedSpec = { ok: true; kind: "price"; domain: Domain; leftOut?: LeftOut[] } | { ok: true; kind: "preview"; domain: Domain; kit: Kit; warnings: string[]; leftOut?: LeftOut[] } | { ok: false; errors: string[] };
 
 /** A spec larger than this is refused unread. The largest valid one (every text at its limit) is well below it. */
 export const MAX_SPEC_BYTES = 200_000;
@@ -112,7 +115,7 @@ export function oversize(input: unknown): string[] {
     if (n > max) errors.push(`${path}: at most ${max} entries, got ${n}. Nothing was checked or created.`);
   };
   const s = obj(input);
-  bound("spec", s, 12);
+  bound("spec", s, 13);
   bound("controls", s.controls, KIT_LIMITS.controls);
   bound("outputs", s.outputs, KIT_LIMITS.outputs);
   if (Array.isArray(s.controls) && s.controls.length <= KIT_LIMITS.controls)
@@ -124,6 +127,7 @@ export function oversize(input: unknown): string[] {
   const data = obj(s.data);
   bound("data", data, 6);
   bound("data.inline", data.inline, 40);
+  bound("left_out", s.left_out, 6);
   bound("data.web", data.web, WEB_LIMITS.sources);
   if (Array.isArray(data.web) && data.web.length <= WEB_LIMITS.sources)
     for (const [i, s] of data.web.entries()) {
@@ -177,13 +181,13 @@ function validate(input: unknown): ParsedSpec {
     if (errors.length) return { ok: false, errors };
     const p = parseConfig({ id: s.id, question: s.title, ...s.data!.price_pages });
     if (!p.ok) return { ok: false, errors: p.errors.map((e) => (e.startsWith("question:") ? e.replace("question:", "title (for a price playground, the decision as a question of 10 characters or more):") : `data.price_pages.${e}`)) };
-    return { ok: true, kind: "price", domain: { ...p.domain, ...(s.notes ? { note: s.notes } : {}) } };
+    return { ok: true, kind: "price", domain: { ...p.domain, ...(s.notes ? { note: s.notes } : {}) }, ...(s.left_out ? { leftOut: s.left_out } : {}) };
   }
   if (s.data?.price_pages) errors.push('data.price_pages: a preview view has no price ranking. Remove it, or build a second playground with view.type "price_ranking".');
   const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand ?? undefined, inline: s.data?.inline ?? undefined, web: s.data?.web ?? undefined });
   if (!k.ok) errors.push(...k.errors);
   if (errors.length || !k.ok) return { ok: false, errors };
-  return { ok: true, kind: "preview", domain: { id: s.id, question: s.title, product: "", metrics: [], features: [], vendors: [] }, kit: k.kit, warnings: k.warnings };
+  return { ok: true, kind: "preview", domain: { id: s.id, question: s.title, product: "", metrics: [], features: [], vendors: [] }, kit: k.kit, warnings: k.warnings, ...(s.left_out ? { leftOut: s.left_out } : {}) };
 }
 
 /** The spec that parseSpec() would turn into this stored playground. Used to revise a playground part by part, and to show the agent what it built. */
