@@ -19,7 +19,8 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TMP = os.path.realpath(tempfile.gettempdir()).rstrip("/")
+# The run's temp directory as given (mkdtemp builds on it) and resolved (a symlinked TMPDIR).
+TMPS = sorted({p.rstrip("/") for p in (tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir()))} - {"", "/tmp", "/var/tmp"}, key=len, reverse=True)
 REPO = os.path.dirname(HERE)
 
 
@@ -38,7 +39,7 @@ def _rules():
         (r"/tmp/claude-\d+", "<tmp>"),
         # A TMPDIR of the run's own (not the shared /tmp, whose paths are not machine-specific and include
         # the sandbox's own /tmp).
-        *([(re.escape(TMP) + r"(?=/)", "<tmp>")] if TMP not in ("", "/tmp", "/var/tmp") else []),
+        *[(re.escape(t) + r"(?=[/\\\s\"'.,;:)\]}]|$)", "<tmp>") for t in TMPS],
         # A backslash ends a path: on raw JSON text it starts an escape such as \n, which must stay.
         (re.escape(home) + r"(?=[/\\\s\"'.,;:)\]}]|$)", "<home>"),
         (r"/home/[^/\\\s\"'<>]+(?=[/\\\s\"'.,;:)\]}]|$)", "<home>"),

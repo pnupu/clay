@@ -214,6 +214,20 @@ def classify(timed_out, exit_code, parsed, stderr):
     return "none"
 
 
+# Long texts of a run record and how much of each is kept: (field, keep the head or the tail, characters).
+CUTS = (("error_text", "head", 1000), ("check_output", "tail", 300), ("check_fail_line", "head", 400))
+
+
+def cut(rec):
+    """A copy of a run record with its long texts cut to size (applied after scrubbing for the committed copy)."""
+    out = dict(rec)
+    for field, side, n in CUTS:
+        v = out.get(field)
+        if isinstance(v, str) and len(v) > n:
+            out[field] = v[:n] if side == "head" else v[-n:]
+    return out
+
+
 def run_check(task_dir, task, work, limit=600):
     """Run the hidden check on `work`. Returns (passed, last output, first FAIL line or None).
 
@@ -326,10 +340,10 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
             if agent == "codex" else ("stream-json init event" if effort else "none"),
             "repeat": repeat, "passed": passed, "wall_seconds": wall, "timeout_s": task["timeout_s"],
             "exit_code": p.returncode, "error_class": err_class,
-            # Scrubbed before they are cut, so a cut cannot leave half a path (scrub.py).
-            "error_text": scrub(parsed.get("cli_error") or "")[:1000] or (scrub(stderr.strip())[-500:] if p.returncode else None),
-            "check_output": None if passed else scrub(check_out.strip())[-300:],
-            "check_fail_line": None if passed else scrub(fail_line or "")[:400],
+            # Full texts here; write_record() cuts them, after scrubbing for the committed copy (see CUTS).
+            "error_text": parsed.get("cli_error") or (stderr.strip() if p.returncode else None),
+            "check_output": None if passed else check_out.strip(),
+            "check_fail_line": None if passed else (fail_line or ""),
             "changed_files": changed, "task_set": os.path.basename(TASKS),
             "transcript_mentions_bench_dir": HERE in stdout,
             "started_utc": started,
@@ -399,9 +413,9 @@ def main():
 
     def write_record(rec):
         with open(runs_path, "a") as f:
-            f.write(json.dumps(scrub_obj(rec)) + "\n")
+            f.write(json.dumps(cut(scrub_obj(rec))) + "\n")  # scrub first, so a cut cannot leave half a path
         with open(os.path.join(private, "runs.local.jsonl"), "a") as f:
-            f.write(json.dumps(rec) + "\n")
+            f.write(json.dumps(cut(rec)) + "\n")
 
     reused = 0
     if a.reuse:
@@ -428,13 +442,13 @@ def main():
             rec = one_run(t, ag, m, r, out_dir, versions)
         except Exception as e:  # one broken run must not lose the others or the manifest
             rec = {"task": t, "agent": ag, "model": m, "repeat": r, "passed": False, "wall_seconds": None,
-                   "error_class": "harness_error", "error_text": f"{type(e).__name__}: {e}"[:500],
+                   "error_class": "harness_error", "error_text": f"{type(e).__name__}: {e}",
                    "failure_kind": "harness_error", "task_set": os.path.basename(TASKS),
                    "agent_version": versions.get(ag), "effort": codex_default_effort(m) if ag == "codex" else None,
                    "input_tokens": None, "output_tokens": None}
         with lock:
             if rec["error_class"] == "rate_or_usage_limit" and (ag, m) not in stopped:
-                stopped[(ag, m)] = rec["error_text"]
+                stopped[(ag, m)] = (rec["error_text"] or "")[:1000]
             write_record(rec)
             print(f"{t:17} {ag}:{m:22} r{r} {'PASS' if rec['passed'] else 'fail'} {rec['wall_seconds'] or 0:7.1f}s "
                   f"{rec['error_class']} in={rec['input_tokens']} out={rec['output_tokens']}", flush=True)
