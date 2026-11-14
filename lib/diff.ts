@@ -97,9 +97,16 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
   return { model: { vendor: a.vendor === b.vendor ? b.vendor : old.vendor, currency: a.currency === b.currency ? b.currency : old.currency, plans }, kept };
 }
 
-/** `tolerance`: the decision is still fine while the chosen vendor costs at most this much more per month than the cheapest. */
 /** How long apart two re-checks must be that both read no price, before a vendor that had prices is taken to have none. */
 export const NO_PRICE_GAP_MS = 10 * 60_000;
+/** How long the first such re-check counts. An older one is not agreement with a read of today: the count starts again. */
+export const NO_PRICE_MAX_MS = 7 * 24 * 3_600_000;
+
+/** The stored time of the first re-check that read no price, when it still counts at `now`: a real time, not in the future, at most NO_PRICE_MAX_MS old. Else null. */
+export function noPriceMark(seenAt: string | null | undefined, now: number): string | null {
+  const t = seenAt ? Date.parse(seenAt) : NaN;
+  return Number.isFinite(t) && t <= now && now - t <= NO_PRICE_MAX_MS ? seenAt! : null;
+}
 
 /**
  * What a re-check does with a read that states no price at all. A page that fills in its prices by script can be
@@ -108,14 +115,16 @@ export const NO_PRICE_GAP_MS = 10 * 60_000;
  * seconds apart), so one re-check does not take the prices of a vendor away:
  * - "none": nothing special (the vendor had no price before, or the read states a price);
  * - "hold": the earlier prices stay, with a note, and the next re-check reads the page again;
- * - "accept": an earlier re-check, at least NO_PRICE_GAP_MS before this one, also read no price. The page states none.
+ * - "accept": an earlier re-check, at least NO_PRICE_GAP_MS and at most NO_PRICE_MAX_MS before this one, also read no
+ *   price. The page states none.
  */
 export function noPriceRead(hadPrices: boolean, hasPricesNow: boolean, seenAt: string | null | undefined, now: number): "none" | "hold" | "accept" {
   if (!hadPrices || hasPricesNow) return "none";
-  const earlier = seenAt ? Date.parse(seenAt) : NaN;
-  return Number.isFinite(earlier) && now - earlier >= NO_PRICE_GAP_MS ? "accept" : "hold";
+  const mark = noPriceMark(seenAt, now);
+  return mark && now - Date.parse(mark) >= NO_PRICE_GAP_MS ? "accept" : "hold";
 }
 
+/** `tolerance`: the decision is still fine while the chosen vendor costs at most this much more per month than the cheapest. */
 export type Decision = Assumptions & { chosen: string; savedAt: string; tolerance?: number };
 
 export type Standing = { holds: boolean; chosenCost: number | null; cheapest: string | null; cheapestCost: number | null; /** Chosen cost minus cheapest cost. */ gap: number | null; tolerance: number };

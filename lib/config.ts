@@ -37,7 +37,7 @@ export const configShape = {
   id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the playground and the last part of its URL, for example email-api-for-acme."),
   question: text(10, 200).describe("The decision, as a question in the person's words."),
   product: text(3, 120).describe("What is being priced, in a few words, for example 'transactional email API'. Part of the extraction instructions."),
-  notes: text(0, 600).optional().describe("Optional extra guidance for the extraction, for example how to tell two similar metrics apart or which product line of the page to read."),
+  notes: text(0, 600).optional().describe("Optional extra guidance for the extraction, for example how to tell two similar metrics apart or which product line of the page to read. Keep it short: product and notes together must fit in about 500 characters, and a longer text is refused."),
   metrics: z.array(metric).min(LIMITS.metrics[0]).max(LIMITS.metrics[1]).describe("Usage dimensions that drive the cost. Each becomes a slider."),
   features: z.array(feature).max(LIMITS.features[1]).default([]).describe("Yes-or-no requirements. Each becomes a 'must have' checkbox that removes plans without it."),
   vendors: z.array(vendor).min(LIMITS.vendors[0]).max(LIMITS.vendors[1]).describe("The vendors to compare."),
@@ -87,7 +87,7 @@ export function parseConfig(input: unknown): { ok: true; domain: Domain } | { ok
   // product and notes are part of the extraction instructions, which have a fixed room: a text that is too long would make
   // every page read fail at Context.dev. Say by how much, so that the agent shortens it before anything is read.
   const over = extractionInstructions(domain).length - INSTRUCTIONS_LIMIT;
-  if (over > 0) return { ok: false, errors: [`notes: product and notes are part of the extraction instructions, and together they are ${over} characters too long. Shorten notes${c.notes ? "" : " or product"} by at least ${over} characters.`] };
+  if (over > 0) return { ok: false, errors: [`notes: product and notes are part of the extraction instructions, and together they are ${over} characters too long. Shorten notes by at least ${over} characters.`] };
   return { ok: true, domain };
 }
 

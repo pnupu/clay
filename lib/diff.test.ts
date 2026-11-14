@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmed, diffModels, noPriceRead, NO_PRICE_GAP_MS, standing, verdict, type Decision } from "./diff.ts";
+import { confirmed, diffModels, noPriceMark, noPriceRead, NO_PRICE_GAP_MS, NO_PRICE_MAX_MS, standing, verdict, type Decision } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
 
 const model = (base: number | null, price: number | null, quote = "q"): PricingModel => ({
@@ -87,8 +87,18 @@ test("one re-check that reads no price does not take a vendor's prices away", ()
   // A read with prices, or a vendor that had none before, is not this case.
   assert.equal(noPriceRead(true, true, iso(first), first + 3_600_000), "none");
   assert.equal(noPriceRead(false, false, null, first), "none");
-  // A stored time that is not a time never accepts.
+  // A stored time that is not a time, or lies in the future, never accepts; and it does not count as a mark, so the
+  // caller replaces it with the time of this check instead of holding for ever.
   assert.equal(noPriceRead(true, false, "soon", first + 3_600_000), "hold");
+  assert.equal(noPriceMark("soon", first + 3_600_000), null);
+  assert.equal(noPriceMark("", first), null);
+  assert.equal(noPriceRead(true, false, iso(first + 60_000), first), "hold");
+  assert.equal(noPriceMark(iso(first + 60_000), first), null);
+  // A first check of long ago is not agreement with one bad capture today: the count starts again.
+  assert.equal(noPriceRead(true, false, iso(first), first + NO_PRICE_MAX_MS), "accept");
+  assert.equal(noPriceRead(true, false, iso(first), first + NO_PRICE_MAX_MS + 1), "hold");
+  assert.equal(noPriceMark(iso(first), first + NO_PRICE_MAX_MS + 1), null);
+  assert.equal(noPriceMark(iso(first), first + 3_600_000), iso(first));
 });
 
 test("agreement: a fact changes only when two fresh extractions state the same thing", () => {
