@@ -1,8 +1,8 @@
 // Collect and re-check. Live sources and the demo source share every step except how the page is read.
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
-import { brand, ContextDevError, scrape, searchTopUrl } from "./contextdev";
+import { extractionInstructions, extractionSchema, hasPrices, normalise, pricingCandidates, type Domain, type PricingModel, type RawModel } from "./domain";
+import { brand, cd, ContextDevError, scrape } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
@@ -120,7 +120,28 @@ const playground = async (pg: string): Promise<Playground> => {
   return p;
 };
 
-/** Collect one vendor of one playground: find its pricing page (the config's URL, else Search), then extract it. */
+/** Why a read gave nothing to compute with, in words for the person and the agent. */
+const PAGE_GAP = {
+  interactive: "the page shows its prices only through an interactive slider or calculator, so they cannot be read from its text",
+  configuration: "the prices on the page depend on a configuration that its text does not list",
+  not_pricing: "it is not a pricing page",
+  contact_sales: "the page states no prices, only a way to contact sales",
+} as const;
+const emptyReason = (m: PricingModel): string => (m.page_gap ? PAGE_GAP[m.page_gap] : m.plans?.length ? "plans were found, but no price or included quantity is stated for them" : "no plan was found on it");
+
+/** The pages a search finds on the vendor's own domain (POST /web/search), best first. */
+async function searchPricing(name: string, domain: string): Promise<{ url: string }[]> {
+  const r = await cd<{ results?: { url: string }[] }>("POST", "/web/search", { query: `${name} pricing`, numResults: 5, includeDomains: [domain] });
+  return r.results ?? [];
+}
+
+/**
+ * Collect one vendor of one playground: find its pricing page, then extract it.
+ * The first page is the one the config names, else the one found before. When it cannot be read, or gives nothing to
+ * compute with, the next ones are tried (domain.ts, pricingCandidates): the search results that look like a pricing page,
+ * then the site's own /pricing page; at most three pages per vendor. When none gives a price, the best read is kept and the
+ * source says what was tried and why each page failed. No number is ever guessed.
+ */
 export async function collect(pg: string, id: string, origin: string): Promise<void> {
   const p = await playground(pg);
   const v = p.domain.vendors.find((x) => x.id === id);
@@ -130,12 +151,49 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
   src.name = v.name;
   try {
-    if (v.demo) Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
-    else if (v.url) Object.assign(src, { url: v.url, foundVia: "playground config" });
-    else if (!src.url) Object.assign(src, { url: (await searchTopUrl(`${v.name} pricing`, v.domain)).url, foundVia: "context.dev search" });
-    if (!src.url) throw new Error(`Search found no page on ${v.domain}`);
-    src.snapshot = await readModel(p.domain, src, origin);
-    src.error = null;
+    if (v.demo) {
+      Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
+      src.snapshot = await readModel(p.domain, src, origin);
+      src.error = null;
+    } else {
+      const tried: { url: string; why: string }[] = [];
+      let best: { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null = null;
+      /** Read one page. True when it gives prices; else the page and the reason are noted. */
+      const attempt = async (url: string, via: Source["foundVia"]): Promise<boolean> => {
+        try {
+          const snapshot = await readModel(p.domain, { ...src, url }, origin);
+          if (hasPrices(snapshot.model)) {
+            Object.assign(src, { url, foundVia: via, snapshot, error: null });
+            return true;
+          }
+          tried.push({ url, why: emptyReason(snapshot.model) });
+          if (!best || (snapshot.model.plans?.length ?? 0) > (best.snapshot.model.plans?.length ?? 0)) best = { snapshot, url, via };
+        } catch (e) {
+          if (e instanceof ContextDevError && e.stop) throw e;
+          tried.push({ url, why: message(e).slice(0, 120) });
+        }
+        return false;
+      };
+      const first = v.url ? ([v.url, "playground config"] as const) : src.url ? ([src.url, src.foundVia] as const) : null;
+      let ok = first ? await attempt(first[0], first[1]) : false;
+      if (!ok) {
+        const results = await searchPricing(v.name, v.domain).catch((e) => {
+          if (e instanceof ContextDevError && e.stop) throw e;
+          return [] as { url: string }[];
+        });
+        for (const url of pricingCandidates(results, v.domain, tried.map((t) => t.url), 3 - tried.length)) {
+          ok = await attempt(url, results.some((r) => r.url === url) ? "context.dev search" : "site /pricing page");
+          if (ok) break;
+        }
+      }
+      if (!ok) {
+        const said = `No price could be read for ${v.name}. Tried: ${tried.map((t) => `${t.url} (${t.why})`).join("; ") || `a search on ${v.domain}, which found no page`}.`;
+        // The best read is kept, so the page can show the plan names it did find; the source says what is missing.
+        const kept = best as { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null;
+        if (kept) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot });
+        src.error = said;
+      }
+    }
   } catch (e) {
     src.error = message(e);
     if (e instanceof ContextDevError && e.stop) throw e;

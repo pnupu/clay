@@ -24,6 +24,7 @@ const fmtN = (n: number) => n.toLocaleString("en-US");
 /** Cost of `units` on one meter. Tiers are graduated and apply above `included`. */
 export function meterCost(m: Meter, units: number): { amount: number; unknown?: string; ineligible?: string } {
   const hasTiers = !!m.tiers?.length;
+  if (m.unlimited) return { amount: 0 };
   if (m.included == null && !hasTiers) return units > 0 ? { amount: 0, unknown: `${m.metric}: included quantity and price not stated` } : { amount: 0 };
   const inc = m.included ?? 0;
   if (units <= inc) return { amount: 0 };
@@ -42,11 +43,20 @@ export function meterCost(m: Meter, units: number): { amount: number; unknown?: 
   return { amount, unknown: `${m.metric}: price above ${fmtN(from)} not stated` };
 }
 
+/** Why a plan's price is not in the page text, in words for the person (domain.ts, PriceGap). */
+export const GAP_WORDS = {
+  interactive: "the page shows this price only through an interactive slider or calculator, so it cannot be read from the text",
+  configuration: "the page states several prices that depend on the product or configuration, so no single price applies",
+} as const;
+
 export function planCost(plan: Plan, a: Assumptions): PlanCost {
   const r: PlanCost = { plan: plan.name, cost: 0, ineligible: null, unknowns: [], assumed: [], lines: [] };
-  if (plan.base_price == null) r.unknowns.push(plan.custom_pricing ? "custom pricing (contact sales)" : "base price not stated");
-  else r.cost += plan.base_price;
-  r.lines.push({ label: "Base price", amount: plan.base_price, key: "base" });
+  const gap = plan.price_gap ? GAP_WORDS[plan.price_gap] : null;
+  // A slider page shows some number at its start position ("$0 /month"): that is not the plan's price.
+  const base = plan.price_gap === "interactive" && !plan.base_price ? null : plan.base_price;
+  if (base == null) r.unknowns.push(gap ?? (plan.custom_pricing ? "custom pricing (contact sales)" : "base price not stated"));
+  else r.cost += base;
+  r.lines.push({ label: "Base price", amount: base, key: "base" });
 
   for (const [metric, units] of Object.entries(a.usage)) {
     if (!(units > 0)) continue;
@@ -57,7 +67,8 @@ export function planCost(plan: Plan, a: Assumptions): PlanCost {
     }
     const c = meterCost(m, units);
     if (c.ineligible) r.ineligible ??= c.ineligible;
-    if (c.unknown) r.unknowns.push(c.unknown);
+    // The specific reason is said once (with the base price or here), not once per metric.
+    if (c.unknown && !(gap && r.unknowns.includes(gap))) r.unknowns.push(gap ? `${metric}: ${gap}` : c.unknown);
     r.cost += c.amount;
     r.lines.push({ label: metric, amount: c.unknown ? null : c.amount, key: `meter/${metric}` });
   }
@@ -76,12 +87,15 @@ export function planCost(plan: Plan, a: Assumptions): PlanCost {
   return r;
 }
 
-/** Best plan of one vendor: the cheapest eligible plan with a fully known cost, else the eligible plan with the lowest lower bound. */
+/** Best plan of one vendor: the cheapest eligible plan with a fully known cost, else the eligible plan with the lowest known part (plans that state a price first). */
 export function vendorCost(id: string, model: PricingModel | null, a: Assumptions): VendorCost {
   const plans = (model?.plans ?? []).map((p) => planCost(p, a));
   const eligible = plans.filter((p) => !p.ineligible).sort((x, y) => x.cost - y.cost);
   const complete = eligible.find((p) => p.unknowns.length === 0);
-  return { id, best: complete ?? eligible[0] ?? null, complete: !!complete, plans };
+  // Without a fully known plan: the cheapest known part among the plans that state a price. A "contact sales" plan with
+  // nothing known comes last: it would report "at least $0", which says less than a plan whose price is partly known.
+  const partial = eligible.find((p) => !p.unknowns.some((u) => u.startsWith("custom pricing"))) ?? eligible[0];
+  return { id, best: complete ?? partial ?? null, complete: !!complete, plans };
 }
 
 export type Ranking = {
@@ -138,4 +152,87 @@ export function crossovers(models: Record<string, PricingModel | null>, a: Assum
     pw = w;
   }
   return out;
+}
+
+// ---- How one vendor stands under some assumptions. The page uses it twice: for the saved decision under the saved
+// assumptions, and for the same vendor under the values the person is trying now. The two must never be mixed up.
+
+export type Stand = {
+  /** cheapest: no ranked vendor costs less. within / outside: dearer than the cheapest, by at most / by more than the tolerance. unknown: a fact is missing. ineligible: no plan fits. unread: no pricing data. */
+  state: "cheapest" | "within" | "outside" | "unknown" | "ineligible" | "unread";
+  /** The full cost per month, or for "unknown" the sum of the known parts (a lower bound). */
+  cost: number | null;
+  plan: string | null;
+  cheapest: string | null;
+  cheapestCost: number | null;
+  /** Cost minus the cheapest cost. Null when the vendor cannot be ranked. */
+  gap: number | null;
+  tolerance: number;
+  /** For "unknown" and "ineligible": the first reason, in the words of planCost(). */
+  why: string | null;
+  /** The decision rule: the vendor can be fully priced and costs at most the tolerance more than the cheapest. */
+  holds: boolean;
+};
+
+export function stand(models: Record<string, PricingModel | null>, a: Assumptions, chosen: string, tolerance = 0): Stand {
+  const r = rank(models, a);
+  const base = { cheapest: r.cheapest, cheapestCost: r.ranked[0]?.best?.cost ?? null, tolerance: Math.max(0, tolerance) };
+  const v = r.ranked.find((x) => x.id === chosen);
+  if (v) {
+    const cost = v.best!.cost;
+    const gap = cost - base.cheapestCost!;
+    // A vendor level with the first row is also the cheapest.
+    const state = r.cheapest === chosen || gap <= 0 ? "cheapest" : gap <= base.tolerance ? "within" : "outside";
+    return { ...base, state, cost, plan: v.best!.plan, gap, why: null, holds: state !== "outside" };
+  }
+  const u = r.unranked.find((x) => x.id === chosen);
+  if (u?.best) return { ...base, state: "unknown", cost: u.best.cost, plan: u.best.plan, gap: null, why: u.best.unknowns[0] ?? null, holds: false };
+  if (u && models[chosen]?.plans?.length) return { ...base, state: "ineligible", cost: null, plan: null, gap: null, why: u.plans.find((p) => p.ineligible)?.ineligible ?? null, holds: false };
+  return { ...base, state: "unread", cost: null, plan: null, gap: null, why: null, holds: false };
+}
+
+/** Are the controls at the assumptions of the saved decision? Only the metrics that the decision names count. */
+export function sameAssumptions(now: Assumptions, saved: Assumptions): boolean {
+  return Object.entries(saved.usage).every(([k, n]) => now.usage[k] === n) && now.required.length === saved.required.length && saved.required.every((f) => now.required.includes(f));
+}
+
+const usd = (n: number) => "$" + fmtN(Math.round(n));
+
+/**
+ * One sentence about a stand. `tried`: the person is only trying these values (nothing is saved under them), so the
+ * sentence says "would". `words` turns metric and feature ids in a reason into the labels of the page. `own`: the reader
+ * saved the decision; a visitor on an example reads "the tolerance", not "your tolerance".
+ */
+export function standSentence(s: Stand, name: string, cheapestName: string | null, tried = false, words: (text: string) => string = (t) => t, own = true): string {
+  const costs = tried ? "would cost" : "costs";
+  const more = `${name} ${costs} ${usd(s.cost ?? 0)} per month, ${usd(s.gap ?? 0)} more than ${cheapestName ?? "the cheapest vendor"}, the cheapest.`;
+  switch (s.state) {
+    case "cheapest":
+      return `${name} ${tried ? "would be" : "is"} the cheapest at ${usd(s.cost!)} per month.`;
+    case "within":
+      return `${more} That is within ${own ? "your" : "the saved"} tolerance of ${usd(s.tolerance)}.`;
+    case "outside":
+      return `${more} ${s.tolerance > 0 ? `That is above ${own ? "your" : "the saved"} tolerance of ${usd(s.tolerance)}.` : `${own ? "You saved it" : "It was saved"} with no tolerance, so it holds only while it is the cheapest.`}`;
+    case "unknown":
+      return `${name} cannot be fully priced${s.why ? `: ${words(s.why)}` : ""}. Its known costs are at least ${usd(s.cost ?? 0)} per month.`;
+    case "ineligible":
+      return `no ${name} plan fits${s.why ? `: ${words(s.why)}` : ""}.`;
+    default:
+      return `${name} has no pricing data.`;
+  }
+}
+
+// ---- Plans that are separate products, not tiers of one product (GPU models, instance types). The engine prices each
+// vendor by its cheapest plan that fits, so such a vendor's price is for its cheapest product: the page must say so.
+
+const TIER_WORD = /\b(free|hobby|starter|basic|essentials?|standard|plus|pro|professional|premium|teams?|business|growth|scale|startup|enterprise|developer|individual|personal|solo|studio|agency|advanced|ultimate|community|launch|pay[- ]as[- ]you[- ]go|payg)\b/i;
+/** A model number: letters followed by two or more digits, as in "RTX 6000", "A100" or "H100". "50K emails" is a quantity, not a model. */
+const MODEL_NUMBER = /\b[A-Za-z]{1,10}[- ]?\d{2,}/;
+
+/** True when most plan names of a vendor look like product names: three or more plans, most with a model number, few with a tier word. */
+export function productLike(planNames: string[]): boolean {
+  if (planNames.length < 3) return false;
+  const tiers = planNames.filter((n) => TIER_WORD.test(n)).length;
+  const products = planNames.filter((n) => MODEL_NUMBER.test(n) && !TIER_WORD.test(n)).length;
+  return products * 2 > planNames.length && tiers * 3 < planNames.length;
 }

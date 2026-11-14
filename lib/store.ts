@@ -30,7 +30,7 @@ export type Source = {
   name: string;
   demo: boolean;
   url: string | null;
-  foundVia: "context.dev search" | "app route" | "playground config" | null;
+  foundVia: "context.dev search" | "site /pricing page" | "app route" | "playground config" | null;
   snapshot: Snapshot | null;
   lastCheckedAt: string | null;
   error: string | null;

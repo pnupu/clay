@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { crossovers, meterCost, planCost, rank } from "./pricing.ts";
+import { crossovers, meterCost, planCost, productLike, rank, sameAssumptions, stand, standSentence } from "./pricing.ts";
 import type { PricingModel } from "./domain.ts";
 
 const meter = (included: number | null, tiers: [number | null, number | null, number][], overage_allowed: boolean | null = true) => ({ metric: "mau", included, overage_allowed, tiers: tiers.map(([up_to, price, per_units]) => ({ up_to, price, per_units })), quote: null });
@@ -73,4 +73,85 @@ test("request pacing: the eleventh request in a minute waits until the first is 
   assert.equal(waitFor(starts.slice(0, 9), 2000, 10), 0);
   assert.equal(waitFor(starts, 2000, 10), 59_000); // the first started at 1,000 and frees its slot at 61,000
   assert.equal(waitFor(starts, 61_000, 10), 0);
+});
+
+// ---- The saved decision and the values the person is trying now.
+
+const offers = {
+  // 100,000 included, then $1 per 1,000: $70 at 120,000 and $200 at 250,000.
+  cheap: model(50, meter(100_000, [[null, 1, 1000]])),
+  // $1.20 per 1,000 from the first unit: $46 at 30,000, $154 at 120,000, $310 at 250,000.
+  saved: model(10, meter(0, [[null, 1.2, 1000]])),
+};
+const gaps = {
+  cheap: offers.cheap,
+  // $60 flat, and no price stated above 200,000.
+  silent: model(60, meter(200_000, [], null)),
+  // $90 flat, with a hard limit of 200,000.
+  capped: model(90, meter(200_000, [], false)),
+};
+const at = (mau: number) => ({ usage: { mau }, required: [] });
+
+test("a saved choice is judged under the assumptions it was saved with, and separately under the values tried now", () => {
+  // Saved at 120,000 with a $100 tolerance: $84 above the cheapest, so it holds.
+  const savedAt = stand(offers, at(120_000), "saved", 100);
+  assert.deepEqual([savedAt.state, savedAt.cost, savedAt.cheapest, Math.round(savedAt.gap!), savedAt.holds], ["within", 154, "cheap", 84, true]);
+  assert.equal(standSentence(savedAt, "Postmark", "Resend"), "Postmark costs $154 per month, $84 more than Resend, the cheapest. That is within your tolerance of $100.");
+  // The same vendor at 250,000, which the person only tries: $110 above the cheapest, outside the tolerance. The saved verdict is untouched.
+  const tried = stand(offers, at(250_000), "saved", 100);
+  assert.deepEqual([tried.state, tried.cost, Math.round(tried.gap!), tried.holds], ["outside", 310, 110, false]);
+  assert.equal(standSentence(tried, "Postmark", "Resend", true), "Postmark would cost $310 per month, $110 more than Resend, the cheapest. That is above your tolerance of $100.");
+  assert.equal(stand(offers, at(120_000), "saved", 100).holds, true);
+  // A visitor on an example did not save it: no "your".
+  assert.equal(standSentence(tried, "Postmark", "Resend", true, undefined, false), "Postmark would cost $310 per month, $110 more than Resend, the cheapest. That is above the saved tolerance of $100.");
+  // At 30,000 the saved vendor is the cheapest.
+  const low = stand(offers, at(30_000), "saved", 100);
+  assert.equal(low.state, "cheapest");
+  assert.equal(standSentence(low, "Postmark", "Postmark", true), "Postmark would be the cheapest at $46 per month.");
+  // No tolerance: anything above the cheapest is outside, and the sentence says why.
+  assert.equal(standSentence(stand(offers, at(120_000), "saved", 0), "Postmark", "Resend"), "Postmark costs $154 per month, $84 more than Resend, the cheapest. You saved it with no tolerance, so it holds only while it is the cheapest.");
+});
+
+test("a saved choice that cannot be priced under the tried values says why, and never shows a cost as if it were known", () => {
+  const unknown = stand(gaps, at(250_000), "silent", 100);
+  assert.deepEqual([unknown.state, unknown.holds, unknown.gap], ["unknown", false, null]);
+  assert.equal(standSentence(unknown, "Mailgun", "Resend", true, (t) => t.replace("mau", "emails per month")), "Mailgun cannot be fully priced: emails per month: price above 200,000 not stated. Its known costs are at least $60 per month.");
+  const out = stand(gaps, at(250_000), "capped", 100);
+  assert.deepEqual([out.state, out.cost, out.holds], ["ineligible", null, false]);
+  assert.equal(standSentence(out, "SendGrid", "Resend", true), "no SendGrid plan fits: mau limit is 200,000.");
+  // Both are fine at the saved 120,000.
+  assert.equal(stand(gaps, at(120_000), "silent", 100).state, "cheapest");
+  assert.equal(stand(gaps, at(120_000), "capped", 100).state, "within");
+  // A vendor without pricing data, or one that is not part of the playground.
+  assert.equal(stand({ ...offers, gone: null }, at(120_000), "gone", 100).state, "unread");
+  assert.equal(standSentence(stand(offers, at(120_000), "nobody", 100), "Nobody", null), "Nobody has no pricing data.");
+});
+
+test("a vendor that cannot be fully priced is described by a plan that states a price, not by a contact-sales plan", () => {
+  const m: PricingModel = { vendor: null, currency: "USD", plans: [
+    { name: "Pro", base_price: 20, custom_pricing: false, price_quote: null, meters: [{ metric: "mau", included: null, overage_allowed: null, tiers: [], quote: "Included in Flat Rate" }], features: [] },
+    { name: "Enterprise", base_price: null, custom_pricing: true, price_quote: null, meters: [], features: [] },
+  ] };
+  const v = rank({ v: m }, at(200)).unranked[0];
+  assert.deepEqual([v.best!.plan, v.best!.cost, v.best!.unknowns], ["Pro", 20, ["mau: included quantity and price not stated"]]);
+  // Only a contact-sales plan: that is what is shown.
+  assert.equal(rank({ v: { ...m, plans: [m.plans![1]] } }, at(200)).unranked[0].best!.plan, "Enterprise");
+});
+
+test("the controls are at the saved assumptions only when every saved metric and must-have matches", () => {
+  const saved = { usage: { mau: 120_000 }, required: ["sso"] };
+  assert.equal(sameAssumptions({ usage: { mau: 120_000, seats: 5 }, required: ["sso"] }, saved), true); // a metric added after the save does not count
+  assert.equal(sameAssumptions({ usage: { mau: 250_000 }, required: ["sso"] }, saved), false);
+  assert.equal(sameAssumptions({ usage: { mau: 120_000 }, required: [] }, saved), false);
+  assert.equal(sameAssumptions({ usage: { mau: 120_000 }, required: ["sso", "sla"] }, saved), false);
+});
+
+test("plans that are separate products are told apart from tiers of one product", () => {
+  assert.equal(productLike(["NVIDIA Quadro RTX 6000", "NVIDIA A10", "NVIDIA A100 (40 GB)", "NVIDIA H100", "NVIDIA GH200"]), true);
+  assert.equal(productLike(["RTX 4090", "RTX A6000", "A100 PCIe", "H100 SXM", "L40S"]), true);
+  assert.equal(productLike(["Free", "Pro", "Team", "Enterprise"]), false);
+  assert.equal(productLike(["Essentials 50K", "Essentials 100K", "Pro 100K", "Premier"]), false);
+  assert.equal(productLike(["10,000 emails", "50,000 emails", "100,000 emails"]), false); // volume rows are quantities, not models
+  assert.equal(productLike(["Pay as you go"]), false);
+  assert.equal(productLike(["A100", "H100"]), false); // two rows are too few to tell
 });

@@ -14,6 +14,7 @@ export function flatten(model: PricingModel | null): Record<string, Fact> {
     out[k + "custom pricing"] = p.custom_pricing;
     for (const m of p.meters ?? []) {
       out[`${k}${m.metric} / included`] = m.included;
+      if (m.unlimited) out[`${k}${m.metric} / unlimited`] = true;
       out[`${k}${m.metric} / overage allowed`] = m.overage_allowed;
       (m.tiers ?? []).forEach((t, i) => {
         out[`${k}${m.metric} / tier ${i + 1} up to`] = t.up_to;
@@ -48,7 +49,7 @@ export type Kept = { evidence: string; prefix: string };
 export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): { model: PricingModel; kept: Kept[] } {
   // Facts only, in a fixed shape: key order, a missing key or a different quote must not make two equal reads differ.
   const same = (x: Fact[], y: Fact[]) => x.length === y.length && x.every((v, i) => v === y[i]);
-  const meter = (m: Meter): Fact[] => [m.included ?? null, m.overage_allowed ?? null, ...(m.tiers ?? []).flatMap((t) => [t.up_to ?? null, t.price ?? null, t.per_units ?? null])];
+  const meter = (m: Meter): Fact[] => [m.included ?? null, m.unlimited === true, m.overage_allowed ?? null, ...(m.tiers ?? []).flatMap((t) => [t.up_to ?? null, t.price ?? null, t.per_units ?? null])];
   const feature = (f: FeatureFact): Fact[] => [f.status ?? null, f.addon_price ?? null];
   const kept: Kept[] = [];
   const keep = (name: string, kind: "meter" | "feature", id: string) => kept.push({ evidence: `${name}/${kind}/${id}`, prefix: `${name} / ${id} /` });
@@ -85,6 +86,7 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
         base_price: base.base_price,
         custom_pricing: base.custom_pricing,
         price_quote: base.price_quote,
+        ...(q.price_gap ? { price_gap: q.price_gap } : {}),
         meters: entries("meter", name, (m) => m.metric, meter, o?.meters ?? [], p.meters ?? [], q.meters ?? []),
         features: entries("feature", name, (f) => f.feature, feature, o?.features ?? [], p.features ?? [], q.features ?? []),
       },

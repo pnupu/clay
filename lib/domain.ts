@@ -25,6 +25,7 @@ export const DOMAIN: Domain = {
   question: "Which auth provider should a B2B SaaS use?",
   product: "authentication product for a business-to-business SaaS customer",
   notes: "An SSO price per user or per MAU belongs to sso_users, never to sso_connections.",
+  note: "Four real vendors, read from their own pricing pages, and one fictional vendor, Northwind Auth (marked Demo): its price can be changed on purpose, to show how a saved decision is judged again when a price changes.",
   metrics: [
     {
       id: "mau",
@@ -73,21 +74,27 @@ export const DOMAIN: Domain = {
 export type Tier = { up_to: number | null; price: number | null; per_units: number | null };
 export type Meter = {
   metric: string;
+  /** The page says this is unlimited on the plan ("Unlimited users"): any quantity is included. */
+  unlimited?: boolean;
   included: number | null;
   overage_allowed: boolean | null;
   tiers: Tier[] | null;
   quote: string | null;
 };
 export type FeatureFact = { feature: string; status: "included" | "addon" | "not_available" | null; addon_price: number | null; quote: string | null };
+/** Why a price cannot be read from the page text. interactive: it is shown only through a slider, dropdown or calculator. configuration: the page states several prices that depend on the product or configuration chosen. */
+export type PriceGap = "interactive" | "configuration";
 export type Plan = {
   name: string;
   base_price: number | null;
   custom_pricing: boolean | null;
+  price_gap?: PriceGap | null;
   price_quote: string | null;
   meters: Meter[] | null;
   features: FeatureFact[] | null;
 };
-export type PricingModel = { vendor: string | null; currency: string | null; plans: Plan[] | null };
+/** `page_gap`: why the page gave no plan at all, when the extraction can tell. */
+export type PricingModel = { vendor: string | null; currency: string | null; plans: Plan[] | null; page_gap?: PriceGap | "not_pricing" | "contact_sales" | null };
 
 const nullable = (type: string, description: string) => ({ type: [type, "null"], description });
 
@@ -99,6 +106,7 @@ export function extractionSchema(d: Domain) {
     properties: {
       vendor: nullable("string", "Vendor name as written on the page."),
       currency: nullable("string", "ISO currency code of the prices, for example USD."),
+      page_gap: { type: ["string", "null"], enum: ["interactive", "configuration", "not_pricing", "contact_sales", null], description: "Only when `plans` is empty: why. interactive: prices appear only through a slider, dropdown or calculator. configuration: prices depend on a configuration that the text does not list. not_pricing: this is not a pricing page (documentation, a sign-up or trial page, an error page). contact_sales: the page gives no prices, only a contact form. null when plans were read." },
       plans: {
         type: "array",
         description: "Every self-serve or enterprise plan on the page, in page order.",
@@ -111,6 +119,7 @@ export function extractionSchema(d: Domain) {
             base_price: nullable("number", "Fixed platform fee per month when billed MONTHLY (not the annual-billing discount price). 0 for a free plan. null if the page does not state it or pricing is custom."),
             custom_pricing: nullable("boolean", "true if the plan price is 'Custom' or 'Contact sales'."),
             price_quote: nullable("string", "Short verbatim text from the page that states the base price."),
+            price_gap: { type: ["string", "null"], enum: ["interactive", "configuration", null], description: "Only when the page text does not state this plan's price or its included quantity. interactive: the price is shown only through a volume slider, dropdown or calculator. configuration: the price depends on a product or configuration choice that the text does not list. null when the text states the price and what it includes." },
             meters: {
               type: "object",
               additionalProperties: false,
@@ -124,6 +133,7 @@ export function extractionSchema(d: Domain) {
                     description: `${m.describe} null if the page says nothing about this for this plan.`,
                     properties: {
                       status: { type: ["string", "null"], enum: ["priced", "not_available", null], description: "not_available: the page says this plan does not include or offer it. priced: the page states an included quantity or a price." },
+                      unlimited: nullable("boolean", "true when the page says this is unlimited on the plan, for example 'Unlimited users'. Then `included` is null."),
                       included: nullable("number", "Units included in the base price. 0 if none are included. null if not stated."),
                       overage_allowed: nullable("boolean", "true if usage above `included` is billed, false if `included` is a hard limit, null if not stated."),
                       tiers: {
@@ -177,33 +187,99 @@ export const extractionInstructions = (d: Domain) =>
   "Keep prices and quantities exactly as written (monthly billing prices, not annual-discount prices). " +
   "If the page has no named plans, describe it as one plan named after the pricing model (for example 'Pay as you go'). " +
   "If a plan is described as usage-based, pay-as-you-go or free with no fixed fee, its base_price is 0. " +
+  "A price per seat, per user, per member, per GB, per hour or per other unit belongs to the metric that counts that unit: put it in that metric's tiers as the price of 1 unit (per_units 1), with `included` set to the number the plan includes (0 if none). Do not also put it in base_price, unless the page states a separate fixed fee. " +
+  "When the page says a metric is unlimited on a plan, set `unlimited` to true for it. " +
+  "When the page lists several products, models or configurations with their own prices (for example GPU models or instance sizes), return each one as its own plan, named exactly as on the page. Never put the prices of different products into the tiers of one plan: tiers are only volume steps of one price. " +
+  "When a price is shown only through a slider, a dropdown or a calculator and the text states no price for it, do not take the number that happens to be displayed: leave the price null and set price_gap to interactive. " +
   (d.notes ? d.notes.trim() + " " : "") +
   "Quotes must be copied verbatim from one place on the page.";
 
 /** Shape returned by the schema above: meters and features keyed by id. normalise() turns it into PricingModel. */
-type RawMeter = Omit<Meter, "metric"> & { status?: "priced" | "not_available" | null };
+type RawMeter = Omit<Meter, "metric" | "unlimited"> & { status?: "priced" | "not_available" | null; unlimited?: boolean | null };
 type RawPlan = Omit<Plan, "meters" | "features"> & { meters?: Record<string, RawMeter | null> | null; features?: Record<string, Omit<FeatureFact, "feature"> | null> | null };
-export type RawModel = { vendor: string | null; currency: string | null; plans: RawPlan[] | null };
+export type RawModel = { vendor: string | null; currency: string | null; plans: RawPlan[] | null; page_gap?: string | null };
+
+const GAPS = ["interactive", "configuration"] as const;
+const gap = (x: unknown): PriceGap | null => (GAPS.includes(x as PriceGap) ? (x as PriceGap) : null);
 
 export function normalise(raw: RawModel): PricingModel {
+  const pageGap = raw.page_gap === "not_pricing" || raw.page_gap === "contact_sales" ? raw.page_gap : gap(raw.page_gap);
   return {
     vendor: raw.vendor ?? null,
     currency: raw.currency ?? null,
-    plans: (raw.plans ?? []).map((p) => ({
-      name: p.name,
-      base_price: p.base_price ?? null,
-      custom_pricing: p.custom_pricing ?? null,
-      price_quote: p.price_quote ?? null,
-      meters: Object.entries(p.meters ?? {}).flatMap(([metric, m]): Meter[] => {
+    ...(pageGap && !raw.plans?.length ? { page_gap: pageGap } : {}),
+    plans: (raw.plans ?? []).map((p) => {
+      let priceGap = gap(p.price_gap);
+      const meters = Object.entries(p.meters ?? {}).flatMap(([metric, m]): Meter[] => {
         if (!m) return [];
         const quote = m.quote ?? null;
         // "Not available on this plan" is a hard limit of 0.
         if (m.status === "not_available") return [{ metric, included: 0, overage_allowed: false, tiers: [], quote }];
+        if (m.unlimited === true) return [{ metric, unlimited: true, included: null, overage_allowed: null, tiers: [], quote }];
         // An entry with no content says nothing: leave it out, so the metric counts as "no charge stated".
         if (m.included == null && m.overage_allowed == null && !m.tiers?.length && !quote) return [];
-        return [{ metric, included: m.included ?? null, overage_allowed: m.overage_allowed ?? null, tiers: m.tiers ?? [], quote }];
-      }),
-      features: Object.entries(p.features ?? {}).flatMap(([feature, f]): FeatureFact[] => (f?.status ? [{ feature, status: f.status, addon_price: f.addon_price ?? null, quote: f.quote ?? null }] : [])),
-    })),
+        // Tiers are volume steps of one price, so only the last one is open-ended. Several open-ended prices are the
+        // prices of different products (GPU models, instance sizes) put into one plan: none of them is "the" price.
+        const mixed = (m.tiers ?? []).filter((t) => t.up_to == null).length > 1;
+        if (mixed) priceGap ??= "configuration";
+        return [{ metric, included: m.included ?? null, overage_allowed: m.overage_allowed ?? null, tiers: mixed ? [] : (m.tiers ?? []), quote }];
+      });
+      return {
+        name: p.name,
+        base_price: p.base_price ?? null,
+        custom_pricing: p.custom_pricing ?? null,
+        price_quote: p.price_quote ?? null,
+        ...(priceGap ? { price_gap: priceGap } : {}),
+        meters,
+        features: Object.entries(p.features ?? {}).flatMap(([feature, f]): FeatureFact[] => (f?.status ? [{ feature, status: f.status, addon_price: f.addon_price ?? null, quote: f.quote ?? null }] : [])),
+      };
+    }),
   };
+}
+
+// ---- Where to look for a vendor's pricing page.
+
+/** Does a read of a page give anything to compute with: a plan with a price, an included quantity or an unlimited metric? */
+export const hasPrices = (m: PricingModel | null | undefined): boolean =>
+  (m?.plans ?? []).some((p) => p.base_price != null || (p.meters ?? []).some((x) => x.unlimited || x.included != null || (x.tiers ?? []).some((t) => t.price != null)));
+
+/** Host labels of side sites, which rarely carry the prices: docs.acme.com, www.stage.acme.com. */
+const OFF_SITE = /^(docs?|help|support|blog|status|community|forum|stage|staging|dev|developers?|api|app|dashboard|login|careers|investors?)$/;
+const OFF_TOPIC = /\/(docs?|blog|help|support|changelog|legal|terms|privacy|sign-?up|sign-?in|login|register|free-trial|trial|careers|customers|case-stud)/;
+
+/**
+ * The pages to try for a vendor's pricing, in order. `results`: the search results on the vendor's domain, best first.
+ * 1. results whose address says "pricing" (or "plans") on the main site: the pricing page itself (".../pricing") before
+ *    its sub-pages (".../pricing/pro-vs-free"), then in search order;
+ * 2. the site's own /pricing page, which most vendors have;
+ * 3. the other results on the main site, then results on side hosts (docs., help., stage.), which rarely carry prices.
+ * Addresses outside the domain, not https, or already tried are left out. At most `max` pages.
+ */
+export function pricingCandidates(results: { url: string }[], domain: string, tried: string[] = [], max = 3): string[] {
+  const key = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").replace(/^https:\/\/www\./, "https://").toLowerCase();
+  const seen = new Set(tried.map(key));
+  const rank = (u: URL) => {
+    const host = u.hostname.toLowerCase();
+    const side = host !== domain && host.slice(0, -domain.length - 1).split(".").some((label) => OFF_SITE.test(label));
+    const path = u.pathname.toLowerCase();
+    const priced = /pricing|\/plans?(\/|$)/.test(path) && !OFF_TOPIC.test(path);
+    return side ? 3 : priced ? (/\/(pricing|plans)\/?$/.test(path) ? 0 : 0.5) : OFF_TOPIC.test(path) ? 3 : 2;
+  };
+  const found = results.flatMap((r, i) => {
+    try {
+      const u = new URL(r.url);
+      const host = u.hostname.toLowerCase();
+      return u.protocol === "https:" && (host === domain || host.endsWith(`.${domain}`)) ? [{ url: r.url, rank: rank(u), i }] : [];
+    } catch {
+      return [];
+    }
+  });
+  const all = [...found, { url: `https://${domain}/pricing`, rank: 1, i: -1 }].sort((x, y) => x.rank - y.rank || x.i - y.i);
+  const out: string[] = [];
+  for (const c of all) {
+    if (seen.has(key(c.url))) continue;
+    seen.add(key(c.url));
+    out.push(c.url);
+  }
+  return out.slice(0, max);
 }
