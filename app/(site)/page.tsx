@@ -59,8 +59,8 @@ export default async function Home() {
   const examples = orderExamples(playgrounds);
   const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
   // The hero. When the first example (the one the operator features) is a price decision with read prices, the hero is
-  // its ranking on live web data, and the first preview example follows as the second thing a visitor meets. Otherwise
-  // the hero is that preview example, as before.
+  // its ranking on live web data, and a preview example follows in the steps section (`demo`, below). Otherwise the hero
+  // is the first preview example, as before.
   const priceHero = priceHeroOf(examples[0]);
   const hero = examples.find(([, p]) => p.kit) ?? null;
   // The steps under a price hero show a thing that a person tunes by hand: the card that snaps back, whose controls and
