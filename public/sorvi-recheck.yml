@@ -63,7 +63,6 @@ jobs:
           DIR="${SORVI_DECISIONS_DIR:-.sorvi/decisions}"
           # Before the rename the product was Clay: its decision files are in .clay/decisions and name its earlier address.
           OLD_HOST="https://clay-steel-nu.vercel.app"
-          if [ -z "${SORVI_DECISIONS_DIR:-}" ] && [ ! -d "$DIR" ] && [ -d .clay/decisions ]; then DIR=".clay/decisions"; fi
           LABEL="sorvi-decision"
           KEY="${SORVI_AGENT_KEY:-}"
 
@@ -74,6 +73,10 @@ jobs:
 
           shopt -s nullglob
           files=("$DIR"/*.md)
+          # With no directory named, the files of .clay/decisions are read too. A file of the same name in .sorvi/decisions wins.
+          if [ -z "${SORVI_DECISIONS_DIR:-}" ]; then
+            for old in .clay/decisions/*.md; do [ -e "$DIR/${old##*/}" ] || files+=("$old"); done
+          fi
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No decision file in $DIR: nothing to re-check."
             exit 0

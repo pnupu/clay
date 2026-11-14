@@ -20,7 +20,7 @@ const BROKEN = { playground_id: "email-choice", url: `${HOST}/p/email-choice`, c
 
 /** One run of the script in a scratch repository. `answers`: per playground id, the HTTP code and body the stand-in curl gives. */
 type Issue = { number: number; state: string; title: string; body: string };
-function run(o: { files: Record<string, string>; answers?: Record<string, { code: number; body?: unknown }>; key?: string | null; state?: string; network?: boolean; ghFails?: string; host?: string | null; dir?: string }) {
+function run(o: { files: Record<string, string>; answers?: Record<string, { code: number; body?: unknown }>; key?: string | null; state?: string; network?: boolean; ghFails?: string; host?: string | null; dir?: string; named?: boolean; old?: Record<string, string> }) {
   const dir = mkdtempSync(join(tmpdir(), "sorvi-recheck-"));
   const bin = join(dir, "bin");
   const state = o.state ?? join(dir, "gh");
@@ -28,13 +28,15 @@ function run(o: { files: Record<string, string>; answers?: Record<string, { code
   mkdirSync(decisions, { recursive: true });
   mkdirSync(bin);
   for (const [name, text] of Object.entries(o.files)) writeFileSync(join(decisions, name), text);
+  if (o.old) mkdirSync(join(dir, ".clay/decisions"), { recursive: true });
+  for (const [name, text] of Object.entries(o.old ?? {})) writeFileSync(join(dir, ".clay/decisions", name), text);
   for (const [id, a] of Object.entries(o.answers ?? {})) writeFileSync(join(dir, `answer-${id}.json`), JSON.stringify(a));
   // The stand-in curl: records its arguments, writes the canned body to the -o file and prints the code, as -w '%{http_code}' does.
   writeFileSync(join(bin, "curl"), `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${dir}/curl.log"\n${o.network ? 'echo "curl: (7) Failed to connect" >&2; exit 7' : `out=""; url=""; while [ "$#" -gt 0 ]; do case "$1" in -o) out="$2"; shift;; https://*|http://*) url="$1";; esac; shift; done\nid="$(printf '%s' "$url" | sed 's#.*/api/p/\\([^/]*\\)/recheck#\\1#')"\njq -c '.body // {}' "${dir}/answer-$id.json" > "$out"\njq -r '.code' "${dir}/answer-$id.json" | tr -d '\\n'`}\n`);
   writeFileSync(join(bin, "gh"), readFileSync(join(HERE, "recheck-gh-stand-in.sh"), "utf8"));
   chmodSync(join(bin, "curl"), 0o755);
   chmodSync(join(bin, "gh"), 0o755);
-  const env: Record<string, string> = { PATH: `${bin}:${process.env.PATH}`, ...(o.host === null ? {} : { SORVI_HOST: o.host ?? HOST }), GH_STAND_IN: state, HOME: dir, GH_STAND_IN_FAIL: o.ghFails ?? "" };
+  const env: Record<string, string> = { PATH: `${bin}:${process.env.PATH}`, ...(o.host === null ? {} : { SORVI_HOST: o.host ?? HOST }), GH_STAND_IN: state, HOME: dir, GH_STAND_IN_FAIL: o.ghFails ?? "", ...(o.named && o.dir ? { SORVI_DECISIONS_DIR: o.dir } : {}) };
   if (o.key !== null) env.SORVI_AGENT_KEY = o.key ?? KEY;
   // As a workflow step runs it: bash with errexit and pipefail.
   const r = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", embedded], { cwd: dir, env: env as NodeJS.ProcessEnv, encoding: "utf8" });
@@ -210,4 +212,19 @@ test("a decision file from before the rename is still re-checked: .clay/decision
   const other = run({ files: { "email-choice.md": old }, dir: ".clay/decisions", answers: { "email-choice": { code: 200, body: BROKEN } } });
   assert.equal(other.code, 1, other.out);
   assert.equal(other.curl, "");
+});
+
+test("files in .clay/decisions are still re-checked when .sorvi/decisions exists; a file of the same name in .sorvi/decisions wins", () => {
+  const old = (id: string) => `# Decision: "Which email service?"\n\n- Chosen: "Resend"\n- Playground: ${HOST}/p/${id}\n- Playground id: \`${id}\`\n`;
+  const holds = { code: 200, body: { verdict: "STILL HOLDS: it holds. Checked 2026-11-16 06:17 UTC.", checked_at: "2026-11-16T06:17:00.000Z" } };
+  const r = run({ files: { "new.md": record("new"), "both.md": record("both") }, old: { "old.md": old("old"), "both.md": old("stale") }, answers: { new: holds, old: holds, both: holds, stale: holds } });
+  assert.equal(r.code, 0, r.out);
+  const sent = r.curl.trim().split("\n").map((l) => l.match(/\/api\/p\/([a-z-]+)\/recheck/)?.[1]).sort();
+  // "stale" is the id inside .clay/decisions/both.md: it is not sent, because .sorvi/decisions/both.md wins.
+  assert.deepEqual(sent, ["both", "new", "old"]);
+  // With a directory named, only that directory is read.
+  const named = run({ files: { "new.md": record("new") }, dir: "mine", named: true, old: { "old.md": old("old") }, answers: { new: holds, old: holds } });
+  assert.equal(named.code, 0, named.out);
+  assert.equal(named.curl.trim().split("\n").length, 1);
+  assert.match(named.curl, /\/api\/p\/new\/recheck /);
 });
