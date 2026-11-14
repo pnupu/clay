@@ -233,7 +233,10 @@ test("data cases: the facts carry sources, an unknown is not a number, the choic
   assert.match(choiceHandback(["claude-sonnet-5-5"], before, '{ "model": "gpt-6-luna" }', "").reason, /does not hold the settled choice/);
   assert.equal(choiceHandback(["H100", "RunPod"], null, null, "You settled on an H100 at RunPod for 300 hours.").status, "pass");
   assert.match(choiceHandback(["H100"], null, null, "You settled on an A100.").reason, /names only 0 of the 1 settled choices/);
-  // In words, at least half of the settled choices must be named: selects also hold assumptions that an answer need not repeat.
+  // In words, more than half of the settled choices must be named, and a shared version number names nothing.
+  assert.equal(choiceHandback(["claude-sonnet-4.5", "batch"], null, null, "Use Claude Opus 4.5 with batch billing.").status, "fail");
+  assert.equal(choiceHandback(["claude-sonnet-4.5", "batch"], null, null, "Use Claude Sonnet 4.5 with batch billing.").status, "pass");
+  assert.equal(unknowns("Opus — 0.00 USD per task").status, "fail");
   assert.equal(choiceHandback(["RTX 4090 24GB", "QLoRA (4-bit base)", "RTX 4090 24GB", "Lambda"], null, null, "You settled on RTX 4090 on Lambda with QLoRA.").status, "pass");
   assert.equal(choiceHandback(["RTX 4090 24GB", "QLoRA (4-bit base)", "Vast.ai", "Full fine-tune"], null, null, "You settled on an RTX 4090.").status, "fail");
   assert.equal(choiceHandback([], null, null, "").status, "na");

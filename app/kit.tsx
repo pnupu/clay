@@ -11,6 +11,12 @@ import type { WebSource, WebState, WebValue } from "@/lib/web";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
+/**
+ * Where the person has the controls, per playground and kit revision, kept in this tab's memory. The screen is mounted
+ * again when web data or the brand arrives (the preview must load again with the data); the person may be moving
+ * controls at that moment, and must find them where they left them.
+ */
+const held = new Map<string, Values>();
 type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
 
 /**
@@ -41,7 +47,11 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
   const { kit } = state;
   // The owner comes back to where they left the controls. Anyone else gets the start values: an example opens on the
   // unsatisfying state that the person asked about, whatever its owner tried later.
-  const [values, setValues] = useState<Values>(() => (canWrite ? valuesNow(state) : initialValues(kit.controls)));
+  const heldKey = `${id}:${state.rev ?? ""}`;
+  const [values, setValues] = useState<Values>(() => held.get(heldKey) ?? (canWrite ? valuesNow(state) : initialValues(kit.controls)));
+  useEffect(() => {
+    held.set(heldKey, values);
+  }, [heldKey, values]);
   const [settled, setSettled] = useState(state.settled);
   const [frame, setFrame] = useState<Frame>({ status: "loading", error: null });
   const [busy, setBusy] = useState(false);
@@ -127,6 +137,15 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
     }, 1200);
     return () => clearTimeout(t);
   }, [values, canWrite, api, state.rev]);
+
+  // When the screen goes away with moves that were not reported yet (it is mounted again when data arrives), report them now.
+  useEffect(() => {
+    return () => {
+      if (!moved.current || !canWrite) return;
+      const controls = Object.fromEntries(Object.entries(seen.current).map(([k, s]) => [k, { ...s, final: latest.current[k] }]));
+      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rev: state.rev, controls }) }).catch(() => {});
+    };
+  }, [api, canWrite, state.rev]);
 
   const reset = () => {
     for (const c of kit.controls) if (c.initial !== values[c.id]) note(c, c.initial);
@@ -332,7 +351,7 @@ function WebSourceItem({ source: s, state: st, reading, since }: { source: WebSo
   const host = (() => { try { return new URL(st?.url ?? "").hostname; } catch { return s.domain ?? s.id; } })();
   const changes = (st?.changes ?? []).filter((c) => !since || c.at > since);
   const fields = s.fields ?? s.rows!.fields;
-  const fact = (v: WebValue) => (v === true ? "on the page" : v === false ? "not on the page" : v == null ? "unknown" : String(v));
+  const fact = (v: WebValue) => (v === true ? "yes" : v === false ? "no" : v == null ? "unknown" : String(v));
   return (
     <li data-web-source={s.id}>
       <p className="small">

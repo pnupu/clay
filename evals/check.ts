@@ -193,7 +193,7 @@ export function unknowns(withNulls: string | null): Check {
   if (withNulls == null) return fail("unknowns", "the preview could not be loaded with its web numbers missing (no web data in it, or no preview)");
   const broken = /\bNaN\b|\bundefined\b|\bnull\b|\bInfinity\b/.exec(withNulls);
   if (broken) return fail("unknowns", `with its web numbers missing, the preview shows "${broken[0]}": a missing value went into a calculation`);
-  if (!/unknown|not stated|not listed|no price|not available|not found|missing|n\/a|—|–/i.test(withNulls)) return fail("unknowns", "with every web number missing, the preview names nothing as unknown: a missing value is shown as a number, or the preview is empty");
+  if (!/unknown|not stated|not listed|no price|not available|not found|missing|n\/a/i.test(withNulls)) return fail("unknowns", "with every web number missing, the preview names nothing as unknown: a missing value is shown as a number, or the preview is empty");
   return pass("unknowns", "with its web numbers missing, the preview says unknown and shows no broken number");
 }
 
@@ -205,14 +205,16 @@ export function namedInProse(choice: string, text: string): boolean {
   const said = text.toLowerCase();
   if (said.includes(choice.toLowerCase())) return true;
   const parts = choice.toLowerCase().split(/[^a-z0-9.]+/).filter((p) => p.length >= 3);
-  const codes = parts.filter((p) => /\d/.test(p));
+  // A code names a thing only when it is specific: letters with digits (h100, l40s), or a number of 4 digits or more (4090).
+  // A version such as 4.5 is shared by other options.
+  const codes = parts.filter((p) => (/[a-z]/.test(p) && /\d/.test(p)) || /^\d{4,}$/.test(p));
   return codes.length ? codes.some((p) => said.includes(p)) : parts.length > 0 && parts.every((p) => said.includes(p));
 }
 
 /**
  * The hand-back of a choice. With a file: the file must have changed and must hold every settled choice as it is.
  * Without a file the agent answers in words, and a playground's selects hold assumptions as well as the choice itself
- * (a method, a size), which a good answer need not all repeat: the answer must name at least half of the settled choices.
+ * (a method, a size), which a good answer need not all repeat: the answer must name more than half of the settled choices.
  */
 export function choiceHandback(choices: string[], before: string | null, after: string | null, answer: string): Check {
   if (!choices.length) return na("handback_match", "the person had no choice to settle (the playground has no select)");
@@ -223,7 +225,7 @@ export function choiceHandback(choices: string[], before: string | null, after: 
   }
   const unique = [...new Set(choices)];
   const named = unique.filter((c) => namedInProse(c, answer));
-  return named.length * 2 >= unique.length ? pass("handback_match", `the answer names ${named.length} of the ${unique.length} settled choice(s): ${named.map((c) => cut(c, 30)).join(", ")}`) : fail("handback_match", `the answer names only ${named.length} of the ${unique.length} settled choices; missing: ${unique.filter((c) => !named.includes(c)).map((c) => cut(c, 30)).join(", ")}`);
+  return named.length * 2 > unique.length ? pass("handback_match", `the answer names ${named.length} of the ${unique.length} settled choice(s): ${named.map((c) => cut(c, 30)).join(", ")}`) : fail("handback_match", `the answer names only ${named.length} of the ${unique.length} settled choices; missing: ${unique.filter((c) => !named.includes(c)).map((c) => cut(c, 30)).join(", ")}`);
 }
 
 /** A case passes only if every applicable check passes. */

@@ -1,7 +1,7 @@
 // data.web: what an agent may ask for, the guard on what comes back, and the confirmation of a change.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkWeb, confirmChanges, diffWeb, guard, numberOnPage, webData, webSchema, WEB_LIMITS, type WebRead, type WebSource } from "./web.ts";
+import { checkWeb, confirmChanges, diffWeb, guard, numberOnPage, ROW_GONE, ROW_HERE, rowKeys, webData, webSchema, WEB_LIMITS, type WebRead, type WebSource } from "./web.ts";
 
 const prices: WebSource = { id: "anthropic", url: "https://www.anthropic.com/pricing", rows: { describe: "one row per model of the API", fields: [{ id: "model", type: "text", describe: "model name" }, { id: "input", type: "number", unit: "USD per 1M tokens", describe: "price of input tokens per million" }, { id: "output", type: "number", describe: "price of output tokens per million" }] } };
 const page = "Claude Opus 5.5: $5 / MTok input, $25 / MTok output. Claude Sonnet 5.5: $3.00 / MTok input, $15 / MTok output. Batch: 50% off. 1,000 requests.";
@@ -44,6 +44,16 @@ test("a number that is not in the page text is quarantined: unknown, never a gue
   assert.equal(numberOnPage(0.3, "$1.30 per million"), false);
   assert.equal(numberOnPage(35, "tiers: 3, 5 and 8"), false);
   assert.equal(numberOnPage(2000000, "2 million tokens"), true);
+  // Only spellings of the same value count, never a rounding: 0.0004 is not "0.00", 2.996 is not "3.00".
+  assert.equal(numberOnPage(0.0004, "Free plan: 0.00 USD"), false);
+  assert.equal(numberOnPage(2.996, "3.00 USD per seat"), false);
+  assert.equal(numberOnPage(3, "3.00 USD per seat"), true);
+  assert.equal(numberOnPage(0.25, "USD .25 per GB"), true);
+  // A k or M form is not found in a unit of something else.
+  assert.equal(numberOnPage(1000000, "a 1MB file"), false);
+  assert.equal(numberOnPage(5000, "weighs 5kg"), false);
+  assert.equal(numberOnPage(5000, "up to 5k requests"), true);
+  assert.equal(numberOnPage(1000000, "2 USD per 1M tokens"), true);
 });
 
 test("values get the type the field asks for; text is cut; rows are capped; nothing unexpected passes", () => {
@@ -66,7 +76,7 @@ test("a change is what two fresh reads agree on; the rest keeps its old value", 
   const newPage = page.replace("$5 / MTok input", "$4 / MTok input") + " Claude Haiku 5.5: $1 / MTok input, $5 / MTok output. $16";
   const first = read([{ model: "Claude Opus 5.5", input: 4, output: 25 }, { model: "Claude Sonnet 5.5", input: 3, output: 16 }, { model: "Claude Haiku 5.5", input: 1, output: 5 }], newPage);
   const second = read([{ model: "Claude Opus 5.5", input: 4, output: 25 }, { model: "Claude Sonnet 5.5", input: 3, output: 15 }, { model: "Claude Haiku 5.5", input: 1, output: 5 }], newPage);
-  assert.deepEqual(diffWeb(prices, old, second), [{ path: "Claude Haiku 5.5", before: false, after: true }, { path: "Claude Opus 5.5 / input", before: 5, after: 4 }]);
+  assert.deepEqual(diffWeb(prices, old, second), [{ path: "Claude Haiku 5.5", row: "Claude Haiku 5.5", before: ROW_GONE, after: ROW_HERE }, { path: "Claude Opus 5.5 / input", row: "Claude Opus 5.5", field: "input", before: 5, after: 4 }]);
   const c = confirmChanges(prices, old, first, second);
   assert.deepEqual(c.changes.map((x) => x.path), ["Claude Haiku 5.5", "Claude Opus 5.5 / input"]);
   assert.equal(c.unconfirmed, 1); // Sonnet's output: only the first read said 16
@@ -75,7 +85,30 @@ test("a change is what two fresh reads agree on; the rest keeps its old value", 
   // A row that went away, and two reads that agree on everything.
   const gone = read([{ model: "Claude Opus 5.5", input: 5, output: 25 }]);
   const g = confirmChanges(prices, old, gone, gone);
-  assert.deepEqual(g.changes, [{ path: "Claude Sonnet 5.5", before: true, after: false }]);
+  assert.deepEqual(g.changes, [{ path: "Claude Sonnet 5.5", row: "Claude Sonnet 5.5", before: ROW_HERE, after: ROW_GONE }]);
   assert.deepEqual([g.read.rows!.length, g.unconfirmed, g.read.textHash === gone.textHash], [1, 0, true]);
   assert.deepEqual(diffWeb(prices, old, old), []);
+});
+
+test("a yes/no fact that turns to yes is a change, and a row name may hold any text or repeat", () => {
+  // A boolean field: false to true and true to false are both changes, for single fields and in rows.
+  const plan: WebSource = { id: "plan", url: "https://linear.app/pricing", fields: [{ id: "sso", type: "boolean", describe: "SSO included" }, { id: "seat", type: "number", describe: "price per seat" }] };
+  const at = (sso: boolean, seat: number) => guard(plan, { sso: { value: sso }, seat: { value: seat } }, "Business " + seat + " USD per user", { url: plan.url!, fetchedAt: "2026-11-14T00:00:00.000Z" });
+  assert.deepEqual(diffWeb(plan, at(false, 8), at(true, 8)), [{ path: "sso", field: "sso", before: false, after: true }]);
+  const both = confirmChanges(plan, at(false, 8), at(true, 10), at(true, 10));
+  assert.deepEqual([both.read.fields, both.changes.length, both.unconfirmed], [{ sso: true, seat: 10 }, 2, 0]);
+  const tiers: WebSource = { id: "tiers", url: "https://example.org/pricing", rows: { describe: "one row per tier", fields: [{ id: "name", type: "text", describe: "tier name" }, { id: "price", type: "number", describe: "price" }, { id: "sso", type: "boolean", describe: "SSO" }] } };
+  const page = "GPT / Turbo 3 4, Opus 15 7.5 8";
+  const readTiers = (rows: unknown[]) => guard(tiers, { rows }, page, { url: tiers.url!, fetchedAt: "2026-11-14T00:00:00.000Z" });
+  // A row name with the separator in it, and two rows with one name (a standard and a batch row).
+  const before = readTiers([{ name: "GPT / Turbo", price: 3, sso: false }, { name: "Opus", price: 15, sso: false }, { name: "Opus", price: 7.5, sso: false }]);
+  const after = readTiers([{ name: "GPT / Turbo", price: 4, sso: true }, { name: "Opus", price: 15, sso: false }, { name: "Opus", price: 8, sso: false }]);
+  assert.deepEqual(rowKeys(tiers, before.rows!), ["GPT / Turbo", "Opus", "Opus (2)"]);
+  const c = confirmChanges(tiers, before, after, after);
+  assert.deepEqual(c.changes.map((x) => [x.row, x.field, x.before, x.after]), [["GPT / Turbo", "price", 3, 4], ["GPT / Turbo", "sso", false, true], ["Opus (2)", "price", 7.5, 8]]);
+  assert.deepEqual(c.read.rows, [{ name: "GPT / Turbo", price: 4, sso: true }, { name: "Opus", price: 15, sso: false }, { name: "Opus", price: 8, sso: false }]);
+  // The row with the separator in its name goes away: reported, and removed.
+  const less = readTiers([{ name: "Opus", price: 15, sso: false }, { name: "Opus", price: 7.5, sso: false }]);
+  const gone = confirmChanges(tiers, before, less, less);
+  assert.deepEqual([gone.changes.map((x) => [x.row, x.after]), gone.read.rows!.length], [[["GPT / Turbo", ROW_GONE]], 2]);
 });

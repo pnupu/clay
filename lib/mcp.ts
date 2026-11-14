@@ -171,7 +171,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
             : brandPending(k)
           ? "The brand's colours are still being read (the web reader was busy), so the brand palette is still empty. Call read_playground now: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground again for the settled outputs."
           : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
-      ...(k.kit.web?.length ? { note: WEB_NOTE } : k.kit.brand ? { note: BRAND_NOTE } : {}),
+      ...(k.kit.web?.length || k.kit.brand ? { note: [k.kit.web?.length ? WEB_NOTE : "", k.kit.brand ? BRAND_NOTE : ""].filter(Boolean).join(" ") } : {}),
     });
   };
 
@@ -244,7 +244,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           web_changes: webChanges(now.kit!),
           data: dataReport(now.kit!, webReading(now)),
           problems: webProblems(now.kit!, webReading(now)),
-          tell_person: (w.value?.changes.length ?? 0) > 0 ? "The page shows the new values after a reload, with what changed since they settled." : "Nothing changed.",
+          tell_person: (w.value?.changes.length ?? 0) > 0 ? "The page shows the new values after a reload, with what changed since they settled." : w.value?.stop || webProblems(now.kit!, []).length || Object.values(now.kit!.web ?? {}).some((x) => x.error) ? "Not every page could be read again: say so, and do not say that nothing changed." : "Every page was read again and nothing changed.",
           note: WEB_NOTE,
         });
       }

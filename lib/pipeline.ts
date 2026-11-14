@@ -343,7 +343,9 @@ const webWorkId = (id: string) => `web:${id}`;
 async function extractWeb(src: WebSource, url: string): Promise<WebRead> {
   const r = await scrape(url, { schema: webSchema(src), instructions: webInstructions(src) });
   if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`.trim());
-  const text = r.markdown.success && r.markdown.data ? r.markdown.data : "";
+  // Without the page text no number can be checked: that is a failed read, not a page full of unknown values.
+  if (!r.markdown.success || !r.markdown.data) throw new Error("Page text not readable: the numbers could not be checked against the page.");
+  const text = r.markdown.data;
   try {
     // The page text of the capture, kept locally so a quarantined number can be checked by hand (skipped on a read-only filesystem).
     mkdirSync(".data/pages", { recursive: true });
@@ -357,7 +359,9 @@ async function readWeb(src: WebSource, was: WebState | undefined): Promise<{ sta
   const state: WebState = { url: src.url ?? was?.url ?? null, foundVia: src.url ? "spec" : (was?.foundVia ?? null), read: was?.read ?? null, error: null, lastCheckedAt: null, changes: was?.changes ?? [] };
   let stop: string | null = null;
   try {
-    if (!state.url) Object.assign(state, { url: (await searchTopUrl(src.find ?? src.id, src.domain!)).url, foundVia: "context.dev search" });
+    // The top result on the site for what the source asks to find. (The price engine prefers pages named "pricing"; a web
+    // source may ask for any page, so it takes the first result.)
+    if (!state.url) Object.assign(state, { url: (await cd<{ results?: { url?: string }[] }>("POST", "/web/search", { query: src.find ?? src.id, numResults: 3, includeDomains: [src.domain!] })).results?.[0]?.url ?? null, foundVia: "context.dev search" });
     if (!state.url) throw new Error(`Search found no page on ${src.domain} for "${src.find}"`);
     state.read = await extractWeb(src, state.url);
   } catch (e) {
@@ -397,7 +401,15 @@ export async function collectWeb(pg: string, ids: string[]): Promise<string | nu
  * when the text changed, extract again; a fact changes only when a second fresh extraction states the same thing
  * (confirmChanges). The changes are stored on the source and returned.
  */
-export async function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
+export function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
+  // Re-checks of one playground in this instance run one after the other: each starts from what the one before stored.
+  const run = (webRechecks.get(pg) ?? Promise.resolve()).then(() => recheckWebOnce(pg));
+  webRechecks.set(pg, run.then(() => {}, () => {}));
+  return run;
+}
+const webRechecks = new Map<string, Promise<void>>();
+
+async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
   const k = (await playground(pg)).kit;
   const sources = k?.kit.web ?? [];
   const changes: WebChange[] = [];
@@ -415,7 +427,9 @@ export async function recheckWeb(pg: string): Promise<{ changes: WebChange[]; st
         let halted: string | null = null;
         try {
           const page = await scrape(was.url);
-          if (pageHash(page.markdown.success && page.markdown.data ? page.markdown.data : "") !== was.read.textHash) {
+          if (!page.markdown.success || !page.markdown.data) throw new Error("Page text not readable: the page was not re-checked.");
+          state.recheckedAt = new Date().toISOString();
+          if (pageHash(page.markdown.data) !== was.read.textHash) {
             const first = await extractWeb(src, was.url);
             if (!diffWeb(src, was.read, first).length) state.read = first;
             else {
@@ -430,10 +444,21 @@ export async function recheckWeb(pg: string): Promise<{ changes: WebChange[]; st
           }
         } catch (e) {
           state.error = message(e);
+          state.recheckedAt = was.recheckedAt ?? null; // a re-read that failed is not a re-check
           if (e instanceof ContextDevError && e.stop) halted = state.error;
         }
         state.lastCheckedAt = new Date().toISOString();
-        await storeWeb(pg, src, state);
+        // Conditional write: when something else stored a newer read of this source meanwhile (another instance, a
+        // revision), that result stands and this one is dropped, with the changes it found.
+        const stored = await update((s) => {
+          const p = s.playgrounds[pg];
+          const cur = p?.kit?.web?.[src.id];
+          const mine = !!cur && JSON.stringify(p!.kit!.kit.web?.find((x) => x.id === src.id)) === JSON.stringify(src) && cur.read?.fetchedAt === was.read!.fetchedAt && cur.read?.textHash === was.read!.textHash;
+          if (mine) p!.kit!.web![src.id] = state;
+          sourceArrived(p, webWorkId(src.id));
+          return mine;
+        });
+        if (!stored) for (let i = changes.length - 1; i >= 0; i--) if (changes[i].source === src.id) changes.splice(i, 1);
         return halted;
       }),
     );
@@ -471,7 +496,9 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ preview
     // A web source that did not change keeps what was read; a new or changed one is read after this update.
     const sameSource = (x: WebSource) => JSON.stringify(p.kit!.kit.web?.find((y) => y.id === x.id)) === JSON.stringify(x);
     const web = Object.fromEntries((kit.web ?? []).filter((x) => sameSource(x) && p.kit!.web?.[x.id]).map((x) => [x.id, p.kit!.web![x.id]]));
-    const webToRead = (kit.web ?? []).filter((x) => !web[x.id]?.read).map((x) => x.id);
+    // A source that the running build still reads (and that did not change) arrives by itself: it is not read twice.
+    const arriving = new Set(workStatus(p)?.status === "running" ? p.work!.pending : []);
+    const webToRead = (kit.web ?? []).filter((x) => !web[x.id]?.read && !(sameSource(x) && arriving.has(webWorkId(x.id)))).map((x) => x.id);
     p.domain = domain;
     p.kit = previewKept
       ? { ...p.kit, kit, ...read, web, rev: outputsKept ? p.kit.rev : randomUUID(), settled: outputsKept ? p.kit.settled : null }

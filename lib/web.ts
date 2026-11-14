@@ -28,9 +28,15 @@ export type WebRead = {
   textHash: string;
   truncated: boolean;
 };
-export type WebChange = { at: string; source: string; path: string; before: WebValue; after: WebValue };
+/**
+ * One changed fact. `path` is for people ("Claude Opus 5.5 / input"). `row` and `field` say where it is: a field of the
+ * source (no row), a cell of a row, or a whole row that came or went (no field; before and after are ROW_HERE or ROW_GONE).
+ */
+export type WebChange = { at: string; source: string; path: string; before: WebValue; after: WebValue; row?: string; field?: string };
+export const ROW_HERE = "(row on the page)";
+export const ROW_GONE = "(row not on the page)";
 /** What is stored per source. `read` null: not read yet, or the read failed (`error`). */
-export type WebState = { url: string | null; foundVia: "spec" | "context.dev search" | null; read: WebRead | null; error: string | null; lastCheckedAt: string | null; changes: WebChange[] };
+export type WebState = { url: string | null; foundVia: "spec" | "context.dev search" | null; read: WebRead | null; error: string | null; lastCheckedAt: string | null; changes: WebChange[]; /** When a re-check last read this page again without an error (not the build read). */ recheckedAt?: string | null };
 
 const ID = /^[a-z][a-z0-9_]{1,29}$/;
 const PRIVATE_HOST = /^(localhost|.*\.(local|internal|localhost|test|example|invalid))$/;
@@ -136,22 +142,30 @@ export const webInstructions = (s: WebSource) =>
 
 /** Page text for the number check: lower case, and thousands separators removed ("1,000" is 1000). Other text stays, so "3, 5" is not 35. */
 const plain = (s: string) => s.toLowerCase().replace(/(\d),(?=\d{3}(\D|$))/g, "$1");
-/** The ways a page may write a number: 3, 3.00, 1000, 0.30 or .30, 1k, 1M. */
-function numberForms(n: number): string[] {
-  const forms = [String(n), n.toFixed(2), n.toFixed(3)];
-  if (Math.abs(n) > 0 && Math.abs(n) < 1) forms.push(String(n).replace(/^(-?)0/, "$1"));
-  if (n >= 1000 && n % 1000 === 0) forms.push(`${n / 1000}k`);
-  if (n >= 1_000_000 && n % 100_000 === 0) forms.push(`${n / 1_000_000}m`, `${n / 1_000_000} million`);
-  return [...new Set(forms)];
+/**
+ * The ways a page may write this exact number: 3 or 3.0 or 3.00, 0.3 or 0.30 or .3, 1000 or 1k, 2000000 or 2M or 2 million.
+ * Only spellings of the same value: no rounding (0.0004 is not "0.00", 2.996 is not "3.00").
+ */
+function numberForms(n: number): { text: string; unit: boolean }[] {
+  const plainText = String(n);
+  if (plainText.includes("e")) return [{ text: plainText, unit: false }];
+  const decimals = plainText.includes(".") ? plainText.split(".")[1].length : 0;
+  const forms = [plainText, ...[1, 2, 3].filter((d) => d > decimals).map((d) => n.toFixed(d))];
+  if (Math.abs(n) > 0 && Math.abs(n) < 1) forms.push(...forms.map((f) => f.replace(/^(-?)0\./, "$1.")));
+  const out = [...new Set(forms)].map((text) => ({ text, unit: false }));
+  if (n >= 1000 && n % 1000 === 0) out.push({ text: `${n / 1000}k`, unit: true });
+  if (n >= 1_000_000 && n % 100_000 === 0) out.push({ text: `${n / 1_000_000}m`, unit: true }, { text: `${n / 1_000_000} million`, unit: true });
+  return out;
 }
-/** Is this number in the page text? As a whole number: 3 is not found inside 30, 13 or 1.35. */
+/** Is this number in the page text? As a whole number: 3 is not found inside 30, 13 or 1.35, and 5k is not found in "5kg". */
 export function numberOnPage(n: number, pageText: string): boolean {
   const page = plain(pageText);
-  return numberForms(n).some((f) => {
+  return numberForms(n).some(({ text: f, unit }) => {
     for (let i = page.indexOf(f); i >= 0; i = page.indexOf(f, i + 1)) {
       const [a, b, c] = [page[i - 1] ?? "", page[i + f.length] ?? "", page[i + f.length + 1] ?? ""];
       // Not a part of a longer number: no digit or decimal point before it, no digit after it, no decimal part after it.
-      if (!/[\d.]/.test(a) && !/\d/.test(b) && !(b === "." && /\d/.test(c))) return true;
+      // A k or M form must end there: the "m" of "1MB" and the "k" of "5kg" are units of something else.
+      if (!/[\d.]/.test(a) && !/\d/.test(b) && !(b === "." && /\d/.test(c)) && !(unit && /[a-z]/.test(b))) return true;
     }
     return false;
   });
@@ -169,12 +183,22 @@ export function pageHash(text: string): string {
   return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
 }
 const cut = (x: unknown, n: number) => String(x).replace(/\s+/g, " ").trim().slice(0, n);
-/** The key of a row in paths and quotes: its first text field, else its position. */
+/** The name of a row: its first text field, else its position. It is page text: it names a row for people and in quotes. */
 export const rowKey = (s: WebSource, row: WebRow, i: number): string => {
   const f = s.rows?.fields.find((x) => x.type === "text");
   const v = f ? row[f.id] : null;
   return typeof v === "string" && v ? v : `#${i + 1}`;
 };
+/** One key per row, unique within the read: a name that repeats (a standard and a batch row of one model) gets its count. */
+export function rowKeys(s: WebSource, rows: WebRow[]): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((row, i) => {
+    const name = rowKey(s, row, i);
+    const n = (seen.get(name) ?? 0) + 1;
+    seen.set(name, n);
+    return n === 1 ? name : `${name} (${n})`;
+  });
+}
 
 /**
  * Turn an extraction answer into a read. Every value gets the type the field asks for, or null. A number that is not in
@@ -226,79 +250,64 @@ export function webData(sources: WebSource[] | null | undefined, state: Record<s
   return Object.fromEntries((sources ?? []).map((s) => [s.id, s.fields ? (state?.[s.id]?.read?.fields ?? Object.fromEntries(s.fields.map((f) => [f.id, null]))) : (state?.[s.id]?.read?.rows ?? [])]));
 }
 
-/** The facts of a read as path → value: "price" for a field, "<row key> / <field>" for a cell, "<row key>" for a row's presence. */
-function facts(s: WebSource, read: WebRead): Map<string, WebValue> {
-  const out = new Map<string, WebValue>();
-  if (s.fields) for (const f of s.fields) out.set(f.id, read.fields?.[f.id] ?? null);
-  else
-    for (const [i, row] of (read.rows ?? []).entries()) {
-      const key = rowKey(s, row, i);
-      out.set(key, true);
-      for (const f of s.rows!.fields) if (f.type !== "text" || rowKey(s, { [f.id]: row[f.id] }, i) !== key) out.set(`${key} / ${f.id}`, row[f.id] ?? null);
-    }
-  return out;
-}
+type Found = Omit<WebChange, "at" | "source">;
 
-/** The facts that differ between two reads of one source. A row that came or went is one change (false: not on the page). */
-export function diffWeb(s: WebSource, before: WebRead, after: WebRead): Omit<WebChange, "at" | "source">[] {
-  const [a, b] = [facts(s, before), facts(s, after)];
-  const out: Omit<WebChange, "at" | "source">[] = [];
-  const gone = new Set<string>();
-  for (const [path, v] of a) {
-    if (v === true && !path.includes(" / ") && !b.has(path)) {
-      gone.add(path);
-      out.push({ path, before: true, after: false });
-    }
+/** The facts that differ between two reads of one source. A row that came or went is one change; its cells are not listed. */
+export function diffWeb(s: WebSource, before: WebRead, after: WebRead): Found[] {
+  if (s.fields) return s.fields.filter((f) => (before.fields?.[f.id] ?? null) !== (after.fields?.[f.id] ?? null)).map((f) => ({ path: f.id, field: f.id, before: before.fields?.[f.id] ?? null, after: after.fields?.[f.id] ?? null }));
+  const [was, now] = [before.rows ?? [], after.rows ?? []];
+  const [wasKeys, nowKeys] = [rowKeys(s, was), rowKeys(s, now)];
+  const out: Found[] = [];
+  for (const k of wasKeys) if (!nowKeys.includes(k)) out.push({ path: k, row: k, before: ROW_HERE, after: ROW_GONE });
+  for (const k of nowKeys) if (!wasKeys.includes(k)) out.push({ path: k, row: k, before: ROW_GONE, after: ROW_HERE });
+  // The field that names the row is its identity: a new name is a row that went and a row that came.
+  const nameField = s.rows!.fields.find((x) => x.type === "text")?.id;
+  for (const [i, k] of nowKeys.entries()) {
+    const j = wasKeys.indexOf(k);
+    if (j < 0) continue;
+    for (const f of s.rows!.fields) if (f.id !== nameField && (was[j][f.id] ?? null) !== (now[i][f.id] ?? null)) out.push({ path: `${k} / ${f.id}`, row: k, field: f.id, before: was[j][f.id] ?? null, after: now[i][f.id] ?? null });
   }
-  const came = new Set<string>();
-  for (const [path, v] of b) {
-    if (v === true && !path.includes(" / ") && !a.has(path) && !s.fields) {
-      came.add(path);
-      out.push({ path, before: false, after: true });
-    }
-  }
-  const row = (path: string) => path.split(" / ")[0];
-  for (const [path, v] of b) if (a.has(path) && a.get(path) !== v && !(v === true)) out.push({ path, before: a.get(path)!, after: v });
-  return out.filter((c) => !c.path.includes(" / ") || (!gone.has(row(c.path)) && !came.has(row(c.path))));
+  return out;
 }
 
 /**
  * The two-read confirmation: extraction is not deterministic, so a change counts only when two fresh reads state the
  * same thing. Returns the read to store (the old one with only the confirmed changes applied) and those changes.
- * While the two reads disagree on something, the old page hash stays, so the next re-check reads the page again.
+ * While the two reads disagree on something, the old page fingerprint stays, so the next re-check reads the page again.
  */
-export function confirmChanges(s: WebSource, old: WebRead, first: WebRead, second: WebRead): { read: WebRead; changes: Omit<WebChange, "at" | "source">[]; unconfirmed: number } {
+export function confirmChanges(s: WebSource, old: WebRead, first: WebRead, second: WebRead): { read: WebRead; changes: Found[]; unconfirmed: number } {
   const d1 = diffWeb(s, old, first);
   const d2 = diffWeb(s, old, second);
-  const same = (x: (typeof d1)[number], y: (typeof d1)[number]) => x.path === y.path && x.after === y.after;
+  const same = (x: Found, y: Found) => x.row === y.row && x.field === y.field && x.after === y.after;
   const changes = d2.filter((c) => d1.some((x) => same(x, c)));
   const unconfirmed = d2.length - changes.length + d1.filter((c) => !d2.some((x) => same(x, c))).length;
   const read: WebRead = { ...old, fetchedAt: second.fetchedAt, url: second.url, textHash: unconfirmed ? old.textHash : second.textHash, truncated: second.truncated, quotes: { ...old.quotes }, quarantined: second.quarantined };
   if (s.fields) {
     read.fields = { ...old.fields };
     for (const c of changes) {
-      read.fields[c.path] = c.after;
-      if (second.quotes[c.path]) read.quotes[c.path] = second.quotes[c.path];
+      read.fields[c.field!] = c.after;
+      if (second.quotes[c.field!]) read.quotes[c.field!] = second.quotes[c.field!];
     }
     return { read, changes, unconfirmed };
   }
-  const key = (r: WebRow, i: number) => rowKey(s, r, i);
-  let rows = (old.rows ?? []).map((r) => ({ ...r }));
+  // Rows are addressed by their unique keys, never by splitting a path: a row name is page text and may hold any character.
+  const oldKeys = rowKeys(s, old.rows ?? []);
+  const newKeys = rowKeys(s, second.rows ?? []);
+  let rows = (old.rows ?? []).map((r, i) => ({ key: oldKeys[i], row: { ...r } }));
   for (const c of changes) {
-    if (!c.path.includes(" / ")) {
-      if (c.after === false) rows = rows.filter((r, i) => key(r, i) !== c.path);
+    if (!c.field) {
+      if (c.after === ROW_GONE) rows = rows.filter((r) => r.key !== c.row);
       else {
-        const add = (second.rows ?? []).find((r, i) => key(r, i) === c.path);
-        if (add) rows.push({ ...add });
-        if (second.quotes[`rows.${c.path}`]) read.quotes[`rows.${c.path}`] = second.quotes[`rows.${c.path}`];
+        const i = newKeys.indexOf(c.row!);
+        if (i >= 0) rows.push({ key: c.row!, row: { ...second.rows![i] } });
       }
     } else {
-      const [k, field] = c.path.split(" / ");
-      const r = rows.find((x, i) => key(x, i) === k);
-      if (r) r[field] = c.after;
+      const r = rows.find((x) => x.key === c.row);
+      if (r) r.row[c.field] = c.after;
     }
+    if (c.row && second.quotes[`rows.${c.row}`]) read.quotes[`rows.${c.row}`] = second.quotes[`rows.${c.row}`];
   }
-  read.rows = rows;
+  read.rows = rows.map((r) => r.row);
   return { read, changes, unconfirmed };
 }
 

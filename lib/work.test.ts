@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { retryAfterMs } from "./contextdev.ts";
 import type { Domain } from "./domain.ts";
 import { BRAND_PENDING, brandPending, checkKit } from "./kit.ts";
-import { buildReport, collectionReport, dataReport } from "./report.ts";
+import { buildReport, collectionReport, dataReport, webChanges } from "./report.ts";
 import { endWork, sourceArrived, startWork, workStatus, type Playground, type Work } from "./store.ts";
 
 const domain: Domain = { id: "p1", question: "Which one?", product: "x", metrics: [{ id: "emails", label: "Emails", unit: "emails", describe: "emails per month", min: 0, max: 100, initial: 10 }], features: [], vendors: [{ id: "a", name: "A", domain: "a.com" }, { id: "b", name: "B", domain: "b.com" }] };
@@ -113,4 +113,23 @@ test("a revision that overlaps a running build keeps the build's sources pending
   const old: Pick<Playground, "work"> = { work: work({ startedAt: new Date(Date.now() - 400_000).toISOString(), pending: ["x"] }) };
   startWork(old, "new", "build", ["a"]);
   assert.deepEqual(workStatus(old)?.pending, ["a"]);
+});
+
+test("nothing changed is said only when every page was read again after the settle", () => {
+  const k = checkKit({ controls: [{ id: "seats", type: "slider", label: "Seats", meaning: "number of seats", min: 1, max: 50, initial: 8 }], view: { html: "<p id='o'></p>", js: "clay.onChange((v) => { document.getElementById('o').textContent = String(clay.data.web.plan.seat) + v.seats; });" }, outputs: [{ id: "seats", label: "seats", template: "{{seats}}" }], web: [{ id: "plan", url: "https://linear.app/pricing", fields: [{ id: "seat", type: "number", describe: "price per seat per month" }] }] });
+  assert.ok(k.ok, k.ok ? "" : k.errors.join("\n"));
+  if (!k.ok) return;
+  const read = { url: "https://linear.app/pricing", fetchedAt: "2026-11-14T01:00:00.000Z", fields: { seat: 8 }, quotes: {}, quarantined: [], textHash: "x", truncated: false };
+  const state = (over: object, settledAt: string | null) => ({ kit: k.kit, rev: "r", brandData: null, brandError: null, preview: { status: "ok" as const, error: null, at: null }, settled: settledAt ? { values: { seats: 8 }, outputs: { seats: "8" }, at: settledAt } : null, exploration: null, web: { plan: { url: read.url, foundVia: "spec" as const, read, error: null, lastCheckedAt: "2026-11-14T01:00:01.000Z", changes: [], ...over } } });
+  const settledAt = "2026-11-14T02:00:00.000Z";
+  // Settled, never re-checked: not known. Re-checked before the settle: not known. Re-checked after it: nothing changed.
+  assert.match(webChanges(state({}, settledAt)).judge, /not known whether a fact changed\. Call recheck_playground/);
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T01:30:00.000Z" }, settledAt)).judge, /not known/);
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z" }, settledAt)).judge, /no fact changed: the settled result stands/);
+  // A re-read that failed is not a re-check; a change after the settle is for the agent to judge; one before it is not listed.
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge, /not known/);
+  const change = (at: string) => ({ at, source: "plan", path: "seat", field: "seat", before: 8, after: 10 });
+  const after = webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", changes: [change("2026-11-14T03:00:00.000Z"), change("2026-11-14T01:30:00.000Z")] }, settledAt));
+  assert.deepEqual([after.changes.length, /whether the settled result still holds/.test(after.judge)], [1, true]);
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z" }, null)).judge, /no fact changed since the build/);
 });
