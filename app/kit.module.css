@@ -28,6 +28,9 @@
 /* The mat under the artboard: the sunk ground of the system. The artboard keeps the component's own colours. */
 .mat { padding: 16px; background: var(--p-surface); }
 .frame { display: block; width: 100%; border: 0; border-radius: var(--c-r-md); background: #fff; }
+/* A data view (view.data): no mat and no white sheet. The frame is transparent and stands on the pane, in the pane's padding. */
+.sheet { padding: 16px 10px 20px; } /* with the frame's own 10 px gutter (lib/sheet.ts) the text stands under the heading */
+.sheet .frame { background: transparent; border-radius: 0; }
 .failed { margin: 16px; }
 .output { margin-bottom: 16px; }
 .outputHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -52,6 +55,7 @@
   :global([data-tall]) .stage { order: 3; }
   .stageHead { display: none; }
   .mat { padding: 8px; }
+  .sheet { padding: 14px 6px 16px; }
   .notes { order: 0; margin: 0; }
   .main > :global(.k-out) { order: 5; }
   .dataCard { order: 6; }
@@ -64,9 +68,18 @@
 /* Text for a screen reader and for a program that reads the page, not for the eye. */
 .unseen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .rowsNote button { margin-left: 2px; }
-.web { border-collapse: collapse; font-size: 13px; margin-top: 6px; }
-.web th, .web td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--c-line); vertical-align: top; font-variant-numeric: tabular-nums; }
+/* The values of a source: closed until asked for (Values in app/kit.tsx). */
+.values { margin-top: 4px; }
+.values > summary { font-size: 14px; color: var(--p-muted); width: fit-content; }
+/* A table of rows is as wide as its card, with numbers in right-aligned columns; label and value pairs stay narrow. */
+.web { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+.webFields { width: auto; min-width: min(100%, 360px); }
+.web th, .web td { text-align: left; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--c-line); vertical-align: top; font-variant-numeric: tabular-nums; }
+.web th:last-child, .web td:last-child { padding-right: 0; }
+.web tbody tr:last-child > * { border-bottom: 0; } /* the line under the last row is the line between two sources */
 .web th { color: var(--p-muted); font-weight: 500; }
+.web .num { text-align: right; }
+.webFields td { text-align: right; }
 .hex { width: 104px; }
 /* "The preview changed": it stays at the foot of the screen while the controls are in view, inside their own pane. */
 .jump { position: sticky; bottom: 12px; z-index: 3; width: 100%; margin-top: 12px; }

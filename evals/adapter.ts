@@ -168,7 +168,9 @@ export type WebSourceOnPage = { id: string; link: boolean; read: number; unknown
 export async function webSources(page: Page): Promise<WebSourceOnPage[]> {
   const out: WebSourceOnPage[] = [];
   for (const el of await page.locator("[data-web-source]").all()) {
-    const cells = await el.locator("td").allInnerTexts();
+    // The values are closed until the person opens them (Values in app/kit.tsx), and a closed part has no rendered text:
+    // the text content is read, which is there open or closed.
+    const cells = await el.locator("td").allTextContents();
     const unknown = cells.filter((t) => /^unknown\b/.test(t.trim())).length;
     out.push({ id: (await el.getAttribute("data-web-source")) ?? "", link: (await el.locator('a[href^="https://"]').count()) > 0, read: cells.length - unknown, unknown, failed: /could not be read|No row was found/.test(await el.innerText()) });
   }

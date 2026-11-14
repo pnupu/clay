@@ -60,6 +60,7 @@ const view = z.strictObject({
   js: z.string().optional().describe("preview: JavaScript for what markup cannot show, such as motion. It runs once. clay.values.<id> is the value now; clay.onChange((values) => { ... }) runs at once and on every move; clay.data.brand and clay.data.inline are the declared data. Rule for you: do not use the network or imports; the sandbox blocks most requests, not all, and the preview must work without any."),
   tailwind: z.boolean().optional().describe("preview: true loads the in-browser Tailwind v4 build, so Tailwind classes in html work, arbitrary values such as rounded-[7px] and bg-[#123456] included."),
   map: z.boolean().optional().describe("preview: true loads the map library (Leaflet) and lets the preview load map tiles of OpenStreetMap, for a \"where\" question. In view.js, clay.map(element, {center: [lat, lng], zoom}) makes the map; coordinates come from data.inline or data.web."),
+  data: z.boolean().optional().describe("preview: true makes it a data view: a comparison, a ranking or a table of facts, not the person's own component. The frame then brings Clay's typeface, colours and parts (table, cards, badge, stat, note: see kit_reference), so view.html uses those class names and view.css stays empty or nearly so. Set it whenever the preview shows data.web or compares options from data.inline."),
   height: z.number().optional().describe("preview: height of the preview in px, 120 to 900, default 360."),
 });
 
@@ -178,7 +179,7 @@ function validate(input: unknown): ParsedSpec {
     if (!s.data?.price_pages) errors.push('data.price_pages: the price_ranking view needs it: {"product", "metrics", "features", "vendors"}.');
     for (const k of ["controls", "outputs"] as const) if (s[k]) errors.push(`${k}: the price_ranking view brings its own controls (one slider per metric, one checkbox per feature) and its own hand-back (the saved decision). Remove ${k}.`);
     for (const k of ["brand", "inline", "web"] as const) if (s.data?.[k]) errors.push(`data.${k}: only a preview view can use it. Remove it, or build a second playground with view.type "preview".`);
-    for (const k of ["html", "css", "js", "tailwind", "map", "height"] as const) if (s.view[k] !== undefined) errors.push(`view.${k}: only a preview view has ${k}. Remove it.`);
+    for (const k of ["html", "css", "js", "tailwind", "map", "data", "height"] as const) if (s.view[k] !== undefined) errors.push(`view.${k}: only a preview view has ${k}. Remove it.`);
     if (errors.length) return { ok: false, errors };
     const p = parseConfig({ id: s.id, question: s.title, ...s.data!.price_pages });
     if (!p.ok) return { ok: false, errors: p.errors.map((e) => (e.startsWith("question:") ? e.replace("question:", "title (for a price playground, the decision as a question of 10 characters or more):") : `data.price_pages.${e}`)) };
@@ -204,7 +205,7 @@ export function toSpec(p: Playground): Spec {
     ...(kit.notes ? { notes: kit.notes } : {}),
     ...(kit.brand || kit.inline || kit.web ? { data: { ...(kit.brand ? { brand: kit.brand } : {}), ...(kit.inline ? { inline: kit.inline } : {}), ...(kit.web ? { web: kit.web } : {}) } } : {}),
     controls: kit.controls,
-    view: { type: "preview", html: kit.preview.html, ...(kit.preview.css ? { css: kit.preview.css } : {}), ...(kit.preview.js ? { js: kit.preview.js } : {}), tailwind: kit.preview.tailwind, ...(kit.preview.map ? { map: true } : {}), height: kit.preview.height },
+    view: { type: "preview", html: kit.preview.html, ...(kit.preview.css ? { css: kit.preview.css } : {}), ...(kit.preview.js ? { js: kit.preview.js } : {}), tailwind: kit.preview.tailwind, ...(kit.preview.map ? { map: true } : {}), ...(kit.preview.data ? { data: true } : {}), height: kit.preview.height },
     outputs: kit.outputs,
   };
 }

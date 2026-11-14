@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { INSTRUCTIONS, PROMPTS, TOOLS } from "./texts";
 import { DOMAIN } from "./domain";
-import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutputs } from "./kit";
+import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutputs, styleProblems } from "./kit";
 import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
 import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
@@ -98,6 +98,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     const p = (await load()).playgrounds[id];
     const k = p.kit!;
     const reading = webReading(p);
+    /** How a page of data looks (lib/kit.ts, styleProblems): part of problems, and it comes first in `next`. */
+    const look = styleProblems(k.kit);
     return text({
       playground_id: id,
       url: url(id),
@@ -107,16 +109,20 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k, reading),
-      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null)],
-      warnings: warnings.filter((x) => x !== markupWarning(k.kit)),
+      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null), ...look],
+      // What is in problems is not said twice.
+      warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !look.includes(x)),
       next:
-        reading.length
+        // A page of data in styles of its own is repaired before the person is told it is ready. While the pages are
+        // still being read, the steps below already end with the repair of what problems lists.
+        (look.length && !reading.length ? "First act on what problems says about the look of the page: revise it with revise_playground, unless the problem itself says that it may stay. Then: " : "") +
+        (reading.length
           ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
           : k.kit.web?.length
             ? "Look at data now: check that the rows and values are what your view.js expects (the names it joins on, the units, the unknown values), and repair with revise_playground if they are not. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground: it returns the settled outputs to write into their files."
             : brandPending(k)
           ? "The brand's colours are still being read (the web reader was busy), so the brand palette is still empty. Call read_playground now: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground again for the settled outputs."
-          : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
+          : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground."),
       ...(k.kit.web?.length || k.kit.brand ? { note: [k.kit.web?.length ? WEB_NOTE : "", k.kit.brand ? BRAND_NOTE : ""].filter(Boolean).join(" ") } : {}),
     });
   };

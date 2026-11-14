@@ -21,7 +21,7 @@ export type Control =
   | (Base & { type: "toggle"; initial: boolean; on: string; off: string })
   | (Base & { type: "select"; options: { value: string; label: string }[]; initial: string })
   | (Base & { type: "color"; initial: string; palette: string[] | "brand"; free: boolean });
-export type Preview = { html: string; css: string; js: string; tailwind: boolean; /** The frame loads the map library and may load map tiles (lib/frame.ts, LEAFLET and TILES). Absent on a kit from before maps. */ map?: boolean; height: number };
+export type Preview = { html: string; css: string; js: string; tailwind: boolean; /** The frame loads the map library and may load map tiles (lib/frame.ts, LEAFLET and TILES). Absent on a kit from before maps. */ map?: boolean; /** A data view: the frame brings Clay's own type, colours and parts (lib/sheet.ts), and the page shows it without the artboard. Absent on every other kit. */ data?: boolean; height: number };
 export type Output = { id: string; label: string; template: string };
 export type Kit = { notes?: string; controls: Control[]; preview: Preview; outputs: Output[]; brand: { domain: string } | null; inline: Record<string, unknown> | null; /** Live facts from web pages (lib/web.ts). */ web?: WebSource[] | null };
 
@@ -158,7 +158,7 @@ const word = (id: string) => new RegExp(`(?<![\\w$])${id}(?![\\w$])`);
 export type RawKit = {
   notes?: string;
   controls?: Record<string, unknown>[];
-  view: { html?: string; css?: string; js?: string; tailwind?: boolean; map?: boolean; height?: number };
+  view: { html?: string; css?: string; js?: string; tailwind?: boolean; map?: boolean; data?: boolean; height?: number };
   outputs?: { id: string; label: string; template: string }[];
   brand?: { domain: string };
   inline?: Record<string, unknown>;
@@ -189,6 +189,47 @@ export function markupWarning(kit: { preview: { js: string }; web?: unknown[] | 
   const used = [...new Set((kit.preview.js.match(MARKUP_SINK) ?? []).map((x) => x.replace(/\s+/g, "")))];
   if (!used.length) return null;
   return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this playground reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup (on a map: bindPopup, bindTooltip and setContent take an element or a text node, document.createTextNode(text)); revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
+}
+
+/** The smallest text of a data view, in px (a badge of lib/sheet.ts). */
+const SMALLEST_TEXT = 12;
+/** A data view may bring this many colours of its own (a brand colour, a series) before it is told to use the variables. */
+const OWN_COLOURS = 2;
+/**
+ * How a preview that shows data looks: problems for the agent that builds it, in the build and revise results. A page
+ * of facts written in styles of its own (a typeface, 11 px text, a dozen colours) does not match the page around it or
+ * any other playground, so:
+ * - a preview that reads web pages and is not a data view is told to become one. Not a map, and not a Tailwind
+ *   preview: those are a place and the person's own component, and view.data is refused with view.tailwind;
+ * - a data view is told about each thing it brings that the frame already has: a typeface, text under 12 px, colours.
+ * Advice, not a refusal: the playground is built. Only view.css and the style attributes of view.html are read; what
+ * view.js sets is not seen, and neither is a colour by name or a size in em or %.
+ */
+export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "data" | "map"> & { tailwind?: boolean }; web?: unknown[] | null }): string[] {
+  const { preview } = kit;
+  if (!preview.data) {
+    return kit.web?.length && !preview.map && !preview.tailwind
+      ? ['view: this preview shows facts read from web pages (data.web) in styles of its own. Make it a data view: set view.data: true and write view.html with Clay\'s parts (kit_reference, "A data view": .lead, table, .cards, .badge, .note), with view.css empty or nearly so. The typeface, the sizes and the colours are then the page\'s own, on a desktop and on a phone. Revise with revise_playground. It may stay as it is only when the preview is the person\'s own component with one or two facts in it.']
+      : [];
+  }
+  const out: string[] = [];
+  // Every style attribute ends its last declaration, so a value is always the text between a colon and ";" or "}".
+  const styles = [preview.css, ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => `${m[1] ?? m[2]};`)].join("\n");
+  // A declaration, not a selector (".font:hover"), and not "font: inherit", which takes Clay's typeface.
+  if (/(?<![\w.#-])font(?:-family)?\s*:(?!\s*(?:inherit|unset|initial)\b)/i.test(styles)) out.push("view.css: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
+  // The size of font-size and of the font shorthand, in px or rem (16 px).
+  const small = [...new Set([...styles.matchAll(/(?<![\w.#-])font(?:-size)?\s*:[^;{}]*?(\d*\.?\d+)(px|rem)\b/gi)].map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
+  if (small.length) out.push(`view.css: font-size ${small.join(", ")} is under ${SMALLEST_TEXT} px, the smallest text of a data view. Text that small is a sign of too much text: use .small (13 px), and move the long part into <details>.`);
+  // Colours in the values of declarations only (the text after a colon, up to ";" or "}"): "#add" in a selector is an id.
+  // One colour written in two ways is one colour: #fff, #FFFFFF and #ffffffff.
+  const hex = (c: string) => {
+    const h = c.length <= 5 ? `#${[...c.slice(1)].map((x) => x + x).join("")}` : c;
+    return h.length === 9 && h.endsWith("ff") ? h.slice(0, 7) : h;
+  };
+  const values = [...styles.matchAll(/:([^;{}]*)(?=[;}])/g)].map((m) => m[1]).join("\n");
+  const colours = [...new Set((values.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/gi) ?? []).map((c) => c.toLowerCase().replace(/\s+/g, "")).map((c) => (c.startsWith("#") ? hex(c) : c)))];
+  if (colours.length > OWN_COLOURS) out.push(`view.css: ${colours.length} colours of its own (${colours.slice(0, 4).join(", ")}${colours.length > 4 ? ", ..." : ""}). A data view takes its colours from the variables: var(--ink), var(--muted), var(--line), var(--field), var(--accent), var(--ok), var(--warn), var(--bad), and --accent-bg, --ok-bg, --warn-bg, --bad-bg behind them; the parts .pick, .out, .badge and .note use them already. Keep a colour of your own only when it is data: a brand colour, a series in a chart.`);
+  return out;
 }
 
 export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] } | { ok: false; errors: string[] } {
@@ -335,8 +376,12 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   if (sink && !errors.length) warnings.push(sink);
   for (const m of js.matchAll(/clay\s*\.\s*data\s*\.\s*web\s*\.\s*([A-Za-z_$][\w$]*)/g)) if (!(web ?? []).some((s) => s.id === m[1])) errors.push(`view.js: clay.data.web.${m[1]} reads a web source that does not exist. Sources: ${(web ?? []).map((s) => s.id).join(", ") || "none (add data.web)"}.`);
   if (raw.view.map !== true && /\bclay\s*\.\s*map\s*\(/.test(js)) errors.push("view.js: clay.map() needs view.map: true. Without it the frame loads no map library and no map tiles.");
+  // ---- A data view brings Clay's own styles (lib/sheet.ts). Tailwind's reset would change them, and its utilities are
+  // one more set of sizes and colours: the two do not go together.
+  if (raw.view.data === true && raw.view.tailwind === true) errors.push("view: view.data and view.tailwind do not go together. A data view (a comparison, a table of facts) is written with Clay's parts and needs no Tailwind: remove view.tailwind. When the preview is the person's own Tailwind component, remove view.data.");
   if (errors.length) return { ok: false, errors };
-  return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, ...(raw.view.map === true ? { map: true } : {}), height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
+  warnings.push(...styleProblems({ preview: { html, css, data: raw.view.data === true, map: raw.view.map === true, tailwind: raw.view.tailwind === true }, web }));
+  return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, ...(raw.view.map === true ? { map: true } : {}), ...(raw.view.data === true ? { data: true } : {}), height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
 }
 
 /** Does a report from the page belong to the kit as it is now? A kit stored before revisions were marked accepts every report. */

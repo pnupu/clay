@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { frameCsp, frameDocument } from "./frame.ts";
+import { styleProblems, type KitState } from "./kit.ts";
+import { BUTTON_EXAMPLE, KIT_REFERENCE, MODEL_EXAMPLE } from "./reference.ts";
+import { DATA_PARTS, dataSheet } from "./sheet.ts";
+import { parseSpec, toSpec, type Spec } from "./spec.ts";
+import type { Playground } from "./store.ts";
+
+const parsed = (s: unknown) => {
+  const r = parseSpec(s);
+  assert.ok(r.ok && r.kind === "preview", JSON.stringify(r));
+  return r;
+};
+const state = (s: unknown): KitState => ({ kit: parsed(s).kit, brandData: null, brandError: null, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null });
+const model = (view: object) => ({ ...MODEL_EXAMPLE, view: { ...MODEL_EXAMPLE.view, ...view } });
+
+test("view.data makes a data view: the kit keeps the mark, a spec made from it has it, and every other kit is as before", () => {
+  assert.equal(parsed(MODEL_EXAMPLE).kit.preview.data, true);
+  assert.equal("data" in parsed(BUTTON_EXAMPLE).kit.preview, false);
+  assert.equal("data" in parsed({ ...BUTTON_EXAMPLE, view: { ...BUTTON_EXAMPLE.view, data: false } }).kit.preview, false);
+  const stored = (s: Spec) => ({ domain: parsed(s).domain, kit: state(s) }) as unknown as Playground;
+  assert.equal(toSpec(stored(MODEL_EXAMPLE)).view.data, true);
+  assert.equal("data" in toSpec(stored(BUTTON_EXAMPLE)).view, false);
+  // Clay's styles and Tailwind's reset do not go together, and a price playground has no preview to style.
+  const both = parseSpec({ ...BUTTON_EXAMPLE, view: { ...BUTTON_EXAMPLE.view, data: true } });
+  assert.ok(!both.ok && both.errors.some((e) => /view\.data and view\.tailwind do not go together/.test(e)));
+  const price = parseSpec({ id: "mail-price", title: "Which email service should we use?", view: { type: "price_ranking", data: true }, data: { price_pages: { product: "transactional email API", metrics: [{ id: "emails", label: "Emails per month", unit: "emails", describe: "emails sent per month", min: 1000, max: 100000, initial: 10000 }], vendors: [{ id: "one", name: "One", domain: "one.example.org" }, { id: "two", name: "Two", domain: "two.example.org" }] } } });
+  assert.ok(!price.ok && price.errors.some((e) => /view\.data: only a preview view has data/.test(e)));
+});
+
+test("the frame of a data view brings Clay's styles and typeface; no other frame does, and the policy is the same", () => {
+  const font = "data:font/woff2;base64,AAAA";
+  const doc = frameDocument(state(MODEL_EXAMPLE), {}, "", font);
+  assert.ok(doc.includes(dataSheet(font)));
+  assert.ok(doc.includes(`src: url(${font}) format("woff2")`));
+  // The agent's own css comes after the sheet, so a line of it still wins.
+  assert.ok(doc.indexOf(dataSheet(font)) < doc.indexOf('<style id="clay-css">'));
+  // Without the font file the sheet names no font to load: the text falls back to the system typeface.
+  assert.equal(frameDocument(state(MODEL_EXAMPLE), {}).includes("@font-face"), false);
+  assert.equal(frameDocument(state(BUTTON_EXAMPLE), {}, "", font).includes("--accent-bg"), false);
+  // A font from a data: URL was allowed before data views existed: the policy of a data view is that of the same preview without the mark.
+  assert.equal(frameCsp(state(MODEL_EXAMPLE)), frameCsp(state(model({ data: undefined }))));
+  assert.match(frameCsp(state(MODEL_EXAMPLE)), /font-src data:;/);
+});
+
+test("the reference teaches the parts the sheet styles, and the sheet has no text under 12 px", () => {
+  const css = dataSheet(null);
+  for (const part of DATA_PARTS) {
+    assert.match(css, new RegExp(`\\.${part}(?![\\w-])`), `the sheet styles .${part}`);
+    assert.match(KIT_REFERENCE, new RegExp(`(?:[.\\s"]|class=")${part}(?![\\w-])`), `the reference names ${part}`);
+  }
+  assert.deepEqual([...css.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1])).filter((n) => n < 12), []);
+  assert.equal(css.includes("</"), false); // it stands inside a <style> element
+  assert.match(KIT_REFERENCE, /## A data view \(view\.data: true\)/);
+});
+
+test("a page of data in styles of its own is a problem for the agent that builds it; a data view with Clay's parts has none", () => {
+  assert.deepEqual(parsed(MODEL_EXAMPLE).warnings, []);
+  // Web facts without view.data: told to become a data view. A map with web facts is not a table.
+  const plain = parsed(model({ data: undefined, css: "table { font: 14px system-ui; }" }));
+  assert.equal(plain.warnings.length, 1);
+  assert.match(plain.warnings[0], /^view: this preview shows facts read from web pages \(data\.web\) in styles of its own\. Make it a data view: set view\.data: true/);
+  assert.deepEqual(styleProblems({ preview: { html: "", css: "", map: true }, web: [{}] }), []);
+  // Neither is the person's own Tailwind component with a fact in it: view.data is refused with view.tailwind, so the advice could not be followed.
+  assert.deepEqual(styleProblems({ preview: { html: "", css: "", tailwind: true }, web: [{}] }), []);
+  assert.equal(styleProblems({ preview: { html: "", css: "" }, web: [{}] }).length, 1);
+  assert.deepEqual(styleProblems({ preview: { html: "", css: "p { font: 11px system-ui; color: #123456; }" }, web: null }), []);
+  // A data view that brings a typeface, small text and colours is told about each, with what it found.
+  const own = parsed(model({ css: "#rows td { font-family: Inter; font-size: 11px; } .a { color: #111827; background: #EFF6FF; border-color: rgb(1, 2, 3); } #add { font-size: 13px }", html: `${MODEL_EXAMPLE.view.html}<p style="font-size: 10.5px; color: #9ca3af">x</p>` })).warnings;
+  assert.equal(own.length, 3);
+  assert.match(own[0], /a data view \(view\.data\) has Clay's typeface/);
+  assert.match(own[1], /font-size 11px, 10\.5px is under 12 px/);
+  assert.match(own[2], /4 colours of its own \(#111827, #eff6ff, rgb\(1,2,3\), #9ca3af\)/);
+  // The size in the font shorthand and a size in rem are read too.
+  const data = (css: string) => styleProblems({ preview: { html: "", css, data: true } });
+  assert.match(data("td { font: 500 10px/1.2 sans-serif }").join("\n"), /Clay's typeface[\s\S]*font-size 10px is under 12 px/);
+  assert.match(data(".x { font-size: .65rem }")[0], /font-size \.65rem is under 12 px/);
+  // The variables, a size of 12 px or more and up to two colours of its own (a brand colour, a series) are fine. An id
+  // in a selector is not a colour, also in a list of selectors over two lines, and one colour written in three ways is one.
+  assert.deepEqual(parsed(model({ css: "li:hover #add,\n#bad { color: var(--muted); font-size: 13px; font-weight: 600; } .series-a { background: #2a78d6; } .series-b { background: #eb6834; }" })).warnings, []);
+  assert.deepEqual(data(".a { color: #fff; background: #FFFFFF; border-color: #ffffffff; outline-color: #2a78d6 }"), []);
+  // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
+  assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
+});
