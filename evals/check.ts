@@ -37,7 +37,7 @@ export function toolUse(c: Case, calls: Call[], preparedId: string | null): Chec
   const created = clay.filter((x) => x.tool === TOOL.create);
   // What the agent did instead, for a run with its normal tools: the other tools it used, or nothing but words.
   const other = [...new Set(calls.filter((x) => !x.mcp).map((x) => x.tool))];
-  const instead = other.length ? `; instead it used ${other.join(", ")}` : "; it answered in words, with no tool";
+  const instead = other.length ? `; instead it used ${other.join(", ")}` : clay.length ? "" : "; it answered in words, with no tool";
   if (c.expect === "build") return created.length ? pass("tool_use", `called ${TOOL.create}`) : fail("tool_use", `the agent never called ${TOOL.create}${clay.length ? ` (it called ${[...new Set(clay.map((x) => x.tool))].join(", ")})` : " or any Clay tool"}${instead}`);
   if (c.expect === "none") {
     const built = clay.filter((x) => BUILD_TOOLS.includes(x.tool));

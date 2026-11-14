@@ -55,7 +55,8 @@ export const DEFAULT_MODEL: Record<SubjectName, string | undefined> = { claude: 
 const FILE_TOOLS = "Read,Edit,Write,Glob,Grep";
 
 function command(o: RunOptions, session: string): { bin: string; args: string[] } {
-  const model = o.model ?? DEFAULT_MODEL[o.subject];
+  // With its normal tools the subject also keeps the CLI's own default model, unless one is named.
+  const model = o.model ?? (o.tools === "normal" ? undefined : DEFAULT_MODEL[o.subject]);
   if (model && /haiku/i.test(model)) throw new Error("Haiku models are not allowed as subjects.");
   const url = o.baseUrl + MCP_PATH;
   const normal = o.tools === "normal";
@@ -71,7 +72,7 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
         "--setting-sources", "", // no user, project or local settings: no plugins, hooks or CLAUDE.md
         // Normal tools: the CLI's own default model unless one is named, every built-in tool, and the ones that would
         // ask (shell, web) approved beforehand, because print mode cannot ask. Otherwise: files only (no shell, no web).
-        ...(normal ? (o.model ? ["--model", o.model] : []) : ["--model", model!]),
+        ...(model ? ["--model", model] : []),
         ...(normal ? [] : ["--tools", FILE_TOOLS]),
         "--allowedTools", normal ? `mcp__${SERVER},Bash,WebSearch,WebFetch` : `mcp__${SERVER}`,
         "--permission-mode", "acceptEdits", // edits inside the working directory; anything outside it is refused in print mode

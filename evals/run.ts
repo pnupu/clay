@@ -91,7 +91,7 @@ const scratchRoot = flag("scratch-root") ? resolve(flag("scratch-root")!) : null
 const toolSet = flag("tools") === "normal" ? "normal" : "files";
 const home = flag("home") ? resolve(flag("home")!) : undefined;
 if (flag("tools") && !["normal", "files"].includes(flag("tools")!)) throw new Error("--tools is normal or files.");
-if (toolSet === "normal" && !from && (!home || !scratchRoot || !relative(HERE, home).startsWith("..") || !relative(resolve(HERE, ".."), scratchRoot).startsWith(".."))) throw new Error("--tools normal needs --home <clean home> and --scratch-root <dir>, both outside this repository.");
+if (toolSet === "normal" && !from && (!home || !scratchRoot || !relative(resolve(HERE, ".."), home).startsWith("..") || !relative(resolve(HERE, ".."), scratchRoot).startsWith(".."))) throw new Error("--tools normal needs --home <clean home> and --scratch-root <dir>, both outside this repository.");
 if (!/^https?:\/\//.test(baseUrl)) throw new Error("Give the server: --base-url <url> or CLAY_BASE_URL.");
 if (!["claude", "codex"].includes(subject)) throw new Error("--subject is claude or codex.");
 if (model && /haiku/i.test(model)) throw new Error("Haiku models are not allowed as subjects.");
