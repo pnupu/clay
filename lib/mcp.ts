@@ -160,7 +160,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const view = own ? p : nonOwnerView(p);
       // A standing decision of the caller's own person: the record to write into their repository (lib/record.ts).
       const record = own ? decisionRecord(p, url(playground_id)) : null;
-      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...(view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t)), ...(record ? { decision_record: record } : {}), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
+      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...(view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t)), ...(own || !view.kit ? {} : { preview: { status: "not shown", detail: "Whether this preview runs, and any error it reported, is not shown to non-owners." } }), ...(record ? { decision_record: record } : {}), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
     },
   );
 

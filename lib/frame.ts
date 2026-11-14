@@ -63,7 +63,6 @@ export const HARDEN = `
   // Read through the original prototype getters: an element's own "localName" or "hasAttribute" property can be shadowed.
   var nameOf = Object.getOwnPropertyDescriptor(Element.prototype, "localName").get, nsOf = Object.getOwnPropertyDescriptor(Element.prototype, "namespaceURI").get, hasAttr = Element.prototype.hasAttribute, nodeTypeGet = Object.getOwnPropertyDescriptor(Node.prototype, "nodeType").get;
   var typeOf = { call: function (n) { try { return nodeTypeGet.call(n); } catch (e) { return 0; } } };
-  var textSet = Object.getOwnPropertyDescriptor(Node.prototype, "textContent").set;
   function bad(n) { if (!n || typeof n !== "object" || typeOf.call(n) !== 1) return false; var t = nameOf.call(n); return /^(link|base|iframe|frame|frameset|object|embed|portal|applet)$/i.test(t) || (t === "meta" && hasAttr.call(n, "http-equiv")); }
   var D = Document.prototype, E = Element.prototype, N = Node.prototype;
   function lock(o, k, v) { try { Object.defineProperty(o, k, { value: v, writable: false, configurable: false }); } catch (e) {} }
@@ -112,13 +111,18 @@ export const HARDEN = `
     var ns = ctx && typeOf.call(ctx) === 1 ? nsOf.call(ctx) : null, local = ns ? nameOf.call(ctx) : "";
     // foreignObject (and annotation-xml) are HTML integration points: their content is HTML, as natively.
     var wrap = ns === SVG && local !== "foreignObject" ? "svg" : ns === MATH && local !== "annotation-xml" ? "math" : null;
-    innerSet.call(t, wrap ? "<" + wrap + ">" + text + "</" + wrap + ">" : text);
+    // Table and select contexts are parsed inside the same structure, so "<tr>" for a table gets its implicit tbody and
+    // "<tr>" for a tbody does not, as natively. depth: how many wrapper levels to step into.
+    var html5 = ns === "http://www.w3.org/1999/xhtml";
+    var nest = !html5 ? null : local === "table" ? ["<table>", "</table>", 1] : /^(tbody|thead|tfoot)$/.test(local) ? ["<table><" + local + ">", "</" + local + "></table>", 2] : local === "tr" ? ["<table><tbody><tr>", "</tr></tbody></table>", 3] : local === "select" ? ["<select>", "</select>", 1] : null;
+    innerSet.call(t, wrap ? "<" + wrap + ">" + text + "</" + wrap + ">" : nest ? nest[0] + text + nest[1] : text);
     var f = t.content;
-    if (wrap && f.firstChild) {
-      // The wrapper's children, then whatever the parser moved out of foreign content (it follows the wrapper).
+    if ((wrap || nest) && f.firstChild) {
+      // The wrapper's children, then whatever the parser moved out of the wrapper (it follows it).
       var w = f.firstChild, out = document.createDocumentFragment(), r = range.call(document);
+      for (var d = 1; nest && d < nest[2] && w.lastChild; d++) w = w.lastChild;
       selectContents.call(r, w); out.appendChild(r.extractContents());
-      while (w.nextSibling) out.appendChild(w.nextSibling);
+      var top = f.firstChild; while (top.nextSibling) out.appendChild(top.nextSibling);
       f = out;
     }
     clean(f);
@@ -130,7 +134,9 @@ export const HARDEN = `
   lockSetter(E, "innerHTML", function (html) {
     var own = nameOf.call(this);
     if (own === "template" && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { innerSet.call(this, html); clean(this.content); return; }
-    if (TEXT_ONLY.test(own) && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { textSet.call(this, html == null ? "" : String(html)); return; }
+    // Natively these parse to text only (RCDATA decodes entities, raw text does not); no element can be created there, so
+    // the saved native setter is both safe and exact.
+    if (TEXT_ONLY.test(own) && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { innerSet.call(this, html == null ? "" : String(html)); return; }
     origReplaceChildren.call(this, parse(this, html));
   });
   if (window.ShadowRoot) { var shadowSet = (Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "innerHTML") || {}).set; if (shadowSet) lockSetter(ShadowRoot.prototype, "innerHTML", function (html) { var t = createEl.call(document, "template"); innerSet.call(t, html); clean(t.content); this.replaceChildren(t.content); }); }
@@ -146,7 +152,15 @@ export const HARDEN = `
     if (!P) return;
     // The sanitizer runs on a detached element (nothing in it is fetched), the guard cleans that, and only then are the
     // nodes moved in: a sanitizer config that keeps <link> or <base> cannot connect them first.
-    var safe = P.setHTML; if (typeof safe === "function") lock(P, "setHTML", function () { var tmp = createEl.call(document, "div"); safe.apply(tmp, arguments); clean(tmp); var f = document.createDocumentFragment(); while (tmp.firstChild) f.appendChild(tmp.firstChild); this.replaceChildren(f); });
+    // The receiver keeps its type: an element sanitizes into a detached element of the same namespace and local name (a
+    // tbody parses "<tr>" as rows), a ShadowRoot into a detached shadow root.
+    var safe = P.setHTML; if (typeof safe === "function") lock(P, "setHTML", function () {
+      var shadow = window.ShadowRoot && this instanceof ShadowRoot;
+      var tmp = shadow ? E.attachShadow.call(createEl.call(document, "div"), { mode: "open" }) : createNS.call(document, nsOf.call(this), nameOf.call(this));
+      safe.apply(tmp, arguments); clean(tmp);
+      var f = document.createDocumentFragment(); while (tmp.firstChild) f.appendChild(tmp.firstChild);
+      this.replaceChildren(f);
+    });
     if (typeof P.setHTMLUnsafe === "function") lock(P, "setHTMLUnsafe", function (html) { var f = parse(this.host || this, html); this.replaceChildren(f); });
   });
   if (Document.parseHTMLUnsafe) lock(Document, "parseHTMLUnsafe", function () { refuse("parsed document"); });

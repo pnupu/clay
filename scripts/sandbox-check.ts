@@ -90,9 +90,26 @@ const a1 = document.createElement("div"); a1.innerHTML = S + "window.__ran = 1" 
 const a2 = document.createElement("div"); a2.innerHTML = '<img src="data:," onerror="window.__err = 1">'; document.body.appendChild(a2);
 const a3 = document.createElement("div"); const hasSetHTML = typeof a3.setHTML === "function";
 try { if (hasSetHTML) { a3.setHTML('<img src="data:," onerror="window.__s = 1">' + S + "window.__s2 = 1" + ES); document.body.appendChild(a3); } } catch (e) { out["setHTML sanitizes"] = "ALLOWED threw " + e.name; }
+// Native results that the guard must keep (fifth security review).
+const tbl = document.createElement("table"); document.body.appendChild(tbl); tbl.insertAdjacentHTML("beforeend", "<tr><td>x</td></tr>");
+out["table insertAdjacentHTML keeps the implicit tbody"] = tbl.tBodies.length === 1 ? "ok (1 tbody, as natively)" : "ALLOWED " + tbl.tBodies.length + " tbody";
+const tb = document.createElement("tbody"); tbl.appendChild(tb); tb.innerHTML = "<tr><td>y</td></tr>";
+out["tbody innerHTML parses rows"] = tb.rows.length === 1 ? "ok (1 row)" : "ALLOWED " + tb.rows.length + " rows";
+const ta = document.createElement("textarea"); ta.innerHTML = "&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;";
+out["textarea innerHTML decodes entities as natively"] = ta.value === "<b>Tom & Jerry</b>" ? "ok (decoded)" : "ALLOWED " + JSON.stringify(ta.value);
+const ti = document.createElement("title"); ti.innerHTML = "A &amp; B";
+out["title innerHTML decodes entities as natively"] = ti.text === "A & B" ? "ok (decoded)" : "ALLOWED " + JSON.stringify(ti.text);
+if (hasSetHTML) {
+  const tb2 = document.createElement("tbody"); tbl.appendChild(tb2);
+  try { tb2.setHTML("<tr><td>ok</td></tr>"); out["tbody setHTML keeps rows"] = tb2.rows.length === 1 ? "ok (1 row)" : "ALLOWED " + tb2.rows.length + " rows"; } catch (e) { out["tbody setHTML keeps rows"] = "ALLOWED threw " + e.name; }
+  try { const host = document.createElement("div"); document.body.appendChild(host); const sr = host.attachShadow({ mode: "open" }); sr.setHTML("<b>shadow</b>"); out["ShadowRoot setHTML works"] = sr.querySelector("b") ? "ok (works)" : "ALLOWED nothing set"; } catch (e) { out["ShadowRoot setHTML works"] = "ALLOWED threw " + e.name; }
+  // A permissive sanitizer config that would keep a hint: the guard still strips it before it is connected.
+  try { const pm = document.createElement("div"); document.body.appendChild(pm); pm.setHTML('<link rel="prefetch" href="' + T + '/permissive">', { sanitizer: { removeElements: [] } }); out["setHTML with a permissive sanitizer"] = has("permissive") ? "ALLOWED inserted" : "blocked (stripped)"; } catch (e) { out["setHTML with a permissive sanitizer"] = "blocked " + e.name; }
+}
 setTimeout(() => {
   out["innerHTML script stays inert"] = window.__ran ? "ALLOWED it ran" : "blocked (inert, as natively)";
   out["innerHTML onerror handler as natively"] = window.__err ? "ok (it ran, as natively)" : "ALLOWED? it did not run, unlike native";
+  // Not supported is a pass only where the browser really has no setHTML (checked by the suite against the page's own window).
   out["setHTML sanitizes"] ??= !hasSetHTML ? "ok (setHTML not supported here)" : window.__s || window.__s2 || a3.querySelector("script") ? "ALLOWED a script or handler survived" : "blocked (sanitized)";
   document.getElementById("report").textContent = JSON.stringify(out);
 }, 600);
@@ -208,6 +225,9 @@ for (const path of ["/", "/connect", "/sign-in", `/p/sbx-probe-${tag}`]) {
   await (await doc).waitForFunction(() => document.getElementById("report")?.textContent?.startsWith("{"), null, { timeout: 15000 }).catch(() => {});
   const out = JSON.parse((await (await doc).locator("#report").textContent().catch(() => "{}")) || "{}") as Record<string, string>;
   for (const [k, v] of Object.entries(out)) check(`resource hint, ${k}`, v.startsWith("blocked") || v.startsWith("ok"), v);
+  // The sanitizer checks must run wherever the browser under test has setHTML.
+  const supported = await page.evaluate(() => typeof (Element.prototype as unknown as { setHTML?: unknown }).setHTML === "function");
+  check("setHTML checks ran where the browser supports setHTML", !supported || !String(out["setHTML sanitizes"]).includes("not supported"), supported ? "supported" : "not supported");
   await page.waitForTimeout(3500);
   check("no resource hint reached the outside receiver", leaks.length === 0, leaks.slice(0, 4).join(", "));
   await page.close();
