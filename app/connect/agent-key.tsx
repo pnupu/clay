@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { STANDING_INSTRUCTION } from "@/connect/standing-instruction";
 
-/** Requests a person can paste to their agent, one per kind of playground. */
+/** What a person types to their agent: the sentence that asks for a playground, once for a look or feel and once for a decision on prices. */
 const EXAMPLES = [
-  { kind: "Look", text: "Use Clay to help me choose the corner radius, padding and shadow of the Sign up button in my app." },
-  { kind: "Feel", text: "Use Clay so I can tune how the menu opens: how long it takes and how it eases." },
-  { kind: "Price", text: "Use Clay to compare transactional email services for my app: about 30,000 emails a month now, maybe 200,000 later." },
+  { kind: "A look or a feel", text: "build me a playground for the Sign up button in my app: its corner radius, padding, shadow and hover" },
+  { kind: "A decision on prices", text: "build me a playground for this: which transactional email service for about 30,000 emails a month now, maybe 200,000 later?" },
 ];
 
 /** The person's agent key: shown once after it is created, then only its creation time. The server keeps a hash. */
@@ -87,7 +86,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         <p className="small muted">For <code>codex exec</code> (no questions asked): add this line under <code>[mcp_servers.clay]</code> in <code>~/.codex/config.toml</code>, or Clay&apos;s tools are refused:</p>
         {block("codex-approve", `default_tools_approval_mode = "approve"`, false)}
         <p className="small muted"><code>codex exec</code> can only read files by default. To let it write your settled result into your code, run it with <code>-s workspace-write</code>:</p>
-        <pre className="code">{`codex exec -s workspace-write "Use Clay to <your request>"`}</pre>
+        <pre className="code">{`codex exec -s workspace-write "build me a playground for <your request>"`}</pre>
         <p className="small muted">To answer it in the same session later, <code>-s</code> goes before <code>resume</code>:</p>
         {block("codex-resume", `codex exec -s workspace-write resume --last "I'm done."`, false)}
 
@@ -96,28 +95,31 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
       </section>
 
       <section className="card">
-        <h2>3. Ask your agent</h2>
-        <p>Ask in your own words, or paste one of these. Tip: starting with <strong>“Use Clay to …”</strong> makes sure any agent uses Clay.</p>
+        <h2>3. Ask for a playground</h2>
+        <p>Type <strong>“build me a playground for …”</strong> to your agent, with what you want to try, tune or decide in your own words. For example:</p>
         {EXAMPLES.map((e) => (
           <div key={e.kind}>
             <h3>{e.kind}</h3>
             {block(`example-${e.kind}`, e.text, false)}
           </div>
         ))}
+        <p className="small muted">In Claude Code the same works as a command: <code>/mcp__clay__playground the hover on my Sign up button</code> (type <code>/</code> and it is listed as <code>/clay:playground</code>). Codex has no such commands: type the sentence. Other words work too: “make a playground …”, “let me play with it first”, “clay this”.</p>
         <p>What happens: your agent answers with a link. Open it and move the controls until it looks, feels or costs right. Then press Settle (or save your decision) and tell your agent you are done. It reads what you chose and carries it out.</p>
       </section>
 
       <section className="card">
-        <h2>Optional: make your agent reach for Clay on its own</h2>
-        <p>When you do not say “Use Clay”, Claude Code often edits the file or looks the price up itself. To make it build a playground on its own, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
-        {block("standing-instruction", STANDING_INSTRUCTION, false)}
+        <details>
+          <summary><strong>Optional: let your agent offer a playground on its own</strong></summary>
+          <p>When you do not ask for a playground, Claude Code mostly edits the file or looks the price up itself. To make it build one on its own when you are vague, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
+          {block("standing-instruction", STANDING_INSTRUCTION, false)}
         <p className="small muted">Measured on 14 November 2026 with Claude Code 2.1.321 and its normal tools (shell, web search), on four vague requests, three runs each: without these lines it built a playground in 2 of 12 runs, with them in 12 of 12. For an exact instruction or a plain question it still built none (0 of 9). Codex built one with and without the lines.</p>
+        </details>
       </section>
 
       <section className="card">
         <h2>Later</h2>
         <ul className="plain">
-          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds. Each run spends web requests from your daily allowance.</li>
+          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__clay__recheck</code>). Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds. Each run spends web requests from your daily allowance.</li>
           <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>
           <li><strong>Remove Clay:</strong> <code>claude mcp remove clay</code> or <code>codex mcp remove clay</code>. If Claude Code says clay exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local clay</code> in that folder and <code>claude mcp remove --scope user clay</code>.</li>
         </ul>

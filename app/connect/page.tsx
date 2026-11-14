@@ -16,7 +16,7 @@ export default async function Connect() {
     <main className="shell narrow">
       <p className="eyebrow">Connect your agent</p>
       <h1>Let your own agent build playgrounds for you</h1>
-      <p className="lede">Your agent builds a playground for you, and you try it here: only you can open it. Add Clay to Claude Code or Codex once (it connects as an MCP server), then ask your agent for help. A choice that rests on live prices is kept as a small file in your repository, so any later session of your agent can re-check it.</p>
+      <p className="lede">Your agent builds a playground for you, and you try it here: only you can open it. Add Clay to Claude Code or Codex once (it connects as an MCP server), then type “build me a playground for …”. A choice that rests on live prices is kept as a small file in your repository, so any later session of your agent can re-check it.</p>
       {me.kind === "visitor" ? (
         <section className="card">
           <h2>Sign up to get your agent key</h2>

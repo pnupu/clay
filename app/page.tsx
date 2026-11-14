@@ -106,7 +106,7 @@ export default async function Home() {
       <section className="shell steps" aria-label="How it works">
         <h2>How it works</h2>
         <ol>
-          <li><strong>Your agent builds it.</strong> Tell your own agent, such as Claude Code or Codex, what feels off or what you have to choose. Through Clay it builds a page from your real code, or from prices it reads on the vendors&apos; own pages, and gives you the link.</li>
+          <li><strong>You ask for a playground.</strong> Type “build me a playground for …” to your own agent, such as Claude Code or Codex, with what feels off or what you have to choose. Through Clay it builds a page from your real code, or from prices it reads on the vendors&apos; own pages, and gives you the link.</li>
           <li><strong>You try it on your own.</strong> Move the controls and the real thing follows at once: the button, the motion, the monthly cost. No agent and no network call sits between a move and its result, so you can try as many values as you like.</li>
           <li><strong>Your agent carries it out.</strong> Settle where you landed. Your agent reads the values, the range you tried and the finished text for your code, then writes it into your files or tells you where your decision stands.</li>
         </ol>

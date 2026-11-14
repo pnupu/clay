@@ -6,7 +6,7 @@ Built for the Junction 2026 challenge "The Web Is Your Real-Time Database" by Co
 
 People often do not know what they want until they can try concrete things. So:
 
-1. Your own agent (Claude Code, Codex, T3 Code, on your own model subscription) builds a playground from the kit, with facts read live from the web.
+1. You ask your own agent (Claude Code, Codex, T3 Code, on your own model subscription) for one: "build me a playground for ...". It builds a playground from the kit, with facts read live from the web.
 2. You explore it alone, at full speed. No agent and no network call sits between a move and its result.
 3. The settled state goes back to the agent as a precise instruction: code-ready text, the values, and the range of values you tried. The agent carries it out.
 4. A decision whose inputs keep changing stays live as the web changes.
@@ -47,7 +47,7 @@ codex mcp add clay --url https://<host>/api/mcp --bearer-token-env-var CLAY_AGEN
 - Claude Code asks once per Clay tool whether to allow it; the person allows it.
 - `codex exec` cannot ask, so Clay's tools are refused until `default_tools_approval_mode = "approve"` is under `[mcp_servers.clay]` in `~/.codex/config.toml`. It can only read files unless run with `-s workspace-write`; for a later turn the flag goes before `resume`: `codex exec -s workspace-write resume --last "I'm done."`.
 - Another MCP client: Streamable HTTP at `https://<host>/api/mcp` with the header `Authorization: Bearer <agent key>`.
-- Optional tip for any agent: a request that starts with "Use Clay to …" makes the choice explicit.
+- How a person asks: "build me a playground for …". In Claude Code also `/mcp__clay__playground <what you want to try>`.
 - A lost key: create a new one on `/connect` (the old one stops working); in Claude Code remove Clay and add it again, in Codex change the export. Remove Clay with `claude mcp remove clay` or `codex mcp remove clay`. When Clay is in more than one Claude Code scope (an earlier add without `--scope user`), `claude mcp remove clay` refuses and lists them; remove each with `--scope local` (in that folder) and `--scope user`.
 
 `/connect` shows these commands with the person's key filled in, each with a Copy button, and three example requests (look, feel, price).
@@ -85,11 +85,18 @@ claude mcp add --scope user --transport http clay http://127.0.0.1:43117/api/mcp
 codex mcp add clay --url http://127.0.0.1:43117/api/mcp
 ```
 
-Then ask in your own words, for example: "this signup button looks off and I can't say why, our brand is linear.app" or "I need to pick an email service for my app, about 30k emails a month now, maybe 200k later". The agent builds a playground and gives you its URL. Explore, then press Settle (preview) or save a decision (price). Tell the agent you are done: it reads the result and writes it into your code, or reports the decision. Later ask "what did I decide, and does it still hold?".
+Then ask for a playground: type "build me a playground for …" with what you want to try, tune or decide. For example: "build me a playground for this signup button, it looks off and I can't say why, our brand is linear.app" or "build me a playground for this: which email service for my app, about 30k emails a month now, maybe 200k later?". Other words work too ("make a playground …", "let me play with it first", "clay this").
 
-### Optional: make your agent reach for Clay on its own
+The server also has two MCP prompts, so nothing must be pasted anywhere. Claude Code shows an MCP prompt as a command (its documentation: "Claude Code lists each MCP prompt as `/servername:promptname (MCP)`. Typing `/mcp__servername__promptname` also runs it."; "Pass them space-separated after the command."):
 
-With its normal tools on (a shell, web search), Claude Code often does not use Clay unless you say "Use Clay to ...": it edits the file by guess, answers from the file, or looks the price up itself. A standing instruction in your own project changes that. Paste these lines into the `CLAUDE.md` of your project (Claude Code) or its `AGENTS.md` (Codex). The text is in [`connect/standing-instruction.md`](connect/standing-instruction.md), and `/connect` offers it with a Copy button.
+- `/mcp__clay__playground <what you want to try, tune or decide>` (listed as `/clay:playground`): the same request with the whole loop. Without words after it, the agent asks what you want to play with.
+- `/mcp__clay__recheck [which decision]` (listed as `/clay:recheck`): "is my saved decision still right?".
+
+Codex CLI 0.167.0 has no commands for MCP prompts (its documentation lists tools, server instructions and authentication as the supported MCP features, and no prompts): in Codex, type the sentence. The agent builds a playground and gives you its URL. Explore, then press Settle (preview) or save a decision (price). Tell the agent you are done: it reads the result and writes it into your code, or reports the decision. Later ask "what did I decide, and does it still hold?".
+
+### Optional: let your agent offer a playground on its own
+
+With its normal tools on (a shell, web search), Claude Code often does not use Clay unless you ask for a playground: it edits the file by guess, answers from the file, or looks the price up itself. A standing instruction in your own project changes that. Paste these lines into the `CLAUDE.md` of your project (Claude Code) or its `AGENTS.md` (Codex). The text is in [`connect/standing-instruction.md`](connect/standing-instruction.md), and `/connect` offers it with a Copy button.
 
 ```markdown
 ## Clay playgrounds
