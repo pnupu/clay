@@ -99,6 +99,18 @@ test("a price spec goes to the price engine; price and preview parts cannot be m
   assert.ok(errors({ ...price, data: { price_pages: { ...price.data!.price_pages!, vendors: [price.data!.price_pages!.vendors[0]] } } }).some((e) => e.startsWith("data.price_pages.vendors")));
 });
 
+test("a revision changes part of the view: the fields given replace, the others stay, and the type may be left out", () => {
+  const was = toSpec({ ...newPlayground({ id: "spring", question: SPRING_EXAMPLE.title, product: "", metrics: [], features: [], vendors: [] }), kit: { kit: kitOf(SPRING_EXAMPLE) } as KitState });
+  const merged = mergeSpec(was, { view: { js: "clay.onChange(() => {});", height: 400 } }) as Spec;
+  assert.deepEqual(merged.view, { ...was.view, js: "clay.onChange(() => {});", height: 400 });
+  assert.equal(merged.view.html, SPRING_EXAMPLE.view.html);
+  assert.equal(merged.view.type, "preview");
+  // The merged spec is validated like a new one: a field that breaks the view is refused, as before.
+  assert.ok(errors(mergeSpec(was, { view: { height: 5000 } })).some((e) => e.startsWith("view.height")));
+  // A revision without a view leaves it alone.
+  assert.deepEqual((mergeSpec(was, { title: "Another title" }) as Spec).view, was.view);
+});
+
 test("values from the browser: only values a control can have are stored; outputs follow them", () => {
   const kit = kitOf(BUTTON_EXAMPLE);
   const ok = { bg: "#FF0000", radius: 9.4, pad_x: 20, weight: "font-semibold", shadow: true, extra: "dropped" };

@@ -40,7 +40,7 @@ import { CAUSE, choiceHandback, creation, directAnswer, fileMatches, lastBuild, 
 import { CHROME, checkPage, personSettles, previewWithoutWebNumbers } from "./page.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES as FIXED, type Case } from "./requests.ts";
-import { parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
+import { linkSeconds, parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
 
 const HERE = import.meta.dirname;
 const SECOND_LEG = "ok I'm done, go ahead";
@@ -51,6 +51,8 @@ type CaseResult = {
   firstFail: Check | null;
   checks: Check[];
   seconds: number;
+  /** Seconds from the start of the build leg to the first create result with a URL: when the person can have the link. */
+  linkSeconds?: number | null;
   tokens: { input: number; cached: number; output: number } | null;
   agentRuns: number;
   subject: SubjectName; model: string | null;
@@ -231,6 +233,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
 
   // ---- First leg: the request.
   const first = await leg("leg1", asked(c));
+  if (c.expect === "build") r.linkSeconds = linkSeconds(read(join(dir, "leg1.jsonl")) ?? ""); // from the saved transcript, so --from has it too
   add(toolUse(c, first.calls, prepared?.id ?? null));
 
   if (c.expect === "none") {
@@ -330,6 +333,8 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
   const ran = results.filter((r) => r.result !== "skip");
   const rate = (rs: CaseResult[]) => { const n = rs.filter((r) => r.result !== "skip"); return n.length ? `${n.filter((r) => r.result === "pass").length} of ${n.length} (${Math.round((100 * n.filter((r) => r.result === "pass").length) / n.length)}%)` : "none run"; };
   const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? Math.round((s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2) : null; };
+  const linked = ran.filter((r) => r.linkSeconds != null);
   const tokens = (t: CaseResult["tokens"]) => (t ? `${k(t.input + t.output)} (+${k(t.cached)} cached)` : "not reported");
   const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ");
   const kinds = [...new Set(results.map((r) => r.kind))];
@@ -341,6 +346,7 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
     `# Clay evals: run ${meta.runId}`,
     "",
     `- First-try pass rate: **${rate(results)}**${results.length > ran.length ? `; ${results.length - ran.length} skipped` : ""}`,
+    ...(linked.length ? [`- Time to the link (the build leg's start to the first create result with a URL), median of ${linked.length} build(s): **${median(linked.map((r) => r.linkSeconds!))} s**. Their total time, median: ${median(linked.map((r) => r.seconds))} s.`] : []),
     `- Subject: ${meta.subject}, model ${[...new Set(ran.map((r) => r.model).filter(Boolean))].join(", ") || meta.model || "the CLI's default"}. Server: ${meta.baseUrl} (kit: ${meta.kit ? "yes" : "no"}).${meta.label ? ` ${meta.label}.` : ""}`,
     `- Harness commit ${meta.commit} on ${meta.branch}, started ${meta.startedAt}. Concurrency ${meta.concurrency}, timeout ${meta.timeoutSeconds} s per agent run. Agent runs: ${results.reduce((n, r) => n + r.agentRuns, 0)}.`,
     `- Command: \`${meta.command}\``,
@@ -355,9 +361,9 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
     "",
     "## Cases",
     "",
-    "| Case | Result | First failing check | Time | Tokens in+out |",
-    "|---|---|---|---|---|",
-    ...results.map((r) => `| ${r.id} | ${r.result === "pass" ? "PASS" : r.result === "fail" ? "**FAIL**" : "skip"} | ${r.result === "skip" ? cell(r.skipReason ?? "") : r.firstFail ? cell(`${r.firstFail.id}: ${r.firstFail.reason}`) : ""} | ${r.result === "skip" ? "" : `${r.seconds} s`} | ${r.result === "skip" ? "" : tokens(r.tokens)} |`),
+    "| Case | Result | First failing check | Link after | Time | Tokens in+out |",
+    "|---|---|---|---|---|---|",
+    ...results.map((r) => `| ${r.id} | ${r.result === "pass" ? "PASS" : r.result === "fail" ? "**FAIL**" : "skip"} | ${r.result === "skip" ? cell(r.skipReason ?? "") : r.firstFail ? cell(`${r.firstFail.id}: ${r.firstFail.reason}`) : ""} | ${r.linkSeconds != null ? `${r.linkSeconds} s` : ""} | ${r.result === "skip" ? "" : `${r.seconds} s`} | ${r.result === "skip" ? "" : tokens(r.tokens)} |`),
     "",
     "## Failures by cause",
     "",
