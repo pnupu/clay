@@ -1,0 +1,8 @@
+{
+  "note": "Disputed failures still count as failures in every pass rate. The summary also shows each model's pass rate with them left out, so a reader can judge the effect.",
+  "pass_unknown": [],
+  "disputed": [
+    {"task": "bank-import", "agent": "codex", "model": "gpt-6.1-terra", "fail_line_contains": "nordea2.csv raised ValueError",
+     "reason": "The hidden file nordea2.csv has Nordea amounts with fewer than two decimals (`12`, `(1,234.5)`). FORMATS.md says the Nordea amount 'uses a decimal point and optional , thousands separators' and shows only two-decimal examples, so rejecting `12` is a defensible reading. Runs r1 and r2 name `12` in their error; r3 does not name the value. All three gpt-6.1-terra failures are this case."}
+  ]
+}

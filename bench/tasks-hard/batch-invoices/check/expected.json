@@ -1,0 +1,182 @@
+[
+ {
+  "number": "INV-20261001-2000",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 70227,
+  "vat": 0,
+  "total": 70227,
+  "due": "2026-10-31"
+ },
+ {
+  "number": "INV-20261031-2001",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 50650,
+  "vat": 12916,
+  "total": 63566,
+  "due": "2026-11-14"
+ },
+ {
+  "number": "INV-20261110-2002",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 81353,
+  "vat": 11389,
+  "total": 92742,
+  "due": "2026-11-24"
+ },
+ {
+  "number": "INV-20261009-2003",
+  "currency": "USD",
+  "rate": 1.0812,
+  "net": 13041,
+  "vat": 0,
+  "total": 13041,
+  "due": "2026-10-23"
+ },
+ {
+  "number": "INV-20261102-2004",
+  "currency": "USD",
+  "rate": 1.0921,
+  "net": 51441,
+  "vat": 0,
+  "total": 51441,
+  "due": "2026-11-16"
+ },
+ {
+  "number": "INV-20261114-2005",
+  "currency": "SEK",
+  "rate": 11.291,
+  "net": 2187856,
+  "vat": 0,
+  "total": 2187856,
+  "due": "2026-12-05"
+ },
+ {
+  "number": "INV-20261015-2006",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 230643,
+  "vat": 58814,
+  "total": 289457,
+  "due": "2026-10-29"
+ },
+ {
+  "number": "INV-20261107-2007",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 18344,
+  "vat": 4678,
+  "total": 23022,
+  "due": "2026-11-21"
+ },
+ {
+  "number": "INV-20261001-2008",
+  "currency": "USD",
+  "rate": 1.0812,
+  "net": 331000,
+  "vat": 0,
+  "total": 331000,
+  "due": "2026-10-15"
+ },
+ {
+  "number": "INV-20261031-2009",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 291059,
+  "vat": 0,
+  "total": 291059,
+  "due": "2026-11-30"
+ },
+ {
+  "number": "INV-20261110-2010",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 97664,
+  "vat": 24904,
+  "total": 122568,
+  "due": "2026-11-24"
+ },
+ {
+  "number": "INV-20261009-2011",
+  "currency": "SEK",
+  "rate": 11.402,
+  "net": 4018206,
+  "vat": 0,
+  "total": 4018206,
+  "due": "2026-10-30"
+ },
+ {
+  "number": "INV-20261102-2012",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 141810,
+  "vat": 19853,
+  "total": 161663,
+  "due": "2026-11-16"
+ },
+ {
+  "number": "INV-20261114-2013",
+  "currency": "USD",
+  "rate": 1.1043,
+  "net": 40608,
+  "vat": 0,
+  "total": 40608,
+  "due": "2026-11-28"
+ },
+ {
+  "number": "INV-20261015-2014",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 366795,
+  "vat": 93533,
+  "total": 460328,
+  "due": "2026-10-29"
+ },
+ {
+  "number": "INV-20261107-2015",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 195194,
+  "vat": 49774,
+  "total": 244968,
+  "due": "2026-11-21"
+ },
+ {
+  "number": "INV-20261001-2016",
+  "currency": "SEK",
+  "rate": 11.402,
+  "net": 4229738,
+  "vat": 0,
+  "total": 4229738,
+  "due": "2026-10-22"
+ },
+ {
+  "number": "INV-20261031-2017",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 39801,
+  "vat": 10149,
+  "total": 49950,
+  "due": "2026-11-14"
+ },
+ {
+  "number": "INV-20261110-2018",
+  "currency": "USD",
+  "rate": 1.1043,
+  "net": 265034,
+  "vat": 0,
+  "total": 265034,
+  "due": "2026-11-24"
+ },
+ {
+  "number": "INV-20261009-2019",
+  "currency": "EUR",
+  "rate": 1,
+  "net": 44451,
+  "vat": 6223,
+  "total": 50674,
+  "due": "2026-10-23"
+ }
+]

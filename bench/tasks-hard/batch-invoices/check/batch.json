@@ -1,0 +1,397 @@
+[
+ {
+  "id": "2000",
+  "customerId": "C2",
+  "date": "2026-10-01",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 3,
+    "unitPriceEurCents": 13036
+   },
+   {
+    "sku": "S1",
+    "qty": 1,
+    "unitPriceEurCents": 2472
+   },
+   {
+    "sku": "S2",
+    "qty": 9,
+    "unitPriceEurCents": 3183
+   }
+  ]
+ },
+ {
+  "id": "2001",
+  "customerId": "C1",
+  "date": "2026-10-31",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 1,
+    "unitPriceEurCents": 16726
+   },
+   {
+    "sku": "S1",
+    "qty": 4,
+    "unitPriceEurCents": 1327
+   },
+   {
+    "sku": "S2",
+    "qty": 2,
+    "unitPriceEurCents": 14308
+   }
+  ]
+ },
+ {
+  "id": "2002",
+  "customerId": "C6",
+  "date": "2026-11-10",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 2,
+    "unitPriceEurCents": 7985
+   },
+   {
+    "sku": "S1",
+    "qty": 2,
+    "unitPriceEurCents": 18155
+   },
+   {
+    "sku": "S2",
+    "qty": 7,
+    "unitPriceEurCents": 2035
+   },
+   {
+    "sku": "S3",
+    "qty": 2,
+    "unitPriceEurCents": 7414
+   }
+  ]
+ },
+ {
+  "id": "2003",
+  "customerId": "C3",
+  "date": "2026-10-09",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 7,
+    "unitPriceEurCents": 1723
+   }
+  ]
+ },
+ {
+  "id": "2004",
+  "customerId": "C3",
+  "date": "2026-11-02",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 1,
+    "unitPriceEurCents": 18339
+   },
+   {
+    "sku": "S1",
+    "qty": 3,
+    "unitPriceEurCents": 9588
+   }
+  ]
+ },
+ {
+  "id": "2005",
+  "customerId": "C5",
+  "date": "2026-11-14",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 3,
+    "unitPriceEurCents": 17816
+   },
+   {
+    "sku": "S1",
+    "qty": 2,
+    "unitPriceEurCents": 18806
+   },
+   {
+    "sku": "S2",
+    "qty": 5,
+    "unitPriceEurCents": 18457
+   },
+   {
+    "sku": "S3",
+    "qty": 3,
+    "unitPriceEurCents": 3475
+   }
+  ]
+ },
+ {
+  "id": "2006",
+  "customerId": "C1",
+  "date": "2026-10-15",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 6,
+    "unitPriceEurCents": 3291
+   },
+   {
+    "sku": "S1",
+    "qty": 9,
+    "unitPriceEurCents": 23433
+   }
+  ]
+ },
+ {
+  "id": "2007",
+  "customerId": "C4",
+  "date": "2026-11-07",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 1,
+    "unitPriceEurCents": 20382
+   }
+  ]
+ },
+ {
+  "id": "2008",
+  "customerId": "C3",
+  "date": "2026-10-01",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 8,
+    "unitPriceEurCents": 22394
+   },
+   {
+    "sku": "S1",
+    "qty": 9,
+    "unitPriceEurCents": 14110
+   }
+  ]
+ },
+ {
+  "id": "2009",
+  "customerId": "C2",
+  "date": "2026-10-31",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 8,
+    "unitPriceEurCents": 19286
+   },
+   {
+    "sku": "S1",
+    "qty": 8,
+    "unitPriceEurCents": 11947
+   },
+   {
+    "sku": "S2",
+    "qty": 5,
+    "unitPriceEurCents": 8239
+   }
+  ]
+ },
+ {
+  "id": "2010",
+  "customerId": "C1",
+  "date": "2026-11-10",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 4,
+    "unitPriceEurCents": 2781
+   },
+   {
+    "sku": "S1",
+    "qty": 5,
+    "unitPriceEurCents": 17308
+   }
+  ]
+ },
+ {
+  "id": "2011",
+  "customerId": "C5",
+  "date": "2026-10-09",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 6,
+    "unitPriceEurCents": 24001
+   },
+   {
+    "sku": "S1",
+    "qty": 8,
+    "unitPriceEurCents": 9534
+   },
+   {
+    "sku": "S2",
+    "qty": 2,
+    "unitPriceEurCents": 3967
+   },
+   {
+    "sku": "S3",
+    "qty": 9,
+    "unitPriceEurCents": 13800
+   }
+  ]
+ },
+ {
+  "id": "2012",
+  "customerId": "C6",
+  "date": "2026-11-02",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 6,
+    "unitPriceEurCents": 5079
+   },
+   {
+    "sku": "S1",
+    "qty": 8,
+    "unitPriceEurCents": 13917
+   }
+  ]
+ },
+ {
+  "id": "2013",
+  "customerId": "C3",
+  "date": "2026-11-14",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 2,
+    "unitPriceEurCents": 18386
+   }
+  ]
+ },
+ {
+  "id": "2014",
+  "customerId": "C4",
+  "date": "2026-10-15",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 6,
+    "unitPriceEurCents": 22882
+   },
+   {
+    "sku": "S1",
+    "qty": 6,
+    "unitPriceEurCents": 19575
+   },
+   {
+    "sku": "S2",
+    "qty": 8,
+    "unitPriceEurCents": 19101
+   }
+  ]
+ },
+ {
+  "id": "2015",
+  "customerId": "C1",
+  "date": "2026-11-07",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 2,
+    "unitPriceEurCents": 3165
+   },
+   {
+    "sku": "S1",
+    "qty": 5,
+    "unitPriceEurCents": 15634
+   },
+   {
+    "sku": "S2",
+    "qty": 2,
+    "unitPriceEurCents": 2087
+   },
+   {
+    "sku": "S3",
+    "qty": 5,
+    "unitPriceEurCents": 21304
+   }
+  ]
+ },
+ {
+  "id": "2016",
+  "customerId": "C5",
+  "date": "2026-10-01",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 5,
+    "unitPriceEurCents": 23581
+   },
+   {
+    "sku": "S1",
+    "qty": 7,
+    "unitPriceEurCents": 22009
+   },
+   {
+    "sku": "S2",
+    "qty": 6,
+    "unitPriceEurCents": 838
+   },
+   {
+    "sku": "S3",
+    "qty": 8,
+    "unitPriceEurCents": 11746
+   }
+  ]
+ },
+ {
+  "id": "2017",
+  "customerId": "C1",
+  "date": "2026-10-31",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 2,
+    "unitPriceEurCents": 16276
+   },
+   {
+    "sku": "S1",
+    "qty": 1,
+    "unitPriceEurCents": 7249
+   }
+  ]
+ },
+ {
+  "id": "2018",
+  "customerId": "C3",
+  "date": "2026-11-10",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 3,
+    "unitPriceEurCents": 24293
+   },
+   {
+    "sku": "S1",
+    "qty": 4,
+    "unitPriceEurCents": 13137
+   },
+   {
+    "sku": "S2",
+    "qty": 7,
+    "unitPriceEurCents": 16368
+   }
+  ]
+ },
+ {
+  "id": "2019",
+  "customerId": "C6",
+  "date": "2026-10-09",
+  "lines": [
+   {
+    "sku": "S0",
+    "qty": 3,
+    "unitPriceEurCents": 14817
+   }
+  ]
+ }
+]

@@ -1,0 +1,195 @@
+{
+  "runs": 16,
+  "run_ids": [
+    "20261114-hard-calib1"
+  ],
+  "models": [
+    {
+      "agent": "claude",
+      "model": "claude-opus-5-5",
+      "agent_version": "2.1.321 (Claude Code)",
+      "effort": "cli default (not reported)",
+      "runs": 8,
+      "scored_runs": 8,
+      "passed": 7,
+      "pass_rate": 0.875,
+      "pass_rate_ci95": [
+        0.529,
+        0.978
+      ],
+      "disputed_failures": 0,
+      "pass_rate_excluding_disputed": 0.875,
+      "median_seconds": 54.5,
+      "p90_seconds": 66.6,
+      "median_seconds_passed": 54.0,
+      "per_task": {
+        "input_tokens": 100928,
+        "cached_input_tokens": 90351,
+        "cache_write_tokens": 10567,
+        "output_tokens": 4589,
+        "reasoning_output_tokens": null,
+        "tool_calls": 4,
+        "turns": 5
+      },
+      "per_passed_task": {
+        "input_tokens": 101008,
+        "cached_input_tokens": 90369,
+        "cache_write_tokens": 10629,
+        "output_tokens": 4535,
+        "reasoning_output_tokens": null
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 8,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0,
+        "harness_error": 0
+      },
+      "failures": {
+        "wrong-output": 1
+      },
+      "helper_models": []
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "agent_version": "codex-cli 0.167.0",
+      "effort": "medium",
+      "runs": 8,
+      "scored_runs": 8,
+      "passed": 6,
+      "pass_rate": 0.75,
+      "pass_rate_ci95": [
+        0.409,
+        0.929
+      ],
+      "disputed_failures": 0,
+      "pass_rate_excluding_disputed": 0.75,
+      "median_seconds": 31.6,
+      "p90_seconds": 48.0,
+      "median_seconds_passed": 37.7,
+      "per_task": {
+        "input_tokens": 87026,
+        "cached_input_tokens": 78864,
+        "cache_write_tokens": null,
+        "output_tokens": 1492,
+        "reasoning_output_tokens": 194,
+        "tool_calls": 5,
+        "turns": 1
+      },
+      "per_passed_task": {
+        "input_tokens": 93540,
+        "cached_input_tokens": 84992,
+        "cache_write_tokens": null,
+        "output_tokens": 1805,
+        "reasoning_output_tokens": 258
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 8,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0,
+        "harness_error": 0
+      },
+      "failures": {
+        "no-change (gave up)": 1,
+        "wrong-output": 1
+      },
+      "helper_models": []
+    }
+  ],
+  "tasks": [
+    {
+      "task": "bank-import",
+      "difficulty": "hard",
+      "summary": "Parse three banks' messy statement exports into one normalized format",
+      "hard_because": "Real-world CSV mess documented in FORMATS.md: BOM, CRLF, ';' and ',' delimiters, decimal comma, thousands separators (including no-break space), trailing-minus and parenthesized negatives, three date formats, quoted descriptions with newlines, footer lines. Hidden files combine these.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "batch-invoices",
+      "difficulty": "hard",
+      "summary": "Bug report whose three causes sit in other files than the symptom, in a 20-file app",
+      "hard_because": "Symptoms appear in batch output; the three causes are a mutated shared default in customer.js, a cache key in rates.js and an off-by-one comparison in dates.js. Single invoices on most dates and the visible tests are correct.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "billing-schedule",
+      "difficulty": "hard",
+      "summary": "Subscription billing dates to a written spec: month-end clamping, business-day roll, holidays, pauses",
+      "hard_because": "Several rules interact (anchor day kept across short months, modified-following roll that can go backwards, holidays, pauses on the adjusted date, skipped dates not counted). The hidden check covers combinations the visible tests do not.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "dedupe-perf",
+      "difficulty": "hard",
+      "summary": "Make a quadratic customer-dedupe job fast without changing its output",
+      "hard_because": "The naive pairwise job is correct but cannot finish on 150k rows. A fast version needs indexing plus transitive grouping, and must keep the exact matching rules (empty values never match, gmail normalization, the name+zip rule).",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "export-since",
+      "difficulty": "medium",
+      "summary": "Add a --since date filter whose obvious reading (UTC midnight) contradicts the documented convention",
+      "hard_because": "The instruction says entries have UTC timestamps; the README and the existing --until code say command-line dates are calendar days in the account time zone. An agent that does not read them filters on UTC midnight and fails at the day boundary.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "0/1"
+      }
+    },
+    {
+      "task": "exporter-refactor",
+      "difficulty": "hard",
+      "summary": "Deduplicate three exporters into a shared module while keeping byte-identical output",
+      "hard_because": "The three copies look identical but differ in small ways (booleans, datetimes, decimals, sort order of strings, missing values). A refactor that unifies them breaks byte-for-byte output that the visible tests do not cover.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "job-queue",
+      "difficulty": "hard",
+      "summary": "Fix ordering and concurrency bugs in an async job queue that show only under load",
+      "hard_because": "The visible test passes. The bugs (retry path double-releases a slot, drain resolves while jobs still run, results land in completion order, a sync throw escapes) appear only under a randomized stress check.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "0/1",
+        "gpt-6-luna": "0/1"
+      }
+    },
+    {
+      "task": "user-migration",
+      "difficulty": "hard",
+      "summary": "Migrate messy v1 user records to the v2 schema: names, phones, mixed date formats with DST, duplicate merge, idempotency",
+      "hard_because": "Many small rules from MIGRATION.md interact on real-world data: name particles, phone prefixes, three timestamp formats including Helsinki local time across DST, merging duplicates by email with a tie rule, and records already in v2 that must pass through.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    }
+  ]
+}

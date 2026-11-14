@@ -1,0 +1,5 @@
+{"id":"dedupe-perf","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"Make a quadratic customer-dedupe job fast without changing its output",
+ "hard_because":"The naive pairwise job is correct but cannot finish on 150k rows. A fast version needs indexing plus transitive grouping, and must keep the exact matching rules (empty values never match, gmail normalization, the name+zip rule).",
+ "instruction":"dedupe.py gives the right answer, but on the real CRM export (about 150,000 rows) it never finishes. Make it fast: `python3 dedupe.py customers.csv` should take a few seconds for 150k rows on a normal laptop, with exactly the same output as now for any input. sample.csv is a small example. Standard library only.",
+ "check":["python3","check.py"]}

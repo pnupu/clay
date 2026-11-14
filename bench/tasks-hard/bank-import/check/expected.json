@@ -1,0 +1,162 @@
+{
+ "pohjola": [
+  {
+   "bank": "pohjola",
+   "date": "2026-11-03",
+   "amount_cents": -4590,
+   "description": "K-Market Kamppi"
+  },
+  {
+   "bank": "pohjola",
+   "date": "2026-11-14",
+   "amount_cents": 245000,
+   "description": "Esimerkki Oy / Palkka 11/2026"
+  },
+  {
+   "bank": "pohjola",
+   "date": "2026-11-15",
+   "amount_cents": -123450,
+   "description": "Asunto Oy Esimerkki / Vastike; marraskuu"
+  }
+ ],
+ "nordea": [
+  {
+   "bank": "nordea",
+   "date": "2026-11-03",
+   "amount_cents": -4590,
+   "description": "COFFEE SHOP, HELSINKI"
+  },
+  {
+   "bank": "nordea",
+   "date": "2026-11-14",
+   "amount_cents": 245000,
+   "description": "SALARY"
+  }
+ ],
+ "spankki": [
+  {
+   "bank": "spankki",
+   "date": "2026-11-03",
+   "amount_cents": -1230,
+   "description": "Alepa Rautatientori"
+  },
+  {
+   "bank": "spankki",
+   "date": "2026-11-14",
+   "amount_cents": 245000,
+   "description": "Palkka"
+  }
+ ],
+ "pohjola2": [
+  {
+   "bank": "pohjola",
+   "date": "2026-02-01",
+   "amount_cents": 750,
+   "description": "Kioski \"Kulma\""
+  },
+  {
+   "bank": "pohjola",
+   "date": "2026-02-01",
+   "amount_cents": -5,
+   "description": "Pankki / Palvelumaksu helmikuu"
+  },
+  {
+   "bank": "pohjola",
+   "date": "2026-02-28",
+   "amount_cents": 100000000,
+   "description": "Lotto / Voitto"
+  },
+  {
+   "bank": "pohjola",
+   "date": "2026-03-03",
+   "amount_cents": -1200,
+   "description": "Ravintola Kala"
+  }
+ ],
+ "nordea2": [
+  {
+   "bank": "nordea",
+   "date": "2026-01-02",
+   "amount_cents": -5,
+   "description": "FEE"
+  },
+  {
+   "bank": "nordea",
+   "date": "2026-12-31",
+   "amount_cents": 100000000,
+   "description": "Prize \"BIG\" win"
+  },
+  {
+   "bank": "nordea",
+   "date": "2026-02-28",
+   "amount_cents": 1200,
+   "description": "Refund"
+  },
+  {
+   "bank": "nordea",
+   "date": "2026-03-01",
+   "amount_cents": -123450,
+   "description": "Rent, March"
+  }
+ ],
+ "spankki2": [
+  {
+   "bank": "spankki",
+   "date": "2026-01-05",
+   "amount_cents": -1234560,
+   "description": "Verkkokauppa; tilaus 123"
+  },
+  {
+   "bank": "spankki",
+   "date": "2026-02-10",
+   "amount_cents": 50,
+   "description": "Korko"
+  },
+  {
+   "bank": "spankki",
+   "date": "2026-03-01",
+   "amount_cents": -120000,
+   "description": "Vuokra maaliskuu"
+  },
+  {
+   "bank": "spankki",
+   "date": "2026-03-02",
+   "amount_cents": 500,
+   "description": "Palautus"
+  }
+ ],
+ "pohjola3": [
+  {
+   "bank": "pohjola",
+   "date": "2026-10-31",
+   "amount_cents": -8990,
+   "description": "Verkkokauppa.com / Tilaus 5521"
+  },
+  {
+   "bank": "pohjola",
+   "date": "2026-11-01",
+   "amount_cents": 1500,
+   "description": "Virtanen; Aino"
+  }
+ ],
+ "nordea3": [
+  {
+   "bank": "nordea",
+   "date": "2026-10-31",
+   "amount_cents": -300,
+   "description": "CARD FEE"
+  },
+  {
+   "bank": "nordea",
+   "date": "2026-11-01",
+   "amount_cents": 125075,
+   "description": "TRANSFER"
+  },
+  {
+   "bank": "nordea",
+   "date": "2026-11-02",
+   "amount_cents": 1250,
+   "description": "OLD STYLE"
+  }
+ ]
+}

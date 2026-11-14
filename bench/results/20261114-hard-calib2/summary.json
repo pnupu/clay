@@ -1,0 +1,148 @@
+{
+  "runs": 8,
+  "run_ids": [
+    "20261114-hard-calib2"
+  ],
+  "models": [
+    {
+      "agent": "claude",
+      "model": "claude-opus-5-5",
+      "agent_version": "2.1.321 (Claude Code)",
+      "effort": "cli default (not reported)",
+      "runs": 4,
+      "scored_runs": 4,
+      "passed": 4,
+      "pass_rate": 1.0,
+      "pass_rate_ci95": [
+        0.51,
+        1.0
+      ],
+      "disputed_failures": 0,
+      "pass_rate_excluding_disputed": 1.0,
+      "median_seconds": 42.7,
+      "p90_seconds": 64.8,
+      "median_seconds_passed": 42.7,
+      "per_task": {
+        "input_tokens": 102174,
+        "cached_input_tokens": 92116,
+        "cache_write_tokens": 10048,
+        "output_tokens": 4300,
+        "reasoning_output_tokens": null,
+        "tool_calls": 4,
+        "turns": 5
+      },
+      "per_passed_task": {
+        "input_tokens": 102174,
+        "cached_input_tokens": 92116,
+        "cache_write_tokens": 10048,
+        "output_tokens": 4300,
+        "reasoning_output_tokens": null
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 4,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0,
+        "harness_error": 0
+      },
+      "failures": {},
+      "helper_models": []
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "agent_version": "codex-cli 0.167.0",
+      "effort": "medium",
+      "runs": 4,
+      "scored_runs": 4,
+      "passed": 3,
+      "pass_rate": 0.75,
+      "pass_rate_ci95": [
+        0.301,
+        0.954
+      ],
+      "disputed_failures": 0,
+      "pass_rate_excluding_disputed": 0.75,
+      "median_seconds": 34.0,
+      "p90_seconds": 54.4,
+      "median_seconds_passed": 33.1,
+      "per_task": {
+        "input_tokens": 106725,
+        "cached_input_tokens": 91072,
+        "cache_write_tokens": null,
+        "output_tokens": 1652,
+        "reasoning_output_tokens": 289,
+        "tool_calls": 6,
+        "turns": 1
+      },
+      "per_passed_task": {
+        "input_tokens": 102049,
+        "cached_input_tokens": 82731,
+        "cache_write_tokens": null,
+        "output_tokens": 1654,
+        "reasoning_output_tokens": 202
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 4,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0,
+        "harness_error": 0
+      },
+      "failures": {
+        "wrong-output": 1
+      },
+      "helper_models": []
+    }
+  ],
+  "tasks": [
+    {
+      "task": "batch-invoices",
+      "difficulty": "hard",
+      "summary": "Bug report whose three causes sit in other files than the symptom, in a 20-file app",
+      "hard_because": "Symptoms appear in batch output; the three causes are a mutated shared default in customer.js, a cache key in rates.js and an off-by-one comparison in dates.js. Single invoices on most dates and the visible tests are correct.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "billing-schedule",
+      "difficulty": "hard",
+      "summary": "Subscription billing dates to a written spec: month-end clamping, business-day roll, holidays, pauses",
+      "hard_because": "Several rules interact (anchor day kept across short months, modified-following roll that can go backwards, holidays, pauses on the adjusted date, skipped dates not counted). The hidden check covers combinations the visible tests do not.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "0/1"
+      }
+    },
+    {
+      "task": "dedupe-perf",
+      "difficulty": "hard",
+      "summary": "Make a quadratic customer-dedupe job fast without changing its output",
+      "hard_because": "The naive pairwise job is correct but cannot finish on 150k rows. A fast version needs indexing plus transitive grouping, and must keep the exact matching rules (empty values never match, gmail normalization, the name+zip rule).",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    },
+    {
+      "task": "exporter-refactor",
+      "difficulty": "hard",
+      "summary": "Deduplicate three exporters into a shared module while keeping byte-identical output",
+      "hard_because": "The three copies look identical but differ in small ways (booleans, datetimes, decimals, sort order of strings, missing values). A refactor that unifies them breaks byte-for-byte output that the visible tests do not cover.",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-opus-5-5": "1/1",
+        "gpt-6-luna": "1/1"
+      }
+    }
+  ]
+}

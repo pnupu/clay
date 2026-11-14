@@ -1,0 +1,9 @@
+S-Pankki tiliote FI00 1234 5600 0007 85 1.1.2026-31.3.2026
+Päivä;Selite;Summa
+20260105;"Verkkokauppa; tilaus 123";12 345,60-
+Saldo 31.1.2026;;100,00
+20260210;Korko;0,5
+
+20260301;  Vuokra   maaliskuu ;1 200-
+20260302;Palautus;5
+Saldo 31.3.2026;;3 650,10

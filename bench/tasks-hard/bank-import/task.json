@@ -1,0 +1,5 @@
+{"id":"bank-import","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"Parse three banks' messy statement exports into one normalized format",
+ "hard_because":"Real-world CSV mess documented in FORMATS.md: BOM, CRLF, ';' and ',' delimiters, decimal comma, thousands separators (including no-break space), trailing-minus and parenthesized negatives, three date formats, quoted descriptions with newlines, footer lines. Hidden files combine these.",
+ "instruction":"Write import_statement.py with a function `parse_statement(path)` that reads a bank statement export from any of our three banks and returns a list of transactions as dicts `{\"bank\": str, \"date\": \"YYYY-MM-DD\", \"amount_cents\": int, \"description\": str}` in file order. FORMATS.md documents the three formats; samples/ has one real export from each bank (with personal data removed). Raise ValueError for a file that is none of the three formats. Standard library only.",
+ "check":["python3","check.py"]}

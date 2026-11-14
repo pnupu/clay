@@ -1,0 +1,5 @@
+{"id":"export-since","difficulty":"medium","lang":"node","timeout_s":480,
+ "summary":"Add a --since date filter whose obvious reading (UTC midnight) contradicts the documented convention",
+ "hard_because":"The instruction says entries have UTC timestamps; the README and the existing --until code say command-line dates are calendar days in the account time zone. An agent that does not read them filters on UTC midnight and fails at the day boundary.",
+ "instruction":"Support wants to export only recent activity. Add a `--since <date>` option to export.js, e.g. `node export.js --since 2026-03-01`, so that only entries since that date are exported. It must work together with the existing options. Entries in entries.json have UTC timestamps. `node test/run.js` runs the tests.",
+ "check":["node","check.js"]}

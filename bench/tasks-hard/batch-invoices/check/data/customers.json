@@ -1,0 +1,8 @@
+[
+  { "id": "C1", "name": "Kahvila Aalto Oy" },
+  { "id": "C2", "name": "Nordic Parts AB", "settings": { "reverseCharge": true, "paymentTermsDays": 30 } },
+  { "id": "C3", "name": "Acme Inc.", "settings": { "currency": "USD", "reverseCharge": true } },
+  { "id": "C4", "name": "Leipomo Virta", "settings": { "discountRate": 0.1 } },
+  { "id": "C5", "name": "Stockholm Design AB", "settings": { "currency": "SEK", "reverseCharge": true, "paymentTermsDays": 21 } },
+  { "id": "C6", "name": "Tampere Tools Oy", "settings": { "vatRate": 0.14 } }
+]

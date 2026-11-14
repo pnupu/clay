@@ -1,0 +1,157 @@
+[
+  {
+    "schema": 2,
+    "id": 20,
+    "given_name": "John, Jr.",
+    "family_name": "Smith",
+    "email": "john@example.com",
+    "phone": "+358401234567",
+    "created_at": "2026-01-15T12:00:00Z",
+    "prefs": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 21,
+    "given_name": "Carl Gustaf",
+    "family_name": "af Klercker",
+    "email": "carl@example.se",
+    "phone": "+4681234567",
+    "created_at": "2026-07-01T09:00:00Z",
+    "prefs": [
+      "x"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 22,
+    "given_name": "Anna Von",
+    "family_name": "Trapp",
+    "email": "anna@example.at",
+    "phone": "+3589123456",
+    "created_at": "2026-12-31T21:30:00Z",
+    "prefs": []
+  },
+  {
+    "schema": 2,
+    "id": 23,
+    "given_name": "Jan",
+    "family_name": "de van Berg",
+    "email": "",
+    "phone": null,
+    "created_at": "2026-11-04T22:00:00Z",
+    "prefs": [
+      "sms"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 24,
+    "given_name": "Prince",
+    "family_name": "",
+    "email": "",
+    "phone": null,
+    "created_at": "2026-03-29T02:00:00Z",
+    "prefs": [
+      "news"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 25,
+    "given_name": "Lea",
+    "family_name": "Laine",
+    "email": "lea@example.fi",
+    "phone": null,
+    "created_at": "2026-10-24T23:00:00Z",
+    "prefs": [
+      "b",
+      "a",
+      "c",
+      "d"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 28,
+    "given_name": "Jussi",
+    "family_name": "Ahonen",
+    "email": "jussi@example.fi",
+    "phone": "+358401234567",
+    "created_at": "2026-06-01T07:00:00Z",
+    "prefs": [
+      "z",
+      "y"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 30,
+    "given_name": "Mikko",
+    "family_name": "Mallikas",
+    "email": "mikko@example.fi",
+    "phone": "+358507654321",
+    "created_at": "2025-12-31T22:00:00Z",
+    "prefs": [
+      "r",
+      "q"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 31,
+    "given_name": "Ella",
+    "family_name": "",
+    "email": "",
+    "phone": null,
+    "created_at": "1970-01-01T00:00:00Z",
+    "prefs": []
+  },
+  {
+    "schema": 2,
+    "id": 41,
+    "given_name": "Sari",
+    "family_name": "Saari",
+    "email": "sarisaari@gmail.com",
+    "phone": "+358409876543",
+    "created_at": "2026-04-02T05:00:00Z",
+    "prefs": [
+      "n",
+      "m"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 42,
+    "given_name": "Sari",
+    "family_name": "Saari",
+    "email": "sari.saari@example.com",
+    "phone": null,
+    "created_at": "2023-11-14T22:13:20Z",
+    "prefs": [
+      "o"
+    ]
+  },
+  {
+    "schema": 2,
+    "id": 43,
+    "given_name": "Teppo",
+    "family_name": "Testi",
+    "email": "te.ppo@example.com",
+    "phone": null,
+    "created_at": "2023-11-14T22:13:20Z",
+    "prefs": []
+  },
+  {
+    "schema": 2,
+    "id": 44,
+    "given_name": "Teppo",
+    "family_name": "Testi",
+    "email": "teppo@example.com",
+    "phone": null,
+    "created_at": "2023-11-14T22:13:21Z",
+    "prefs": []
+  }
+]

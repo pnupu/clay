@@ -1,0 +1,5 @@
+{"id":"exporter-refactor","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"Deduplicate three exporters into a shared module while keeping byte-identical output",
+ "hard_because":"The three copies look identical but differ in small ways (booleans, datetimes, decimals, sort order of strings, missing values). A refactor that unifies them breaks byte-for-byte output that the visible tests do not cover.",
+ "instruction":"reports/csv_export.py, reports/json_export.py and reports/xml_export.py each carry their own copy of the row-preparation helpers (`_select`, `_fmt_value`, `_sort_rows`). Move that logic into one shared module, reports/rows.py, and make all three exporters use it, so the exporters no longer define those helpers themselves. The output of export_csv, export_json and export_xml must stay byte-for-byte identical for every input: downstream systems parse these files. Keep the public function names and signatures. Tests: `python3 -m unittest discover -s tests`.",
+ "check":["python3","check.py"]}

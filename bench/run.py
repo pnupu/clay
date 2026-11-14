@@ -217,14 +217,42 @@ def run_check(task_dir, task, work):
     with tempfile.TemporaryDirectory(prefix="bench-check-") as chk:
         shutil.copytree(os.path.join(task_dir, "check"), chk, dirs_exist_ok=True)
         try:
-            r = subprocess.run(task["check"] + [work], cwd=chk, capture_output=True, text=True, timeout=120)
+            r = subprocess.run(task["check"] + [work], cwd=chk, capture_output=True, text=True, timeout=180)
         except subprocess.TimeoutExpired:
             return False, "check timed out"
-        return r.returncode == 0, (r.stdout + r.stderr)[-600:]
+        return r.returncode == 0, (r.stdout + r.stderr)[-600:], next(
+            (ln.strip() for ln in r.stdout.splitlines() if ln.startswith("FAIL")), None)
+
+
+def tree_digest(d):
+    """{relative path: sha256} of the files under d, ignoring caches."""
+    import hashlib
+    out = {}
+    for root, dirs, files in os.walk(d):
+        dirs[:] = [x for x in dirs if x not in ("__pycache__", "node_modules")]
+        for f in files:
+            p = os.path.join(root, f)
+            out[os.path.relpath(p, d)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
+    return out
+
+
+def failure_kind(rec):
+    """One-line class of a failed run, read from the run record and the hidden check's output."""
+    if rec["passed"]:
+        return None
+    if rec["error_class"] not in ("none", None):
+        return rec["error_class"]
+    if rec.get("changed_files") == 0:
+        return "no-change (gave up)"
+    line = rec.get("check_fail_line") or ""
+    if line.startswith("FAIL "):
+        return line[5:].split(":", 1)[0]
+    return "wrong-output (check crashed)"
 
 
 def one_run(task_id, agent, model, repeat, out_dir, versions):
     td = os.path.join(TASKS, task_id)
+    start_digest = tree_digest(os.path.join(td, "start"))
     task = json.load(open(os.path.join(td, "task.json")))
     work = tempfile.mkdtemp(prefix=f"bench-{task_id}-")
     try:
@@ -251,7 +279,9 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
         wall = round(time.monotonic() - t0, 2)
         parsed = parse_claude(stdout) if agent == "claude" else parse_codex(stdout)
         err_class = classify(timed_out, p.returncode, parsed, stderr)
-        passed, check_out = run_check(td, task, work)
+        end_digest = tree_digest(work)
+        changed = sum(1 for k in set(start_digest) | set(end_digest) if start_digest.get(k) != end_digest.get(k))
+        passed, check_out, fail_line = run_check(td, task, work)
         name = f"{task_id}__{agent}__{model}__r{repeat}"
         tdir = os.path.join(out_dir, "transcripts")
         with open(os.path.join(tdir, name + ".stdout.jsonl"), "w") as f:
@@ -268,10 +298,13 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
             "exit_code": p.returncode, "error_class": err_class,
             "error_text": (parsed.get("cli_error") or (stderr.strip()[-500:] if p.returncode else None)),
             "check_output": None if passed else check_out.strip()[-300:],
+            "check_fail_line": None if passed else (fail_line or "")[:400],
+            "changed_files": changed, "task_set": os.path.basename(TASKS),
             "transcript_mentions_bench_dir": HERE in stdout,
             "started_utc": started,
             **{k: v for k, v in parsed.items() if k not in ("cli_error", "refused")},
         }
+        rec["failure_kind"] = failure_kind(rec)
         return rec
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -293,6 +326,7 @@ def main():
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--subjects", nargs="+", default=DEFAULT_SUBJECTS, help="agent:model, agent is claude or codex")
     ap.add_argument("--tasks", nargs="+", default=None)
+    ap.add_argument("--task-set", default="tasks", help="directory under bench/ that holds the tasks")
     ap.add_argument("--repeats", type=int, default=2)
     ap.add_argument("--concurrency", type=int, default=3)
     ap.add_argument("--max-runs", type=int, default=130, help="hard cap on agent runs in this invocation")
@@ -300,6 +334,8 @@ def main():
                     "used the identical command; those (task, subject, repeat) runs are copied, not rerun")
     ap.add_argument("--reuse-agent", default="claude")
     a = ap.parse_args()
+    global TASKS
+    TASKS = os.path.join(HERE, a.task_set)
 
     out_dir = os.path.join(RESULTS, a.run_id)
     if os.path.exists(out_dir):
@@ -313,7 +349,7 @@ def main():
     manifest = {"run_id": a.run_id, "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "source_commit": git("rev-parse", "HEAD"),
                 "source_dirty": git("status", "--porcelain", "--", ".") or None, "bench_sha256": bench_hash(), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
-                "command": " ".join(sys.argv), "subjects": a.subjects, "tasks": tasks, "repeats": a.repeats,
+                "command": " ".join(sys.argv), "subjects": a.subjects, "task_set": a.task_set, "tasks": tasks, "repeats": a.repeats,
                 "concurrency": a.concurrency, "cli_versions": versions,
                 "claude_cmd": build_cmd("claude", "<model>", "<instruction>", "<work>"),
                 "codex_cmd": build_cmd("codex", "<model>", "<instruction>", "<work>"),

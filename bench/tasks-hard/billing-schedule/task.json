@@ -1,0 +1,5 @@
+{"id":"billing-schedule","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"Subscription billing dates to a written spec: month-end clamping, business-day roll, holidays, pauses",
+ "hard_because":"Several rules interact (anchor day kept across short months, modified-following roll that can go backwards, holidays, pauses on the adjusted date, skipped dates not counted). The hidden check covers combinations the visible tests do not.",
+ "instruction":"Implement `billing_dates` in billing.py exactly as SPEC.md describes. Billing ops will use it to schedule charges, so the edge cases in the spec matter. test_billing.py has a couple of starter tests (`python3 -m unittest`). Standard library only.",
+ "check":["python3","check.py"]}

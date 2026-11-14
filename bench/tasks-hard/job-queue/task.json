@@ -1,0 +1,5 @@
+{"id":"job-queue","difficulty":"hard","lang":"node","timeout_s":480,
+ "summary":"Fix ordering and concurrency bugs in an async job queue that show only under load",
+ "hard_because":"The visible test passes. The bugs (retry path double-releases a slot, drain resolves while jobs still run, results land in completion order, a sync throw escapes) appear only under a randomized stress check.",
+ "instruction":"Our job queue (queue.js) misbehaves under load in production: the API we call complains that we run more than `concurrency` requests at once, `drain()` sometimes resolves before everything has finished, and `runAll` sometimes returns results in the wrong order. The behaviour it should have is documented at the top of queue.js. Please fix queue.js so it does what that comment says, also under heavy load. `node test/basic.js` is the existing test.",
+ "check":["node","check.js"]}

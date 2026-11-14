@@ -1,0 +1,8 @@
+[
+  { "ts": "2026-02-27T08:15:00Z", "user": "aino", "action": "login" },
+  { "ts": "2026-02-28T21:40:00Z", "user": "aino", "action": "export" },
+  { "ts": "2026-02-28T22:05:00Z", "user": "veikko", "action": "login" },
+  { "ts": "2026-03-01T09:00:00Z", "user": "aino", "action": "delete-report" },
+  { "ts": "2026-03-01T21:59:00Z", "user": "veikko", "action": "logout" },
+  { "ts": "2026-03-01T22:00:00Z", "user": "aino", "action": "login" }
+]

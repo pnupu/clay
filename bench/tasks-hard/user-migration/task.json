@@ -1,0 +1,5 @@
+{"id":"user-migration","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"Migrate messy v1 user records to the v2 schema: names, phones, mixed date formats with DST, duplicate merge, idempotency",
+ "hard_because":"Many small rules from MIGRATION.md interact on real-world data: name particles, phone prefixes, three timestamp formats including Helsinki local time across DST, merging duplicates by email with a tie rule, and records already in v2 that must pass through.",
+ "instruction":"We are moving the user store to schema v2. Write migrate.py so that `python3 migrate.py users_v1.json users_v2.json` converts the export exactly as MIGRATION.md describes. users_v1.json is a small real sample. It must also be safe to run again on its own output. Standard library only.",
+ "check":["python3","check.py"]}

@@ -1,0 +1,13 @@
+{
+ "id": "batch-invoices",
+ "difficulty": "hard",
+ "lang": "node",
+ "timeout_s": 480,
+ "summary": "Bug report whose three causes sit in other files than the symptom, in a 20-file app",
+ "hard_because": "Symptoms appear in batch output; the three causes are a mutated shared default in customer.js, a cache key in rates.js and an off-by-one comparison in dates.js. Single invoices on most dates and the visible tests are correct.",
+ "instruction": "Bug report from finance: when we run the nightly batch (`node src/cli.js data/orders.json`), some invoices come out wrong. Invoices for normal Finnish customers that come after an EU reverse-charge customer in the batch have 0 VAT, and USD invoices in the same batch all seem to use one exchange rate even though they have different dates. Also, an invoice dated on the day a new exchange rate was published still gets the previous rate. Generating the same invoices one at a time gives the right numbers. Please find and fix the cause. `node test/run.js` runs the existing tests.",
+ "check": [
+  "node",
+  "check.js"
+ ]
+}

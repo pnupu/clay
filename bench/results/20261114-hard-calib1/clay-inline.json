@@ -1,0 +1,42 @@
+[
+ {
+  "model": "claude-opus-5-5",
+  "agent": "claude",
+  "effort": "cli default (not reported)",
+  "runs": 8,
+  "scored_runs": 8,
+  "passed": 7,
+  "pass_rate": 0.875,
+  "median_seconds": 54.5,
+  "p90_seconds": 66.6,
+  "input_tokens_per_task": 100928,
+  "cached_input_tokens_per_task": 90351,
+  "output_tokens_per_task": 4589,
+  "pass_rate_low95": 0.529,
+  "pass_rate_high95": 0.978,
+  "input_tokens_per_passed_task": 101008,
+  "cached_input_tokens_per_passed_task": 90369,
+  "output_tokens_per_passed_task": 4535,
+  "disputed_failures": 0
+ },
+ {
+  "model": "gpt-6-luna",
+  "agent": "codex",
+  "effort": "medium",
+  "runs": 8,
+  "scored_runs": 8,
+  "passed": 6,
+  "pass_rate": 0.75,
+  "median_seconds": 31.6,
+  "p90_seconds": 48.0,
+  "input_tokens_per_task": 87026,
+  "cached_input_tokens_per_task": 78864,
+  "output_tokens_per_task": 1492,
+  "pass_rate_low95": 0.409,
+  "pass_rate_high95": 0.929,
+  "input_tokens_per_passed_task": 93540,
+  "cached_input_tokens_per_passed_task": 84992,
+  "output_tokens_per_passed_task": 1805,
+  "disputed_failures": 0
+ }
+]

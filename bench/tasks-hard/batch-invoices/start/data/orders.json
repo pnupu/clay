@@ -1,0 +1,8 @@
+[
+  { "id": "1001", "customerId": "C1", "date": "2026-11-03", "lines": [ { "sku": "COF-1", "qty": 4, "unitPriceEurCents": 1290 } ] },
+  { "id": "1002", "customerId": "C3", "date": "2026-10-05", "lines": [ { "sku": "TL-9", "qty": 2, "unitPriceEurCents": 4999 } ] },
+  { "id": "1003", "customerId": "C2", "date": "2026-11-04", "lines": [ { "sku": "PRT-2", "qty": 10, "unitPriceEurCents": 845 } ] },
+  { "id": "1004", "customerId": "C4", "date": "2026-11-05", "lines": [ { "sku": "FLR-5", "qty": 3, "unitPriceEurCents": 2133 } ] },
+  { "id": "1005", "customerId": "C3", "date": "2026-11-11", "lines": [ { "sku": "TL-9", "qty": 1, "unitPriceEurCents": 4999 } ] },
+  { "id": "1006", "customerId": "C1", "date": "2026-11-12", "lines": [ { "sku": "COF-2", "qty": 1, "unitPriceEurCents": 750 } ] }
+]
