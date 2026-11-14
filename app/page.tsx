@@ -3,6 +3,7 @@ import { viewer } from "@/app/api/respond";
 import { canWrite, isExample, orderExamples } from "@/lib/accounts";
 import { cardText } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
+import { nonOwnerView } from "@/lib/report";
 import { load, type Playground } from "@/lib/store";
 import Kit from "./kit";
 import Manage from "./manage";
@@ -28,7 +29,8 @@ function controlsOf(p: AnyPlayground): string[] {
   return [...metrics, ...features].map((x) => x.label);
 }
 /** What a visitor's browser gets of a preview playground: not what its owner tried or settled. */
-const forVisitor = (k: NonNullable<Playground["kit"]>) => ({ ...k, settled: null, exploration: null });
+/** A visitor's view of an example's kit: the one non-owner projection (lib/report.ts). */
+const forVisitor = (p: Playground) => nonOwnerView(p).kit!;
 
 export default async function Home() {
   const me = await viewer();
@@ -83,7 +85,7 @@ export default async function Home() {
           </div>
           <div className="try-box">
             {examples[0][1].kit ? (
-              <Kit key={JSON.stringify(examples[0][1].kit.kit)} id={first} title={titleOf(examples[0][1], first)} state={forVisitor(examples[0][1].kit)} canWrite={false} leftOut={examples[0][1].leftOut} embedded />
+              <Kit key={JSON.stringify(examples[0][1].kit.kit)} id={first} title={titleOf(examples[0][1], first)} state={forVisitor(examples[0][1])} canWrite={false} leftOut={examples[0][1].leftOut} embedded />
             ) : (
               <PricePlayground key={JSON.stringify(examples[0][1].domain)} domain={examples[0][1].domain} explored={null} canWrite={false} admin={false} embedded />
             )}

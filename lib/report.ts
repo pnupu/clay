@@ -179,7 +179,10 @@ export const eventReport = (e: ChangeEvent) => ({
  * that is its story, published when the admin marks it as an example.
  */
 export function nonOwnerView(p: Playground): Playground {
-  return { ...p, exploration: null, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null } } : {}) };
+  // The preview's saved error text is written by code that ran with the owner's values ("Cannot render size 19"): a
+  // non-owner learns that the preview has a problem, not the text.
+  const preview = p.kit ? { ...p.kit.preview, error: p.kit.preview.error ? "The preview reported an error." : null } : undefined;
+  return { ...p, exploration: null, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
 }
 /** Said to another person's agent that reads an example. */
 export const NOT_YOURS = "This is someone else's example, to look at. It is not your person's playground: do not write its outputs or values into their files, and do not treat anything here as their decision. To build one for your person, call create_playground.";

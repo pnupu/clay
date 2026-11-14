@@ -224,10 +224,10 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
             </div>
           </section>
           <p className={`small muted ${css.caption}`}>
-                Built by the owner&apos;s agent. It runs in a sandbox and cannot read this page.{" "}
-                {logoHosts > 0
-                  ? "It can load images from the brand's logo hosts, and an image address can carry the values you set here, so those hosts can see them and your IP address."
-                  : "It cannot send what you set here to other sites."}
+                {/* What the sandbox guarantees, and what it does not: browsers give no complete block for outgoing requests from code that runs (README, "The preview sandbox"). */}
+                {canWrite ? "Built by your agent." : "Built by the playground's author with their agent."} It runs in a sandbox: it cannot read this page, your Clay account or session, or other sites&apos; data, and it cannot open windows or submit forms.
+                {" "}It is not sealed from the network: in some browsers its code can make outgoing requests, so the values you set here and the data shown in the preview could be sent to a server {canWrite ? "that code names" : "its author chose"}, with your IP address.
+                {logoHosts > 0 ? " The brand's logo hosts can also receive them in image addresses." : ""}
           </p>
 
           <section className="card">

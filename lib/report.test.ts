@@ -19,6 +19,11 @@ test("non-owner view: a preview example shows its spec and start values, never t
   const other = JSON.stringify(previewReport(nonOwnerView(p), "u"));
   for (const leak of ["18px", "19px", '"now":19', '"now":18', "Carry it out", "tried"]) assert.ok(!other.includes(leak), leak);
   assert.match(other, /12px/); // the outputs at the start values
+  // A preview error saved from the owner's browser can name their values: a non-owner learns only that there is one.
+  const failed = { ...(p as { kit: object }), kit: { ...(p as { kit: object }).kit, preview: { status: "failed", error: "Uncaught Error: Cannot render size 19", at: null } } } as never;
+  const view = JSON.stringify(previewReport(nonOwnerView(failed), "u"));
+  assert.ok(!view.includes("Cannot render size 19"));
+  assert.match(view, /"status":"failed"/);
 });
 
 test("non-owner view: a price example keeps its saved decision and events, not the owner's exploration", () => {
