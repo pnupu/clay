@@ -138,14 +138,6 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   }
 }
 
-/** Find a page with Search (POST /web/search). Returns the top result on the vendor's own domain, or null. */
-export async function searchTopUrl(query: string, domain: string) {
-  const r = await cd<{ results: { url: string; title: string }[] }>("POST", "/web/search", { query, numResults: 3, includeDomains: [domain] });
-  // A result whose address says "pricing" beats a higher-ranked page of the same site (a free-trial or product page).
-  const hit = r.results?.find((x) => /pricing/i.test(x.url)) ?? r.results?.[0];
-  return { url: hit?.url ?? null, ms: r._ms };
-}
-
 type Output<T> = { requested: boolean; success: boolean | null; data: T | null; error_code?: string; message?: string; isTruncated?: true };
 export type ScrapeResult = {
   url: string;

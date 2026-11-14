@@ -48,7 +48,7 @@ export function collectionReport(p: Playground) {
     const snap = src?.snapshot;
     const plans = snap?.model.plans ?? [];
     if (pending.has(v.id)) return { vendor: v.id, name: v.name, status: "still being read", pricing_page: src?.url ?? v.url ?? null, plans: [] as never[] };
-    if (!snap) problems.push(`${v.id}: the pricing page was not read (${cut(src?.error ?? "not collected", 160)}). Fix: revise_playground with add_vendors giving this vendor's exact pricing_url, or drop the vendor with remove_vendor_ids.`);
+    if (!snap) problems.push(`${v.id}: the pricing page was not read (${cut(src?.error ?? "not collected", 600)}). Fix: revise_playground with add_vendors giving this vendor's exact pricing_url, or drop the vendor with remove_vendor_ids.`);
     else if (!plans.length) problems.push(`${v.id}: no plan was found on ${src.url}. It is probably not the pricing page of this product. Fix: revise_playground with add_vendors giving the exact pricing_url.`);
     else if (!plans.some((x) => x.meters?.length)) problems.push(`${v.id}: plans were found, but none states a quantity or price for any metric. Check that ${src.url} is the right page and that each metric's describe uses the words of that page.`);
     if (snap?.quarantined.length) problems.push(`${v.id}: ${snap.quarantined.length} extracted number(s) were not found in the page text. They are quarantined: shown as unknown and never used in a cost.`);
@@ -60,7 +60,7 @@ export function collectionReport(p: Playground) {
       pricing_page: src?.url ?? null,
       page_found_by: src?.foundVia ?? null,
       read_at: snap?.fetchedAt ?? null,
-      ...(src?.error ? { error: cut(src.error, 200) } : {}),
+      ...(src?.error ? { error: cut(src.error, 600) } : {}),
       plans: plans.slice(0, 8).map((x) => ({
         name: cut(x.name, 60),
         base_usd_per_month: x.base_price ?? (x.custom_pricing ? "custom (contact sales)" : "unknown"),
