@@ -202,7 +202,39 @@ export type RawModel = { vendor: string | null; currency: string | null; plans: 
 const GAPS = ["interactive", "configuration"] as const;
 const gap = (x: unknown): PriceGap | null => (GAPS.includes(x as PriceGap) ? (x as PriceGap) : null);
 
+/**
+ * Bounds of one stored price read, as lib/web.ts bounds a web read: the extraction is page data, and a page can be very
+ * long. Counts and texts are cut; a read that is still larger than `bytes` is refused (normalise throws), so the
+ * previous snapshot stays and the source shows why. Per playground at most LIMITS.vendors sources of this size.
+ */
+export const PRICE_LIMITS = { plans: 20, meters: 5, tiers: 12, features: 6, name: 80, quote: 200, short: 40, bytes: 64_000 } as const;
+const cutText = (t: unknown, n: number): string | null => (typeof t === "string" ? t.slice(0, n) : t == null ? null : String(t).slice(0, n));
+
 export function normalise(raw: RawModel): PricingModel {
+  const model = normaliseUnbounded(boundRaw(raw));
+  const size = JSON.stringify(model).length;
+  if (size > PRICE_LIMITS.bytes) throw new Error(`The extraction of this pricing page is too large to keep (${size} characters; the limit is ${PRICE_LIMITS.bytes}). The previous read is kept. Give the exact pricing_url of the plans page, or fewer metrics and features.`);
+  return model;
+}
+
+/** Cut the counts and texts of a raw extraction to PRICE_LIMITS. */
+function boundRaw(raw: RawModel): RawModel {
+  const q = (t: unknown) => cutText(t, PRICE_LIMITS.quote);
+  return {
+    ...raw,
+    vendor: cutText(raw.vendor, PRICE_LIMITS.name),
+    currency: cutText(raw.currency, PRICE_LIMITS.short),
+    plans: (raw.plans ?? []).slice(0, PRICE_LIMITS.plans).map((p) => ({
+      ...p,
+      name: cutText(p.name, PRICE_LIMITS.name) ?? "",
+      price_quote: q(p.price_quote),
+      meters: Object.fromEntries(Object.entries(p.meters ?? {}).slice(0, PRICE_LIMITS.meters).map(([k, m]) => [k, m ? { ...m, quote: q(m.quote), tiers: (m.tiers ?? []).slice(0, PRICE_LIMITS.tiers) } : m])),
+      features: Object.fromEntries(Object.entries(p.features ?? {}).slice(0, PRICE_LIMITS.features).map(([k, f]) => [k, f ? { ...f, quote: q(f.quote) } : f])),
+    })),
+  } as RawModel;
+}
+
+function normaliseUnbounded(raw: RawModel): PricingModel {
   const pageGap = raw.page_gap === "not_pricing" || raw.page_gap === "contact_sales" ? raw.page_gap : gap(raw.page_gap);
   return {
     vendor: raw.vendor ?? null,
