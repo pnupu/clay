@@ -38,15 +38,19 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     let down = false;
     const press = () => void (down = true);
     const release = () => void (down = false);
+    // A press that ended outside this document (outside the window, or over the preview frame) sends no pointerup here.
+    const move = (e: PointerEvent) => void (!e.buttons && (down = false));
     window.addEventListener("pointerdown", press, true);
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
+    window.addEventListener("pointermove", move, true);
     const t = setInterval(() => !down && router.refresh(), 3000);
     return () => {
       clearInterval(t);
       window.removeEventListener("pointerdown", press, true);
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("pointermove", move, true);
     };
   }, [reading, router]);
   const api = `/api/p/${id}`;
