@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { LIMITS } from "./config";
 import { DOMAIN } from "./domain";
-import { initialValues, renderOutputs } from "./kit";
+import { BRAND_PENDING, initialValues, renderOutputs } from "./kit";
 import { createPlayground, createPreview, recheckAll, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
 import { BRAND_NOTE, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
@@ -45,9 +45,10 @@ One spec describes the playground. Choose the view:
 view.type "preview": the person must see or feel the real thing (a component's look, colours, spacing, an animation's spring or timing). Call kit_reference before your first one. The rules:
 - Real code. Copy the person's actual markup, classes or motion code from their file into view.html, view.css and view.js, so that every control maps to a line in their file. A sketch of the thing is not the thing.
 - Controls come only from the kit: slider, toggle, select, color. Choose the 3 to 6 dimensions behind THIS person's complaint. initial is the value in their code now, so the page opens on what they have. Ranges sit around that value. Each control has one meaning.
-- Bind controls with {{control_id}} in view.html and view.css (updated in place on every move), or read clay.values.<id> in view.js.
+- Bind controls with {{control_id}} in view.html and view.css (updated in place on every move), or read clay.values.<id> in view.js. Every control must visibly change the preview or an output at the start values; one that only matters after another control is switched looks broken.
 - Brand: when the person names a brand or a site, add data.brand {"domain"}. Clay reads its colours live; a color control with palette "brand" offers them. Never write brand colours from memory.
 - Outputs are templates of the final code: the class string, the config object. At hand-back you paste them.
+- notes, when you give one, is for any reader: the playground may be shared or shown as an example. Say what was asked, what the page is built from and what to try; no "your file", and no "press Settle" (the page has the button).
 - The spec is validated before anything is built; each error says how to fix it. The preview code runs only in a browser, so the result says "unverified" until the person opens the page. read_playground then reports that it ran, or the error to repair.
 
 view.type "price_ranking": a "which vendor or plan" decision for a usage-priced product. You design the space in data.price_pages; the web supplies the facts:
@@ -78,7 +79,7 @@ ${HOLDS_RULE} The result gives the verdict with the costs behind it. When the de
 
 Give playground_id and only the parts that change. Each part you give replaces that whole part: title, notes, controls (the full list), view (the full view), outputs (the full list), and inside data each source (data.price_pages whole, data.brand, data.inline; null removes data.brand or data.inline). Parts you leave out stay. The result is validated like a new spec. When you no longer have the spec, read_playground with include_spec returns it.
 
-Preview playground: the settled result is cleared and the preview is unverified again; what the person tried is kept for the controls you did not change. Ask the person to reload the page.
+Preview playground: when the preview code, the data or a control's values change, the settled result is cleared and the preview is unverified again; what the person tried is kept for the controls you did not change. A revision of words only (title, notes, labels, meanings) keeps the verified preview and the settled result. Ask the person to reload the page.
 
 Price playground: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, features, product or notes changes what is extracted, so every page is read again. As with a first build, the call answers within about 20 seconds with build.status "done" or "running"; when it is running, call read_playground until it is done. A change of only the title or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed. After one failed repair of a vendor, remove it and tell the person; do not keep trying pages.`,
 
@@ -150,9 +151,12 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k),
-      problems: k.brandError ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [],
+      problems: k.brandError && k.brandError !== BRAND_PENDING ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [],
       warnings,
-      next: "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
+      next:
+        k.brandError === BRAND_PENDING
+          ? "The brand's colours are still being read (the web reader was busy), so the brand palette is still empty. Call read_playground now: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground again for the settled outputs."
+          : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
       ...(k.kit.brand ? { note: BRAND_NOTE } : {}),
     });
   };
@@ -197,7 +201,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const found = await find(playground_id);
       if (typeof found === "string") return fail(found);
       // While pricing pages are being read, wait for them (at most WAIT_MS), so one more call usually sees the finished build.
-      const p = found.kit ? found : ((await settled(playground_id, WAIT_MS)) ?? found);
+      const p = (await settled(playground_id, WAIT_MS)) ?? found;
       const t = since == null ? null : Date.parse(since);
       if (t != null && Number.isNaN(t)) return fail(`since "${since}" is not a date-time. Use ISO 8601, for example 2026-11-13T18:00:00Z, or leave it out.`);
       return text({ ...(p.kit ? previewReport(p, url(playground_id)) : readReport(p, url(playground_id), t)), ...(include_spec ? { spec: toSpec(p) } : {}) });
@@ -269,9 +273,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const tell_person = "Ask the person to reload the page to see the revised playground.";
       try {
         if (parsed.kind === "preview") {
-          const settled_result_cleared = !!p.kit?.settled;
-          await revisePreview(parsed.domain, parsed.kit);
-          return preview(playground_id, { settled_result_cleared, tell_person }, parsed.warnings);
+          const r = await revisePreview(parsed.domain, parsed.kit);
+          return preview(playground_id, { settled_result_cleared: r.settledCleared, ...(r.previewKept ? { preview_kept: "Only words changed: the preview code and the controls are the same, so its verified state stands." } : {}), tell_person }, parsed.warnings);
         }
         const r = await revisePlayground(parsed.domain, origin);
         const w = await within(r.work);

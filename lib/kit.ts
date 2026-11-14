@@ -2,7 +2,10 @@
 // rendered from the control values. A kit comes from an agent: it is untrusted data, and checkKit() is its trust boundary.
 // Pure functions only: no store, no network.
 
-export const KIT_LIMITS = { controls: 12, outputs: 6, options: 12, palette: 16, html: 20_000, css: 20_000, js: 40_000, template: 4_000, inline: 8_000, steps: 10_000 } as const;
+export const KIT_LIMITS = { controls: 12, outputs: 6, options: 12, palette: 16, label: 60, meaning: 200, unit: 12, text: 2000, html: 20_000, css: 20_000, js: 40_000, template: 4_000, inline: 8_000, steps: 10_000 } as const;
+
+/** The brandError of a preview playground whose brand read has not ended yet. It is a state, not an error: the read stores its result when it ends. */
+export const BRAND_PENDING = "The brand is still being read.";
 
 export type Value = number | string | boolean;
 type Base = { id: string; label: string; meaning: string };
@@ -44,6 +47,8 @@ const decimals = (n: number) => {
 };
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const isStr = (x: unknown, max: number, min = 1): x is string => typeof x === "string" && x.trim().length >= min && x.length <= max;
+/** How long the given text is, for an error that states the limit: the agent sees by how much to shorten. */
+const had = (x: unknown) => (typeof x === "string" ? `this one has ${x.length}` : "none was given");
 
 /** The value of a slider on its step grid, without floating-point dust (0.35, not 0.35000000000000003). */
 export const snap = (c: Extract<Control, { type: "slider" }>, v: number) => {
@@ -96,6 +101,11 @@ export function render(template: string, controls: Control[], values: Values): s
 }
 /** The placeholders inside the texts that a toggle or a select can stand for. */
 const nestedNames = (c: Control): string[] => (c.type === "toggle" ? [c.on, c.off] : c.type === "select" ? c.options.map((o) => o.value) : []).flatMap((t) => [...t.matchAll(PLACEHOLDER)].map((m) => m[1]));
+/**
+ * What decides how a preview runs: its code, its data and its controls without their words (label, meaning, option labels).
+ * Two kits with the same signature run the same code with the same values, so a verified preview stays verified.
+ */
+export const runSignature = (kit: Kit): string => JSON.stringify([kit.preview, kit.inline, kit.brand, kit.controls.map((c) => ({ ...c, label: "", meaning: "", ...(c.type === "select" ? { options: c.options.map((o) => o.value) } : {}) }))]);
 /** A one-line output (a class string) loses the gaps that an empty toggle text leaves. A multi-line output (CSS, JSON) keeps its layout. */
 const tidy = (text: string) => (text.includes("\n") ? text.replace(/[ \t]+$/gm, "").trim() : text.replace(/\s+/g, " ").trim());
 export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => Object.fromEntries(kit.outputs.map((o) => [o.id, tidy(render(o.template, kit.controls, values))]));
@@ -133,8 +143,8 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
     const before = errors.length;
     if (typeof r.id !== "string" || !ID.test(r.id)) errors.push(`controls.${i}.id: use 2 to 30 characters: lowercase letters, digits and underscores, starting with a letter.`);
     else if (controls.some((c) => c.id === r.id)) errors.push(`${at}: id "${r.id}" is used twice. Give every control its own id.`);
-    if (!isStr(r.label, 60, 2)) errors.push(`${at}.label: give a label of 2 to 60 characters. The person sees it next to the control.`);
-    if (!isStr(r.meaning, 200, 5)) errors.push(`${at}.meaning: say in 5 to 200 characters what this control changes in the real code, for example "border-radius of the button in px".`);
+    if (!isStr(r.label, KIT_LIMITS.label, 2)) errors.push(`${at}.label: give a label of 2 to ${KIT_LIMITS.label} characters (${had(r.label)}). The person sees it next to the control.`);
+    if (!isStr(r.meaning, KIT_LIMITS.meaning, 5)) errors.push(`${at}.meaning: say in 5 to ${KIT_LIMITS.meaning} characters (${had(r.meaning)}) what this control changes in the real code, for example "border-radius of the button in px".`);
     const type = r.type as Control["type"];
     if (!(type in FIELDS)) {
       errors.push(`${at}.type: "${String(r.type)}" is not a control of the kit. Use one of: slider, toggle, select, color.`);
@@ -150,17 +160,17 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
       else if (!(step > 0) || (max - min) / step > KIT_LIMITS.steps) errors.push(`${at}.step: step must be above 0 and give at most ${KIT_LIMITS.steps} positions between min and max.`);
       else if (initial < min || initial > max) errors.push(`${at}.initial: ${initial} is outside the range ${min} to ${max}. Widen the range or change initial; initial should be the value in the person's code now.`);
       else if (Math.abs((initial - min) / step - Math.round((initial - min) / step)) > 1e-6) errors.push(`${at}.initial: ${initial} is not reachable from min ${min} in steps of ${step}. Use a smaller step or move min, so that the slider can show the person's current value exactly.`);
-      else if (r.unit !== undefined && !isStr(r.unit, 12)) errors.push(`${at}.unit: use 1 to 12 characters, for example "px" or "ms".`);
+      else if (r.unit !== undefined && !isStr(r.unit, KIT_LIMITS.unit)) errors.push(`${at}.unit: use 1 to ${KIT_LIMITS.unit} characters (${had(r.unit)}), for example "px" or "ms".`);
       else controls.push({ ...base, type, min, max, step, initial, ...(r.unit ? { unit: (r.unit as string).trim() } : {}) });
     } else if (type === "toggle") {
       const on = r.on ?? "true";
       const off = r.off ?? "false";
       if (typeof r.initial !== "boolean") errors.push(`${at}.initial: a toggle needs initial true or false.`);
-      else if (typeof on !== "string" || typeof off !== "string" || on.length > 200 || off.length > 200) errors.push(`${at}: on and off are the texts that {{${base.id}}} stands for in a template (for example on "shadow-md", off ""), at most 200 characters each.`);
+      else if (typeof on !== "string" || typeof off !== "string" || on.length > KIT_LIMITS.text || off.length > KIT_LIMITS.text) errors.push(`${at}: on and off are the texts that {{${base.id}}} stands for in a template (for example on "shadow-md", off ""; a few lines of code are fine), at most ${KIT_LIMITS.text} characters each (on: ${had(on)}, off: ${had(off)}).`);
       else controls.push({ ...base, type, initial: r.initial, on, off });
     } else if (type === "select") {
       const options = Array.isArray(r.options) ? (r.options as { value?: unknown; label?: unknown }[]) : [];
-      if (options.length < 2 || options.length > KIT_LIMITS.options || options.some((o) => !o || typeof o.value !== "string" || o.value.length > 200 || (o.label !== undefined && !isStr(o.label, 60)))) errors.push(`${at}.options: give 2 to ${KIT_LIMITS.options} options, each {"value": "<text used in templates and code>", "label": "<what the person sees>"}.`);
+      if (options.length < 2 || options.length > KIT_LIMITS.options || options.some((o) => !o || typeof o.value !== "string" || o.value.length > KIT_LIMITS.text || (o.label !== undefined && !isStr(o.label, KIT_LIMITS.label)))) errors.push(`${at}.options: give 2 to ${KIT_LIMITS.options} options, each {"value": "<text used in templates and code, at most ${KIT_LIMITS.text} characters>", "label": "<what the person sees, at most ${KIT_LIMITS.label} characters>"}. The longest value here has ${Math.max(0, ...options.map((o) => (typeof o?.value === "string" ? o.value.length : 0)))} characters, the longest label ${Math.max(0, ...options.map((o) => (typeof o?.label === "string" ? o.label.length : 0)))}.`);
       else if (new Set(options.map((o) => o.value)).size !== options.length) errors.push(`${at}.options: two options have the same value.`);
       else if (!options.some((o) => o.value === r.initial)) errors.push(`${at}.initial: must be the value of one of the options: ${options.map((o) => JSON.stringify(o.value)).join(", ")}.`);
       else controls.push({ ...base, type, options: options.map((o) => ({ value: o.value as string, label: ((o.label as string | undefined) ?? (o.value as string)).trim() || "(none)" })), initial: r.initial as string });
@@ -206,8 +216,8 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
     const at = `outputs.${typeof o.id === "string" ? o.id : i}`;
     if (typeof o.id !== "string" || !ID.test(o.id)) errors.push(`outputs.${i}.id: use 2 to 30 characters: lowercase letters, digits and underscores, starting with a letter.`);
     else if (outputs.findIndex((x) => x.id === o.id) !== i) errors.push(`${at}: id "${o.id}" is used twice.`);
-    if (!isStr(o.label, 60, 2)) errors.push(`${at}.label: give a label of 2 to 60 characters.`);
-    if (!isStr(o.template, KIT_LIMITS.template)) errors.push(`${at}.template: give a template of 1 to ${KIT_LIMITS.template} characters.`);
+    if (!isStr(o.label, KIT_LIMITS.label, 2)) errors.push(`${at}.label: give a label of 2 to ${KIT_LIMITS.label} characters (${had(o.label)}).`);
+    if (!isStr(o.template, KIT_LIMITS.template)) errors.push(`${at}.template: give a template of 1 to ${KIT_LIMITS.template} characters (${had(o.template)}).`);
     else {
       const used = names(o.template);
       for (const n of used) if (!ids.includes(n)) errors.push(`${at}.template: {{${n}}} references a control that does not exist. ${known}`);

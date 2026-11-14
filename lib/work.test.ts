@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { retryAfterMs } from "./contextdev.ts";
 import type { Domain } from "./domain.ts";
-import { buildReport, collectionReport } from "./report.ts";
+import { BRAND_PENDING, checkKit } from "./kit.ts";
+import { buildReport, collectionReport, dataReport } from "./report.ts";
 import { workStatus, type Playground, type Work } from "./store.ts";
 
 const domain: Domain = { id: "p1", question: "Which one?", product: "x", metrics: [{ id: "emails", label: "Emails", unit: "emails", describe: "emails per month", min: 0, max: 100, initial: 10 }], features: [], vendors: [{ id: "a", name: "A", domain: "a.com" }, { id: "b", name: "B", domain: "b.com" }] };
@@ -57,4 +58,16 @@ test("a build on which fewer than two vendors can be ranked is reported as broke
   const running = { ...playground(work({ pending: ["b"] })), sources: { a: source("a", unstated) } } as unknown as Playground;
   assert.equal(collectionReport(running).problems.some((x) => x.startsWith("BROKEN BUILD")), false);
   assert.equal(buildReport(running).pages, "1 of 2 pricing pages read");
+});
+
+test("a brand that is still being read is a state the agent waits for, not a failed read", () => {
+  const k = checkKit({ controls: [{ id: "bg", type: "color", label: "Background", meaning: "background colour", initial: "#2563eb", palette: "brand" }], view: { html: '<b style="background:{{bg}}">x</b>' }, outputs: [{ id: "css", label: "background", template: "{{bg}}" }], brand: { domain: "stripe.com" } });
+  assert.ok(k.ok);
+  if (!k.ok) return;
+  const state = (brandError: string | null) => ({ kit: k.kit, rev: "r", brandData: null, brandError, preview: { status: "unverified" as const, error: null, at: null }, settled: null, exploration: null });
+  const pending = dataReport(state(BRAND_PENDING))[0] as Record<string, unknown>;
+  assert.equal(pending.status, "still being read");
+  assert.equal("error" in pending, false);
+  const failed = dataReport(state("Context.dev POST /brand/retrieve -> 500"))[0] as Record<string, unknown>;
+  assert.match(String(failed.error), /500/);
 });

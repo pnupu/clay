@@ -8,7 +8,9 @@ import type { Domain } from "./domain.ts";
 import { checkKit, KIT_LIMITS, type Kit } from "./kit.ts";
 import type { Playground } from "./store.ts";
 
-const text = (min: number, max: number) => z.string().trim().min(min).max(max);
+/** A string with an upper bound. Its error states the limit and the length that was given, so the agent knows by how much to shorten. */
+const upTo = (max: number) => z.string().max(max, { error: (issue) => `at most ${max} characters, this one has ${typeof issue.input === "string" ? issue.input.length : "?"}` });
+const text = (min: number, max: number) => z.string().trim().min(min, { error: (issue) => `at least ${min} characters, this one has ${typeof issue.input === "string" ? issue.input.length : "?"}` }).max(max, { error: (issue) => `at most ${max} characters, this one has ${typeof issue.input === "string" ? issue.input.length : "?"}` });
 
 const pricePages = z.strictObject({
   product: text(3, 120).describe("What is being priced, in a few words, for example 'transactional email API'. Part of the extraction instructions."),
@@ -21,16 +23,16 @@ const pricePages = z.strictObject({
 const control = z.strictObject({
   id: z.string().max(40).describe("Stable id, for example radius. Lowercase letters, digits, underscores. It is the name in {{radius}} and clay.values.radius."),
   type: z.enum(["slider", "toggle", "select", "color"]).describe("slider: a number (min, max, step, initial, unit). toggle: on or off (initial, and the texts on/off that it stands for in templates). select: one of a few options (options, initial). color: a colour as #rrggbb (initial, palette, free)."),
-  label: z.string().max(60).describe("What the person sees next to the control, 2 to 60 characters."),
-  meaning: z.string().max(200).describe("The one thing this control changes in the real code, for example 'border-radius of the button, in px'. You read it again at hand-back."),
+  label: upTo(KIT_LIMITS.label).describe("What the person sees next to the control, 2 to 60 characters."),
+  meaning: upTo(KIT_LIMITS.meaning).describe("The one thing this control changes in the real code, for example 'border-radius of the button, in px'. You read it again at hand-back."),
   min: z.number().optional().describe("slider: lowest value."),
   max: z.number().optional().describe("slider: highest value. Set the range around the person's current value, not around everything possible."),
   step: z.number().optional().describe("slider: step, default 1. initial must be reachable from min in steps."),
-  unit: z.string().max(12).optional().describe("slider: unit shown after the number, for example px."),
+  unit: upTo(KIT_LIMITS.unit).optional().describe("slider: unit shown after the number, for example px."),
   initial: z.union([z.number(), z.string(), z.boolean()]).describe("Starting value: the value in the person's code now. slider: number. toggle: true or false. select: the value of one option. color: #rrggbb."),
-  options: z.array(z.strictObject({ value: z.string().max(200), label: z.string().max(60).optional() })).max(KIT_LIMITS.options).optional().describe("select: 2 to 12 options. value is the text used in templates and code (for example a Tailwind class), label is what the person sees."),
-  on: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when on, for example 'shadow-md', at most 200 characters. It may hold {{other_control}}, which is filled in outputs. Default 'true'."),
-  off: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when off, for example ''. Default 'false'."),
+  options: z.array(z.strictObject({ value: upTo(KIT_LIMITS.text), label: upTo(KIT_LIMITS.label).optional() })).max(KIT_LIMITS.options).optional().describe("select: 2 to 12 options. value is the text used in templates and code (for example a Tailwind class), label is what the person sees."),
+  on: upTo(KIT_LIMITS.text).optional().describe("toggle: the text {{id}} stands for when on, for example 'shadow-md', or a few lines of code that are there or not; at most 2000 characters. It may hold {{other_control}}, which is filled in outputs. Default 'true'."),
+  off: upTo(KIT_LIMITS.text).optional().describe("toggle: the text {{id}} stands for when off, for example ''. Default 'false'."),
   palette: z.union([z.literal("brand"), z.array(z.string().max(9)).max(KIT_LIMITS.palette)]).optional().describe("color: swatches to offer. 'brand' uses the colours of data.brand; or a list of #rrggbb."),
   free: z.boolean().optional().describe("color: true (default) lets the person pick any colour, false only the palette."),
 });
@@ -46,14 +48,14 @@ const view = z.strictObject({
 
 const output = z.strictObject({
   id: z.string().max(40).describe("Stable id, for example classes."),
-  label: z.string().max(60).describe("What it is, in 2 to 60 characters, for example 'className of the signup button'."),
-  template: z.string().describe("The final code or values with {{control_id}} placeholders, written so that you can paste the result into the person's file: a class string, a JSON object, a CSS rule."),
+  label: upTo(KIT_LIMITS.label).describe("What it is, in 2 to 60 characters, for example 'className of the signup button'."),
+  template: upTo(KIT_LIMITS.template).describe("The final code or values with {{control_id}} placeholders, written so that you can paste the result into the person's file: a class string, a JSON object, a CSS rule."),
 });
 
 export const specShape = {
   id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the playground and the last part of its URL, for example signup-button. When it is taken, the playground gets it with a short suffix: use the playground_id of the result."),
   title: text(3, 200).describe("What the person is deciding, in their words. For a price playground, the decision as a question."),
-  notes: text(0, 600).optional().describe("Optional short note shown under the title, for example what to look for."),
+  notes: text(0, 600).optional().describe("Optional short note shown under the title: what was asked, what the page is built from, and what to try. The playground may be shared or become a public example, so write it for any reader: no 'your file' or 'you asked', and no 'press Settle' (the page has that button and says what it does)."),
   data: z
     .strictObject({
       price_pages: pricePages.optional().describe("For view price_ranking: what to read from the vendors' public pricing pages. Never put prices here; they are read from the pages."),

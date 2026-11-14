@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
 import { brand, ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
-import type { Kit, KitState } from "./kit";
+import { BRAND_PENDING, runSignature, type Kit, type KitState } from "./kit";
 import { insertPlayground, load, newPlayground, publicBase, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -179,12 +179,13 @@ export async function tracked(pg: string, kind: Work["kind"], ids: string[], run
   return stop;
 }
 
-/** Wait until the tracked work of a playground has ended, at most `ms`. Returns the playground as stored now. */
+/** Wait until the web reads of a playground have ended (the tracked work of a price playground, the brand read of a preview), at most `ms`. Returns the playground as stored now. */
 export async function settled(pg: string, ms: number, every = 1500): Promise<Playground | undefined> {
   const until = Date.now() + ms;
   for (;;) {
     const p = (await load()).playgrounds[pg];
-    if (!p || workStatus(p)?.status !== "running" || Date.now() + every > until) return p;
+    const reading = p && (workStatus(p)?.status === "running" || p.kit?.brandError === BRAND_PENDING);
+    if (!p || !reading || Date.now() + every > until) return p;
     await new Promise((r) => setTimeout(r, every));
   }
 }
@@ -227,7 +228,7 @@ async function readBrand(kit: Kit, was?: KitState): Promise<Pick<KitState, "bran
  * stores its result when it ends. A playground without data.brand is complete at once.
  */
 export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null } | { refused: string }> {
-  const pending = kit.brand ? "The brand is still being read." : null;
+  const pending = kit.brand ? BRAND_PENDING : null;
   const r = await insertPlayground(domain, (d) => ({ ...newPlayground(d), kit: { kit, rev: randomUUID(), brandData: null, brandError: pending, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } }));
   if ("refused" in r) return r;
   const brandRead = !kit.brand
@@ -246,16 +247,25 @@ export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: str
  * Replace the kit of a preview playground. The settled result is cleared (it belongs to the old kit), the preview is
  * unverified again, and the exploration is kept for the controls whose definition did not change.
  */
-export async function revisePreview(domain: Domain, kit: Kit): Promise<void> {
+export async function revisePreview(domain: Domain, kit: Kit): Promise<{ previewKept: boolean; settledCleared: boolean }> {
   const was = (await playground(domain.id)).kit;
   const read = await readBrand(kit, was);
-  await update((s) => {
+  return update((s) => {
     const p = s.playgrounds[domain.id];
     if (!p?.kit) throw new NotFound(`Playground "${domain.id}" does not exist.`);
     const same = (id: string) => JSON.stringify(p.kit!.kit.controls.find((c) => c.id === id)) === JSON.stringify(kit.controls.find((c) => c.id === id));
     const kept = Object.fromEntries(Object.entries(p.kit.exploration?.controls ?? {}).filter(([id]) => same(id)));
+    // A revision of words only (title, notes, labels, meanings) runs the same code with the same values: the preview that
+    // was verified stays verified, and the page that is open keeps working. So does a settled result while the outputs
+    // render the same text.
+    const previewKept = runSignature(p.kit.kit) === runSignature(kit) && p.kit.brandData?.domain === read.brandData?.domain;
+    const settledKept = previewKept && JSON.stringify(p.kit.kit.outputs.map((o) => [o.id, o.template])) === JSON.stringify(kit.outputs.map((o) => [o.id, o.template]));
+    const settledCleared = !!p.kit.settled && !settledKept;
     p.domain = domain;
-    p.kit = { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
+    p.kit = previewKept
+      ? { ...p.kit, kit, ...read, settled: settledKept ? p.kit.settled : null }
+      : { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
+    return { previewKept, settledCleared };
   });
 }
 

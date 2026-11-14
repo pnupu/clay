@@ -2,7 +2,7 @@
 // Text that came from web pages (plan names, quotes) is cut short and labelled, because the reader is another model.
 import { standing } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
-import { explorationWords, renderOutputs, valuesNow, type KitState } from "./kit.ts";
+import { BRAND_PENDING, explorationWords, renderOutputs, valuesNow, type KitState } from "./kit.ts";
 import { rank, type Assumptions } from "./pricing.ts";
 import { workStatus, type ChangeEvent, type Playground } from "./store.ts";
 
@@ -101,13 +101,18 @@ export function buildReport(p: Playground) {
   const waiting = new Set(w?.status === "running" ? w.pending : []);
   const read = p.domain.vendors.filter((v) => p.sources[v.id]?.snapshot && !waiting.has(v.id)).length;
   const pages = `${read} of ${total} pricing pages read`;
-  if (w?.status === "running")
+  if (w?.status === "running") {
+    // Every read ends: the web reader gives up on a page after 2 minutes. Saying so keeps an agent from handing over a
+    // page with a vendor that is still being read and then fails.
+    const elapsed = Math.round((Date.now() - Date.parse(w.startedAt)) / 1000);
     return {
       status: "running",
       pages,
       still_reading: w.pending,
-      next: "The reads go on by themselves (each page takes 5 to 40 seconds; more when requests wait for the rate limit). Call read_playground again: it waits up to 20 seconds for them. Do not call create_playground or revise_playground again for this while it runs.",
+      running_for_seconds: elapsed,
+      next: `The reads go on by themselves (each page takes 5 to 40 seconds; more when requests wait for the rate limit, and a page that hangs is given up after 2 minutes). Call read_playground again: it waits up to 20 seconds. Keep calling it until status is "done", at most about ${Math.max(1, Math.ceil((170 - elapsed) / 20))} more times; do not tell the person the page is ready before that, because a page that fails must still be repaired or removed. Do not call create_playground or revise_playground again for this while it runs.`,
     };
+  }
   if (w?.status === "stalled")
     return { status: "stalled", pages, detail: "The reads were cut off before the end. Call recheck_playground once: it reads the pages that are missing. If that does not help, tell the person to press 'Collect pricing pages' on the page." };
   return { status: "done", pages, ...(w?.stop ? { stopped_early: cut(w.stop, 300) } : {}) };
@@ -197,7 +202,7 @@ export function previewStatus(k: KitState) {
 
 export function dataReport(k: KitState) {
   return [
-    ...(k.kit.brand ? [{ source: "brand", domain: k.kit.brand.domain, read_by: "Context.dev", read_at: k.brandData?.fetchedAt ?? null, ...(k.brandData ? { untrusted_web_title: cut(k.brandData.title, 60), colors: k.brandData.colors.map((c) => `${c.hex} ${cut(c.name, 30)}`.trim()), logos: k.brandData.logos.length } : { error: cut(k.brandError ?? "not read", 200), effect: "clay.data.brand has no colours and no logos; a palette 'brand' shows only the control's initial colour." }) }] : []),
+    ...(k.kit.brand ? [{ source: "brand", domain: k.kit.brand.domain, read_by: "Context.dev", read_at: k.brandData?.fetchedAt ?? null, ...(k.brandData ? { untrusted_web_title: cut(k.brandData.title, 60), colors: k.brandData.colors.map((c) => `${c.hex} ${cut(c.name, 30)}`.trim()), logos: k.brandData.logos.length } : k.brandError === BRAND_PENDING ? { status: "still being read", next: "The web reader was busy. Call read_playground again: it waits up to 20 seconds for the brand. Until it arrives, a palette 'brand' shows only the control's initial colour." } : { error: cut(k.brandError ?? "not read", 200), effect: "clay.data.brand has no colours and no logos; a palette 'brand' shows only the control's initial colour." }) }] : []),
     ...(k.kit.inline ? [{ source: "inline", keys: Object.keys(k.kit.inline), shown_as: "provided by your agent, not checked" }] : []),
   ];
 }

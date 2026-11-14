@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkKit, cleanValues, explorationWords, initialValues, mergeKitExploration, renderOutputs, type KitState } from "./kit.ts";
+import { checkKit, runSignature, cleanValues, explorationWords, initialValues, mergeKitExploration, renderOutputs, type KitState } from "./kit.ts";
 import { BUTTON_EXAMPLE, SPRING_EXAMPLE } from "./reference.ts";
 import { mergeSpec, parseSpec, toSpec, type Spec } from "./spec.ts";
 import { newPlayground } from "./store.ts";
@@ -140,4 +140,44 @@ test("a toggle or option text may use another control's value in an output, one 
   // A text that names a control that does not exist, or itself, is refused with the fix.
   const bad = checkKit({ ...raw, controls: [raw.controls[0], { ...raw.controls[1], on: "{{nope}} {{badge}}" }, raw.controls[2]] });
   assert.ok(!bad.ok && bad.errors.some((e: string) => /controls\.badge: its text holds \{\{nope\}\}, which is not a control/.test(e)) && bad.errors.some((e: string) => /is the control itself/.test(e)));
+});
+
+test("length errors state the limit and the given length, and the schema and the validator agree", () => {
+  const spec = (over: object) => ({ id: "btn", title: "How should it look?", view: { type: "preview", html: '<b style="border-radius:{{radius}}px">x</b>' }, controls: [{ id: "radius", type: "slider", label: "Radius", meaning: "border-radius in px", min: 0, max: 24, initial: 2 }], outputs: [{ id: "css", label: "radius", template: "border-radius: {{radius}}px" }], ...over });
+  const errorsOf = (over: object) => { const r = parseSpec(spec(over)); return r.ok ? [] : r.errors; };
+  // The case from production: an output label of 70 characters passed the schema (80) and failed the validator (60).
+  assert.deepEqual(errorsOf({ outputs: [{ id: "css", label: "x".repeat(70), template: "{{radius}}" }] }), ["outputs.0.label: at most 60 characters, this one has 70"]);
+  assert.deepEqual(errorsOf({ outputs: [{ id: "css", label: "x".repeat(60), template: "{{radius}}" }] }), []);
+  assert.match(errorsOf({ controls: [{ id: "radius", type: "slider", label: "y".repeat(61), meaning: "border-radius in px", min: 0, max: 24, initial: 2 }] })[0], /controls\.0\.label: at most 60 characters, this one has 61/);
+  assert.match(errorsOf({ title: "ab" })[0], /title: at least 3 characters, this one has 2/);
+  assert.match(errorsOf({ notes: "n".repeat(700) })[0], /notes: at most 600 characters, this one has 700/);
+  // The validator's own messages (a raw kit that did not pass the schema first) state both numbers too.
+  const raw = checkKit({ controls: [{ id: "radius", type: "slider", label: "y".repeat(61), meaning: "m", min: 0, max: 24, initial: 2 }], view: { html: "<b>{{radius}}</b>" }, outputs: [{ id: "css", label: "z".repeat(99), template: "{{radius}}" }] });
+  assert.ok(!raw.ok);
+  if (raw.ok) return;
+  assert.ok(raw.errors.some((e: string) => /label: give a label of 2 to 60 characters \(this one has 61\)/.test(e)));
+  assert.ok(raw.errors.some((e: string) => /meaning: say in 5 to 200 characters \(this one has 1\)/.test(e)));
+  assert.ok(raw.errors.some((e: string) => /outputs\.css\.label: give a label of 2 to 60 characters \(this one has 99\)/.test(e)));
+});
+
+test("a toggle text holds a small patch: up to 2000 characters, and the error over that states both lengths", () => {
+  const kit = (on: string) => checkKit({ controls: [{ id: "badge", type: "toggle", label: "Badge", meaning: "show the badge markup", initial: false, on, off: "" }], view: { html: "<b>{{badge}}</b>" }, outputs: [{ id: "code", label: "badge", template: "{{badge}}" }] });
+  assert.ok(kit("<span>" + "x".repeat(1500) + "</span>").ok);
+  const long = kit("x".repeat(2001));
+  assert.ok(!long.ok && long.errors.some((e: string) => /at most 2000 characters each \(on: this one has 2001, off: this one has 0\)/.test(e)));
+  const r = parseSpec({ id: "btn", title: "How should it look?", view: { type: "preview", html: "<b>{{badge}}</b>" }, controls: [{ id: "badge", type: "toggle", label: "Badge", meaning: "show the badge markup", initial: false, on: "x".repeat(2001) }], outputs: [{ id: "code", label: "badge", template: "{{badge}}" }] });
+  assert.deepEqual(!r.ok && r.errors, ["controls.0.on: at most 2000 characters, this one has 2001"]);
+});
+
+test("a revision of words only runs the same preview; a change of code, data or a control's values does not", () => {
+  const base = checkKit({ controls: [{ id: "radius", type: "slider", label: "Radius", meaning: "border-radius in px", min: 0, max: 24, initial: 2 }, { id: "size", type: "select", label: "Size", meaning: "text size class", initial: "sm", options: [{ value: "sm", label: "Small" }, { value: "lg", label: "Large" }] }], view: { html: "<b class='{{size}}' style='border-radius:{{radius}}px'>x</b>" }, outputs: [{ id: "css", label: "radius", template: "{{radius}} {{size}}" }] });
+  assert.ok(base.ok);
+  if (!base.ok) return;
+  const k = base.kit;
+  const words = { ...k, notes: "A new note", controls: k.controls.map((c) => ({ ...c, label: c.label + " (px)", meaning: "said differently", ...(c.type === "select" ? { options: c.options.map((o) => ({ ...o, label: o.label + "!" })) } : {}) })), outputs: k.outputs.map((o) => ({ ...o, label: "renamed" })) };
+  assert.equal(runSignature(words as typeof k), runSignature(k));
+  assert.notEqual(runSignature({ ...k, preview: { ...k.preview, css: "b { color: red }" } }), runSignature(k));
+  assert.notEqual(runSignature({ ...k, controls: k.controls.map((c) => (c.type === "slider" ? { ...c, max: 48 } : c)) }), runSignature(k));
+  assert.notEqual(runSignature({ ...k, inline: { a: 1 } }), runSignature(k));
+  assert.notEqual(runSignature({ ...k, brand: { domain: "linear.app" } }), runSignature(k));
 });
