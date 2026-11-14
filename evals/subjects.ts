@@ -69,7 +69,10 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
       args: [
         "-p", // the prompt comes on stdin
         "--mcp-config", `${o.dir}/mcp.json`, "--strict-mcp-config", // only Clay's MCP server
-        "--setting-sources", "", // no user, project or local settings: no plugins, hooks or CLAUDE.md
+        // Files only: no user, project or local settings, so no plugins, hooks or CLAUDE.md. Normal tools: the default
+        // sources, as a person has them; the clean home and the scratch directory hold only what the operator put there
+        // (a CLAUDE.md in the scratch directory, a personal skill in the home), so the levers a person has can be measured.
+        ...(normal ? [] : ["--setting-sources", ""]),
         // Normal tools: the CLI's own default model unless one is named, every built-in tool, and the ones that would
         // ask (shell, web) approved beforehand, because print mode cannot ask. Otherwise: files only (no shell, no web).
         ...(model ? ["--model", model] : []),

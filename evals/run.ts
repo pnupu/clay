@@ -9,6 +9,10 @@
 //                         .codex/auth.json for codex), so no operator settings, plugins, rules or MCP servers reach the
 //                         agent. The scratch directories must be outside this repository (--scratch-root). Without
 //                         --tools the agent has Clay and file tools only: that measures Clay, this measures the trigger.
+//                     [--memory <file>]   with --tools normal: the person's standing instruction. The file's text is put
+//                         into each scratch directory as CLAUDE.md (claude) or AGENTS.md (codex), where the CLI reads its
+//                         project instructions. A personal skill is installed by the operator in the clean home
+//                         (<home>/.claude/skills/<name>/SKILL.md).
 //                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
 //                     [--scratch-root <dir>]   put the agents' scratch directories under <dir>, outside this repository.
 //                         Use it when the operator's own agent rules forbid edits inside a shared checkout (Codex loads
@@ -90,6 +94,8 @@ const from = flag("from") ? resolve(flag("from")!) : null;
 const scratchRoot = flag("scratch-root") ? resolve(flag("scratch-root")!) : null;
 const toolSet = flag("tools") === "normal" ? "normal" : "files";
 const home = flag("home") ? resolve(flag("home")!) : undefined;
+const memory = flag("memory") ? readFileSync(resolve(flag("memory")!), "utf8") : null;
+if (memory != null && toolSet !== "normal") throw new Error("--memory needs --tools normal: the files-only mode loads no project instructions.");
 if (flag("tools") && !["normal", "files"].includes(flag("tools")!)) throw new Error("--tools is normal or files.");
 if (toolSet === "normal" && !from && (!home || !scratchRoot || !relative(resolve(HERE, ".."), home).startsWith("..") || !relative(resolve(HERE, ".."), scratchRoot).startsWith(".."))) throw new Error("--tools normal needs --home <clean home> and --scratch-root <dir>, both outside this repository.");
 if (!/^https?:\/\//.test(baseUrl)) throw new Error("Give the server: --base-url <url> or CLAY_BASE_URL.");
@@ -128,6 +134,8 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   if (old) cpSync(old, dir, { recursive: true });
   else if (c.files) cpSync(join(HERE, "files", c.files), ws, { recursive: true });
   mkdirSync(ws, { recursive: true });
+  // The person's standing instruction, where each CLI reads project instructions. Not on a re-check: the files are the run's.
+  if (memory != null && !from) writeFileSync(join(ws, subject === "claude" ? "CLAUDE.md" : "AGENTS.md"), memory);
   mkdirSync(dir, { recursive: true });
   r.agentRuns = earlier?.agentRuns ?? 0; // the agent runs that produced the reused transcripts
   const original = (path: string) => (c.files ? read(join(HERE, "files", c.files, path)) : null);
