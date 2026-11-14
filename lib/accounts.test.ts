@@ -235,3 +235,14 @@ test("published examples: only the operator writes; the owner may only revise, w
   assert.equal(refusal(ann, ex, "card"), null);
 });
 
+test("deployment bound: people cannot fill the one store; the operator can still create", async () => {
+  const { deploymentCapMessage: cap } = await import("./accounts.ts");
+  assert.equal(cap(1999, 9_000_000, ann), null);
+  assert.match(cap(2000, 1000, ann) ?? "", /limit of 2000 playgrounds/);
+  assert.match(cap(10, 10_000_000, ann) ?? "", /storage is full/);
+  assert.equal(cap(5000, 50_000_000, admin), null);
+  process.env.CLAY_MAX_PLAYGROUNDS = "0"; process.env.CLAY_MAX_STORE_BYTES = "5";
+  assert.equal(cap(9999, 4, ann), null);
+  assert.match(cap(1, 5, ann) ?? "", /storage is full/);
+  delete process.env.CLAY_MAX_PLAYGROUNDS; delete process.env.CLAY_MAX_STORE_BYTES;
+});

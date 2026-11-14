@@ -153,6 +153,21 @@ export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Acto
   const own = Object.values(playgrounds).filter((p) => ownerOf(p) === a.userId).length;
   return cap > 0 && own >= cap ? `You have reached the limit of ${cap} playgrounds per person. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.` : null;
 }
+/**
+ * The deployment-wide bound: every request reads and parses the one store document, so its size is the real limit
+ * (measured: about 25 ms to read and parse 10 MB, 150 ms for 50 MB, plus the blob transfer on Vercel). A person may not
+ * create a playground once the deployment holds CLAY_MAX_PLAYGROUNDS playgrounds (default 2,000) or its store
+ * CLAY_MAX_STORE_BYTES characters (default 10,000,000); 0 turns a bound off. The operator is not bound: examples and the
+ * operator's own playgrounds stay creatable.
+ */
+export function deploymentCapMessage(count: number, bytes: number, a: Actor | null = currentActor()): string | null {
+  if (a?.kind !== "user") return null;
+  const maxCount = limit(process.env.CLAY_MAX_PLAYGROUNDS, 2_000);
+  const maxBytes = limit(process.env.CLAY_MAX_STORE_BYTES, 10_000_000);
+  if (maxCount > 0 && count >= maxCount) return `This Clay deployment holds its limit of ${maxCount} playgrounds. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), or try again later.`;
+  if (maxBytes > 0 && bytes >= maxBytes) return `This Clay deployment's storage is full (${bytes} of ${maxBytes} characters). Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), or try again later.`;
+  return null;
+}
 // No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").
 export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC. Until then the playgrounds still work, because moving the controls needs no web request, and your agent can still build preview playgrounds that use no web data`;
 

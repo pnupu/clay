@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, isExample, playgroundCapMessage, type Account, specVersion } from "./accounts.ts";
+import { currentUserId, isExample, playgroundCapMessage, type Account, specVersion, deploymentCapMessage } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -276,7 +276,7 @@ export async function insertPlayground(domain: Domain, make: (d: Domain) => Play
     const renamed = `${domain.id.slice(0, 33)}-`;
     const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && (p.owner ?? null) === owner && spec(p) === spec(wanted));
     if (mine) return { id: mine.domain.id, existed: true };
-    const refused = playgroundCapMessage(s.playgrounds);
+    const refused = playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length);
     if (refused) return { refused };
     const id = freeId(domain.id, (x) => !!s.playgrounds[x]);
     s.playgrounds[id] = make({ ...domain, id });
