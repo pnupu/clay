@@ -24,8 +24,8 @@ export default async function Connect() {
                 <h1 id="connect-h" className="t-h2">Connect your agent to Sorvi</h1>
                 <p className="t-lead">Your agent builds a lab for you, and you try it here: only you can open it. Add Sorvi to Claude Code or Codex once (it connects as an MCP server), then type “build me a lab for …”.</p>
                 <p>A choice that rests on live prices is kept as a small file in your repository, so any later session of your agent can re-check it.</p>
-                {/* The limits are per person; the operator has none. */}
-                {me.kind !== "admin" && (
+                {/* The limits are per person; the operator has none. An account admin's personal agent key acts as a person, so they see them. */}
+                {(me.kind !== "admin" || me.userId) && (
                   <ul className="rows doc__limits" aria-label="Limits per person">
                     <li><span className="rows__name">Labs</span><p>Delete old ones on the home page.</p><span className="rows__value">{userPlaygroundCap() || "No limit"}</span></li>
                     <li><span className="rows__name">Web requests a day</span><p>For reading prices, brands and web pages (a brand counts as 2). The count resets at 00:00 UTC. Moving the controls needs none, and a preview lab without web data needs none.</p><span className="rows__value">{userDailyCap() || "No limit"}</span></li>
@@ -43,10 +43,11 @@ export default async function Connect() {
                     </p>
                     <p className="small muted">Want to look first? <a href="/#examples">Try an example</a>, no account needed.</p>
                   </section>
-                ) : me.kind === "admin" ? (
+                ) : me.kind === "admin" && !me.userId ? (
                   <AgentKey endpoint={endpoint} createdAt={null} operator keyless={!process.env.CLAY_ACCESS_KEY} />
                 ) : (
-                  <AgentKey endpoint={endpoint} createdAt={(await load()).users[me.userId]?.keyCreatedAt ?? null} />
+                  // A person, or an account admin: both manage a personal agent key. The operator pane is for the owner key only.
+                  <AgentKey endpoint={endpoint} createdAt={(await load()).users[me.userId!]?.keyCreatedAt ?? null} accountAdmin={me.kind === "admin"} />
                 )}
               </div>
             </div>

@@ -45,7 +45,7 @@ async function Header() {
           {me.kind !== "visitor" && <Link href="/#yours"><span className="wide-only">Your labs</span><span className="narrow-only">Yours</span></Link>}
         </nav>
         <div className="bar__actions">
-          {me.kind === "user" ? <Account /> : me.kind === "admin" ? <span className="who" aria-label="Operator session">Operator</span> : me.kind === "visitor" && clerkOn() ? <Link href="/sign-in" className="bar__word">Sign in</Link> : null}
+          {me.kind === "user" ? <Account /> : me.kind === "admin" ? <><span className="who" aria-label="Operator session">Operator</span>{me.userId && <Account />}</> : me.kind === "visitor" && clerkOn() ? <Link href="/sign-in" className="bar__word">Sign in</Link> : null}
           {connected ? <Link href="/connect" className="bar__word"><span className="wide-only">Agent setup</span><span className="narrow-only">Setup</span></Link> : <Link href="/connect" className="button primary"><span className="wide-only">Connect your agent</span><span className="narrow-only">Connect</span></Link>}
         </div>
       </div>

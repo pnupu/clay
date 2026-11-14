@@ -18,9 +18,10 @@ const OWNER_PLACEHOLDER = "<owner key>";
  * The person's agent key: shown once after it is created, then only its creation time. The server keeps a hash.
  * `operator`: the viewer is in with the owner key (the operator session), not as a person. The same three steps, adapted:
  * no key is created or shown; the commands carry the placeholder and can be copied with it. `keyless`: the open
- * development server, where no owner key is set and an agent needs none.
+ * development server, where no owner key is set and an agent needs none. `accountAdmin`: the viewer is the operator by
+ * their sign-in account; they manage a personal key as a person does, and are told that the key is not an operator key.
  */
-export default function AgentKey({ endpoint, createdAt, operator = false, keyless = false }: { endpoint: string; createdAt: string | null; operator?: boolean; keyless?: boolean }) {
+export default function AgentKey({ endpoint, createdAt, operator = false, keyless = false, accountAdmin = false }: { endpoint: string; createdAt: string | null; operator?: boolean; keyless?: boolean; accountAdmin?: boolean }) {
   const router = useRouter();
   const [key, setKey] = useState<string | null>(null);
   const [since, setSince] = useState(createdAt);
@@ -127,6 +128,7 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
             <button className={key ? undefined : "primary"} disabled={busy} onClick={() => call("POST")}>{since ? "Create a new key" : "Create my agent key"}</button>
             {since && <button disabled={busy} onClick={() => call("DELETE")}>Revoke key</button>}
           </p>
+          {accountAdmin && <p className="small muted" data-account-admin>An agent with this key acts as a person, not as the operator.</p>}
           {error && <p className="alert">{error}</p>}
         </section>
       )}

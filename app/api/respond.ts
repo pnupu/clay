@@ -2,13 +2,15 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
 import { viewVersion } from "@/lib/report";
-import { agentConnected, bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal, StorageRefused } from "@/lib/accounts";
+import { agentConnected, bindActor, canRead, canWrite, guessLimiter, isAdminUser, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, sessionUserId, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal, StorageRefused } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
 import { load, publicBase, publicState, update } from "@/lib/store";
 
 /** Sign-in through Clerk is on when both Clerk keys are set. Without them only the owner key works (the app as it was). */
 export const clerkOn = () => !!process.env.CLERK_SECRET_KEY && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const ADMIN: Actor = { kind: "admin" };
+/** A Clerk browser session: the admin when CLAY_ADMIN_USER_IDS lists the account (lib/accounts.ts), else a person. Only for a session: an agent key never comes here. */
+const ofSession = (userId: string | null | undefined): Actor => (!userId ? VISITOR : isAdminUser(userId) ? { kind: "admin", userId } : { kind: "user", userId, via: "session" });
 const guesses = guessLimiter();
 // Vercel sets x-real-ip to the client address; x-forwarded-for is only a fallback for other hosts.
 const clientIp = (h: { get(name: string): string | null }) => h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
@@ -85,7 +87,8 @@ async function checkKey(userId: string, checkedAt: string | null | undefined): P
 
 /**
  * Who sends this request (lib/accounts.ts)? In this order: the owner key (bearer or owner cookie) is the admin; a bearer
- * agent key is its person; a Clerk session is its person; anyone else is a visitor. `bad` is set when a bearer token was
+ * agent key is its person, also when CLAY_ADMIN_USER_IDS lists that person; a Clerk session is its person, or the admin
+ * when the list has the account (on both session paths below); anyone else is a visitor. `bad` is set when a bearer token was
  * sent and matched nothing, so the caller can say so instead of acting as a visitor. Works on route requests and, with
  * the headers of the page request, in server components.
  */
@@ -114,7 +117,7 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
   if (!clerkOn()) return { actor: VISITOR, bad: null };
   try {
     const { userId } = await auth();
-    return { actor: userId ? { kind: "user", userId, via: "session" } : VISITOR, bad: null };
+    return { actor: ofSession(userId), bad: null };
   } catch {
     // auth() throws where the Clerk proxy did not run (proxy.ts leaves out the MCP, webhook and preview frame routes).
     // With the request at hand, read the session cookie directly: this never redirects, and an expired session counts
@@ -125,14 +128,14 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
       const base = publicBase();
       const state = await (await clerkClient()).authenticateRequest(req, base ? { authorizedParties: [base] } : {});
       const userId = state.isAuthenticated ? state.toAuth().userId : null;
-      return { actor: userId ? { kind: "user", userId, via: "session" } : VISITOR, bad: null };
+      return { actor: ofSession(userId), bad: null };
     } catch {
       return { actor: VISITOR, bad: null };
     }
   }
 }
 
-/** The caller of the page being rendered (server components): the admin's owner cookie, a Clerk session, or a visitor. */
+/** The caller of the page being rendered (server components): the admin's owner cookie, a Clerk session (a person or an account admin), or a visitor. */
 export const viewer = async (): Promise<Actor> => (await identify(await headers())).actor;
 
 /** May this request open the lab, and change it? Both false when it does not exist. `bad`: see badKey(), also for an unknown id. */
@@ -184,7 +187,8 @@ export function storageFull(e: unknown): Response {
  * 1. Browsers send Origin on such requests; agents and scripts do not. A request with an Origin must come from the page of
  *    this app itself, and the app must be addressed by localhost, by an IP address or by its public host name, so a foreign
  *    name that is made to resolve to this machine is refused too.
- * 2. The caller (identify()): a visitor may not write anything. The admin may do everything.
+ * 2. The caller (identify()): a visitor may not write anything. The admin may do everything; an account admin (a listed
+ *    Clerk account) first passes the same Clerk check as a person's session.
  * 3. A route under /api/p/<id>/ may change that lab only for its owner and the admin; the lab id is read from
  *    the URL, so every route there is covered. A few routes are for the admin only (ADMIN_ONLY).
  * The webhook route does not call this: its signature is its authentication.
@@ -208,10 +212,12 @@ export async function refused(req: Request): Promise<Response | null> {
   const badAnswer = badKey(bad, req);
   if (badAnswer) return badAnswer;
   // A browser session meets the same eligibility rule as an agent key before it may create or spend (an agent key met it in
-  // identify()). Signing in and looking at pages need nothing more.
+  // identify()). Signing in and looking at pages need nothing more. An account admin is such a session too: a deleted,
+  // banned or test account does not write as the admin, and nothing is done while Clerk cannot confirm it.
   // Revoking one's own key spends nothing and must work during a Clerk outage: it is exempt.
-  if (actor.kind === "user" && actor.via === "session" && !(req.method === "DELETE" && new URL(req.url).pathname === "/api/agent-key")) {
-    const confirmed = await confirmPerson(actor.userId, (await load()).users[actor.userId]?.checkedAt);
+  const session = sessionUserId(actor);
+  if (session && !(req.method === "DELETE" && new URL(req.url).pathname === "/api/agent-key")) {
+    const confirmed = await confirmPerson(session, (await load()).users[session]?.checkedAt);
     if (confirmed === "test") return Response.json({ error: `${TEST_ACCOUNT_LOOK_ONLY} ${`${publicBase() ?? new URL(req.url).origin}/sign-up`}` }, { status: 403 });
     if (confirmed === "revoked") return Response.json({ error: "This account is deleted or blocked, so it cannot build or change labs." }, { status: 403 });
     if (confirmed === "unavailable") return badKey("unavailable", req);

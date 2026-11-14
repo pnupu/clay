@@ -69,6 +69,8 @@ export default async function Home() {
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
   // A returning person with labs sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
+  /** The admin on a lab of another person. An account admin's own labs (built by their personal agent key) are theirs. */
+  const aPersons = (p: AnyPlayground) => me.kind === "admin" && !!p.owner && p.owner !== me.userId;
   const yoursSection = me.kind === "visitor" ? null : (
     <section className="section" id="yours" aria-labelledby="yours-h">
       <div className="wrap">
@@ -78,7 +80,7 @@ export default async function Home() {
             {yours.map(([id, p]) => (
               <li key={id}>
                 <a href={`/p/${id}`} className="rows__name">{titleOf(p, id)}</a>
-                <p className="t-small muted">{p.started ? "Started, not built yet" : kindOf(p, me.kind === "admin" && p.owner ? "theirs" : "yours")} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
+                <p className="t-small muted">{p.started ? "Started, not built yet" : kindOf(p, aPersons(p) ? "theirs" : "yours")} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{aPersons(p) ? " · a person's" : ""}</p>
                 <div className="rows__value"><Manage id={id} title={titleOf(p, id)} example={isExample(p, id)} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} /></div>
               </li>
             ))}
