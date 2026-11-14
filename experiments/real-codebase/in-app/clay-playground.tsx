@@ -75,7 +75,7 @@ export function ClayPlayground(props: {
   const tried = useRef<Tried>({});
   // The off-scale text as typed. The stored value is trimmed, so the box keeps its own text: "oklch(0.9 0 0)" has spaces.
   const [typed, setTyped] = useState<Record<string, string>>({});
-  const level =levels.find((l) => l.id === levelId);
+  const level = levels.find((l) => l.id === levelId);
   // The controls of the chosen level: token controls on the level "token", the others on the other levels.
   const active = controls.filter((c) => !level || (level.id === "token") === !!c.token);
   const moved = active.filter((c) => values[c.id] !== initial[c.id]);
@@ -186,7 +186,7 @@ export function ClayPlayground(props: {
             {c.type === "color" && <input type="color" value={values[c.id] as string} onChange={(e) => set(c, e.target.value)} />}
           </label>
         ))}
-        <button type="button" onClick={() => { tried.current = {}; setValues(initial); setState("idle"); }} style={S.plain}>Back to the start values</button>
+        <button type="button" onClick={() => { tried.current = {}; setTyped({}); setValues(initial); setState("idle"); }} style={S.plain}>Back to the start values</button>
         {Object.entries(texts).map(([k, t]) => (
           <div key={k} style={S.row}>
             <span style={S.label}>{k}</span>
