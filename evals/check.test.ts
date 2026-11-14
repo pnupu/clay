@@ -98,6 +98,10 @@ test("tool use: a build case needs the create tool, a no-playground case must no
   const none = toolUse(byId("price-email"), [call("read_playground")], null);
   assert.deepEqual([none.id, none.status], ["tool_use", "fail"]);
   assert.match(toolUse(byId("price-email"), [], null).reason, /never called create_playground or any Clay tool/);
+  // With its normal tools on, the reason says what the agent did instead of building.
+  const plain = (tool: string): Call => ({ tool, mcp: false, input: {}, result: "", isError: false });
+  assert.match(toolUse(byId("look-button"), [plain("Bash"), plain("Edit"), plain("Edit")], null).reason, /or any Clay tool; instead it used Bash, Edit$/);
+  assert.match(toolUse(byId("price-email"), [], null).reason, /; it answered in words, with no tool$/);
   assert.equal(toolUse(byId("none-fact"), [], null).status, "pass");
   assert.deepEqual([toolUse(byId("none-fact"), [call("create_playground")], null).id, toolUse(byId("none-exact"), [call("revise_playground")], null).status], ["no_playground", "fail"]);
   // A tool of the same name from another server does not count.

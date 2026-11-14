@@ -25,6 +25,13 @@ export type RunOptions = {
   timeoutMs: number;
   /** File name stem for the transcript, for example "leg1". */
   name: string;
+  /**
+   * "files" (the default): the agent has Clay and file tools only, so the checks measure Clay, not the agent's other ways out.
+   * "normal": the agent keeps the CLI's own tool set (web search and fetch, shell, files) plus Clay, as a person's agent has.
+   */
+  tools?: "files" | "normal";
+  /** For tools "normal": a clean home directory for the CLI, prepared by the operator (see run.ts). */
+  home?: string;
 };
 export type AgentRun = {
   subject: SubjectName;
@@ -51,6 +58,7 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
   const model = o.model ?? DEFAULT_MODEL[o.subject];
   if (model && /haiku/i.test(model)) throw new Error("Haiku models are not allowed as subjects.");
   const url = o.baseUrl + MCP_PATH;
+  const normal = o.tools === "normal";
   if (o.subject === "claude") {
     // ${CLAY_ACCESS_KEY} is expanded by the CLI from the environment, so the key is not in the file.
     const config = { mcpServers: { [SERVER]: { type: "http", url, ...(o.key ? { headers: authHeader("${CLAY_ACCESS_KEY}") } : {}) } } };
@@ -61,9 +69,11 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
         "-p", // the prompt comes on stdin
         "--mcp-config", `${o.dir}/mcp.json`, "--strict-mcp-config", // only Clay's MCP server
         "--setting-sources", "", // no user, project or local settings: no plugins, hooks or CLAUDE.md
-        "--model", model!,
-        "--tools", FILE_TOOLS, // built-in tools: files only (no shell, no web)
-        "--allowedTools", `mcp__${SERVER}`,
+        // Normal tools: the CLI's own default model unless one is named, every built-in tool, and the ones that would
+        // ask (shell, web) approved beforehand, because print mode cannot ask. Otherwise: files only (no shell, no web).
+        ...(normal ? (o.model ? ["--model", o.model] : []) : ["--model", model!]),
+        ...(normal ? [] : ["--tools", FILE_TOOLS]),
+        "--allowedTools", normal ? `mcp__${SERVER},Bash,WebSearch,WebFetch` : `mcp__${SERVER}`,
         "--permission-mode", "acceptEdits", // edits inside the working directory; anything outside it is refused in print mode
         "--output-format", "stream-json", "--verbose",
         ...(o.resume ? ["--resume", o.resume] : ["--session-id", session]),
@@ -76,11 +86,11 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
     args: [
       "exec", ...(o.resume ? ["resume", o.resume] : []),
       "--json", "--skip-git-repo-check",
-      "--ignore-user-config", "--ignore-rules", // no user config (so no other MCP servers) and no rules files; auth still works
+      // Normal tools: a clean home has no user config and no rules, and web search stays as the CLI ships it.
+      ...(normal ? [] : ["--ignore-user-config", "--ignore-rules"]), // no user config (so no other MCP servers) and no rules files; auth still works
       ...(model ? ["-m", model] : []),
       ...c('sandbox_mode="workspace-write"'), // edits only inside the working directory; shell commands have no network
-      ...c("project_doc_max_bytes=0"), // do not load AGENTS.md files of the surrounding repository
-      ...c('web_search="disabled"'),
+      ...(normal ? [] : [...c("project_doc_max_bytes=0"), ...c('web_search="disabled"')]), // no AGENTS.md of the surrounding repository, no web
       ...c(`mcp_servers.${SERVER}.url="${url}"`),
       ...(o.key ? c(`mcp_servers.${SERVER}.bearer_token_env_var="CLAY_ACCESS_KEY"`) : []),
       ...c(`mcp_servers.${SERVER}.default_tools_approval_mode="approve"`), // exec cannot ask; without this every Clay call is refused
@@ -96,7 +106,11 @@ export async function runAgent(o: RunOptions): Promise<AgentRun> {
   const out = `${o.dir}/${o.name}.jsonl`;
   const [fdOut, fdErr] = [openSync(out, "w"), openSync(`${o.dir}/${o.name}.stderr.txt`, "w")];
   const t0 = Date.now();
-  const env = { ...process.env, ...(o.key ? { CLAY_ACCESS_KEY: o.key } : {}) };
+  // Normal tools: the environment of a new person's shell in a clean home, so no operator configuration, plugin, hook,
+  // rules file or other MCP server reaches the agent. The home holds only the copied login of the CLI.
+  if (o.tools === "normal" && !o.home) throw new Error("tools \"normal\" needs a clean home directory.");
+  const clean = { PATH: process.env.PATH ?? "", LANG: "C.UTF-8", TERM: "dumb", HOME: o.home ?? "", TMPDIR: `${o.home}/tmp`, ...(o.subject === "claude" ? { CLAUDE_CONFIG_DIR: `${o.home}/.claude`, ENABLE_CLAUDEAI_MCP_SERVERS: "false" } : { CODEX_HOME: `${o.home}/.codex` }) };
+  const env = { ...(o.tools === "normal" ? clean : process.env), ...(o.key ? { CLAY_ACCESS_KEY: o.key } : {}) } as NodeJS.ProcessEnv;
   let error: string | null = null;
   await new Promise<void>((resolve) => {
     const child = spawn(bin, args, { cwd: o.cwd, env, stdio: ["pipe", fdOut, fdErr], detached: true });
@@ -114,7 +128,7 @@ export async function runAgent(o: RunOptions): Promise<AgentRun> {
   closeSync(fdOut);
   closeSync(fdErr);
   const parsed = (o.subject === "claude" ? parseClaude : parseCodex)(readFileSync(out, "utf8"));
-  return { subject: o.subject, command: [bin, ...args], seconds: Math.round((Date.now() - t0) / 1000), ...parsed, model: parsed.model ?? o.model ?? DEFAULT_MODEL[o.subject] ?? null, sessionId: parsed.sessionId ?? (o.subject === "claude" ? (o.resume ?? session) : null), error: error ?? parsed.error };
+  return { subject: o.subject, command: [bin, ...args], seconds: Math.round((Date.now() - t0) / 1000), ...parsed, model: parsed.model ?? o.model ?? (o.tools === "normal" ? undefined : DEFAULT_MODEL[o.subject]) ?? null, sessionId: parsed.sessionId ?? (o.subject === "claude" ? (o.resume ?? session) : null), error: error ?? parsed.error };
 }
 
 type Parsed = Pick<AgentRun, "model" | "sessionId" | "calls" | "finalText" | "allText" | "tokens" | "costUsd" | "error">;
@@ -181,6 +195,7 @@ export function parseCodex(raw: string): Parsed {
         const err = it.error as Json | null | undefined;
         p.calls.push({ tool: String(it.tool), mcp: it.server === SERVER, input: (it.arguments as Json) ?? {}, result: err ? String(err.message ?? JSON.stringify(err)) : textOf(res?.content ?? res), isError: !!err || it.status === "failed" || res?.is_error === true || res?.isError === true });
       } else if (it.type === "file_change") p.calls.push({ tool: "file_change", mcp: false, input: { changes: it.changes }, result: String(it.status ?? ""), isError: false });
+      else if (it.type === "web_search") p.calls.push({ tool: "web_search", mcp: false, input: { query: it.query }, result: "", isError: false });
       else if (it.type === "command_execution") p.calls.push({ tool: "shell", mcp: false, input: { command: it.command }, result: String(it.aggregated_output ?? "").slice(0, 2000), isError: it.exit_code !== 0 });
       else if (it.type === "error") p.error ??= String(it.message ?? "error item");
     } else if (m.type === "turn.completed") {

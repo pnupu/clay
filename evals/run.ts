@@ -2,6 +2,13 @@
 //
 //   node evals/run.ts --base-url <url> [--subject claude|codex] [--model <id>] [--cases <id,id>] [--kind <price,none,...>]
 //                     [--one-leg <id,id|all>] [--concurrency 2] [--timeout 600] [--from <run dir>] [--label <text>]
+//                     [--tools normal --home <dir> --scratch-root <dir>]   the agent keeps the CLI's own tools (web search
+//                         and fetch, shell, files) plus Clay, as a person's agent has, and the CLI's default model unless
+//                         --model names one. <dir> of --home is a clean home that you prepare and delete: an empty
+//                         directory with tmp/ and a copy of the CLI's login only (.claude/.credentials.json for claude,
+//                         .codex/auth.json for codex), so no operator settings, plugins, rules or MCP servers reach the
+//                         agent. The scratch directories must be outside this repository (--scratch-root). Without
+//                         --tools the agent has Clay and file tools only: that measures Clay, this measures the trigger.
 //                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
 //                     [--scratch-root <dir>]   put the agents' scratch directories under <dir>, outside this repository.
 //                         Use it when the operator's own agent rules forbid edits inside a shared checkout (Codex loads
@@ -81,6 +88,10 @@ const timeoutSeconds = Number(flag("timeout") ?? 600);
 const oneLeg = list("one-leg") ?? [];
 const from = flag("from") ? resolve(flag("from")!) : null;
 const scratchRoot = flag("scratch-root") ? resolve(flag("scratch-root")!) : null;
+const toolSet = flag("tools") === "normal" ? "normal" : "files";
+const home = flag("home") ? resolve(flag("home")!) : undefined;
+if (flag("tools") && !["normal", "files"].includes(flag("tools")!)) throw new Error("--tools is normal or files.");
+if (toolSet === "normal" && !from && (!home || !scratchRoot || !relative(HERE, home).startsWith("..") || !relative(resolve(HERE, ".."), scratchRoot).startsWith(".."))) throw new Error("--tools normal needs --home <clean home> and --scratch-root <dir>, both outside this repository.");
 if (!/^https?:\/\//.test(baseUrl)) throw new Error("Give the server: --base-url <url> or CLAY_BASE_URL.");
 if (!["claude", "codex"].includes(subject)) throw new Error("--subject is claude or codex.");
 if (model && /haiku/i.test(model)) throw new Error("Haiku models are not allowed as subjects.");
@@ -139,7 +150,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
       r.model = p.model ?? saved.model ?? r.model;
       return { subject, command: ["(reused transcript)"], seconds: saved.seconds ?? 0, ...p, error: reused == null ? "not run" : p.error };
     }
-    const run = await runAgent({ subject, model, baseUrl, key, cwd: ws, dir, prompt, resume, timeoutMs: timeoutSeconds * 1000, name });
+    const run = await runAgent({ subject, model, baseUrl, key, cwd: ws, dir, prompt, resume, timeoutMs: timeoutSeconds * 1000, name, tools: toolSet, home });
     r.agentRuns++;
     r.seconds += run.seconds;
     r.tokens = sum(r.tokens, run.tokens);

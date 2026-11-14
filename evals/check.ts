@@ -35,7 +35,10 @@ export const CAUSE: Record<string, string> = {
 export function toolUse(c: Case, calls: Call[], preparedId: string | null): Check {
   const clay = calls.filter((x) => x.mcp);
   const created = clay.filter((x) => x.tool === TOOL.create);
-  if (c.expect === "build") return created.length ? pass("tool_use", `called ${TOOL.create}`) : fail("tool_use", `the agent never called ${TOOL.create}${clay.length ? ` (it called ${[...new Set(clay.map((x) => x.tool))].join(", ")})` : " or any Clay tool"}`);
+  // What the agent did instead, for a run with its normal tools: the other tools it used, or nothing but words.
+  const other = [...new Set(calls.filter((x) => !x.mcp).map((x) => x.tool))];
+  const instead = other.length ? `; instead it used ${other.join(", ")}` : "; it answered in words, with no tool";
+  if (c.expect === "build") return created.length ? pass("tool_use", `called ${TOOL.create}`) : fail("tool_use", `the agent never called ${TOOL.create}${clay.length ? ` (it called ${[...new Set(clay.map((x) => x.tool))].join(", ")})` : " or any Clay tool"}${instead}`);
   if (c.expect === "none") {
     const built = clay.filter((x) => BUILD_TOOLS.includes(x.tool));
     return built.length ? fail("no_playground", `the agent called ${built[0].tool} where the simple thing was right`) : pass("no_playground", "no playground was built");
