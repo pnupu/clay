@@ -55,9 +55,10 @@ test("the reference teaches the parts the sheet styles, and the sheet has no tex
   assert.equal(css.includes("</"), false); // it stands inside a <style> element
   // The head of a column of numbers may wrap, or five columns do not fit a frame of about 500 px (worked example 3).
   // The rule for a th weighs as much as the rule for .num, so it must come after it.
-  const nowrap = css.search(/\.num \{[^}]*white-space: nowrap/);
+  // No later rule for .num brings nowrap back.
+  const nowrap = [...css.matchAll(/\.num\b[^{}]*\{[^}]*white-space: nowrap/g)].map((m) => m.index);
   const wraps = css.search(/:where\(th\)\.num \{[^}]*white-space: normal/);
-  assert.ok(nowrap >= 0 && wraps > nowrap, "a number stays on one line, and the head of its column may wrap");
+  assert.ok(nowrap.length === 1 && wraps > nowrap[0], "a number stays on one line, and the head of its column may wrap");
   assert.match(KIT_REFERENCE, /## A data view \(view\.data: true\)/);
 });
 
@@ -109,10 +110,14 @@ test("a page of data in styles of its own is a problem for the agent that builds
   assert.deepEqual(data(".a { color: rgb(1 10 0); border-color: rgb( 1  10 0 ); background: rgb(0 0 0 / 0.5); outline-color: rgb(0 0 0/0.5); fill: rgb(0 0 0 /0.5) }"), []);
   // Two colours that differ only in where their spaces are stay two colours: with a third, three.
   assert.match(data(".a { color: rgb(1 10 0); background: rgb(11 0 0); outline-color: #2a78d6 }")[0], /3 colours of its own \(rgb\(1 10 0\), rgb\(11 0 0\), #2a78d6\)/);
-  // A comment is not a style, in view.css and in a style attribute. A declaration ends with its own attribute: the
-  // size of the next attribute is not read as its size.
+  // A comment is not a style: in view.css, in a style attribute, and one that is never closed.
   assert.deepEqual(data("/* td { font: 10px x; color: #111; background: #222; border-color: #333; } */ .a { margin: 0 }"), []);
-  assert.deepEqual(styleProblems({ preview: { html: '<p style="/* font: 10px x; color: #111 */ font-size: 1em"><b style="padding: 4px">x</b></p>', css: "", data: true } }), []);
+  assert.deepEqual(data(".a { margin: 0 } /* old: td { font: 10px x; color: #111; background: #222; border-color: #333; }"), []);
+  assert.deepEqual(styleProblems({ preview: { html: '<p style="/* font: 10px x; color: #111 */ margin: 0">x</p>', css: "", data: true } }), []);
+  // A declaration ends with its own source: the size in the next style attribute is not read as its size, after a
+  // comment that is never closed and after a view.css that does not close its last rule.
+  assert.deepEqual(styleProblems({ preview: { html: '<p style="font-size: 1em /* n"><b style="padding: 4px">x</b></p>', css: "", data: true } }), []);
+  assert.deepEqual(styleProblems({ preview: { html: '<b style="padding: 4px">x</b>', css: ".a { font-size: 1em", data: true } }), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });
