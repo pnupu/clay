@@ -60,7 +60,9 @@ export default async function Home() {
   // its ranking on live web data, and the first preview example follows as the second thing a visitor meets. Otherwise
   // the hero is that preview example, as before.
   const priceHero = priceHeroOf(examples[0]);
-  const hero = examples.find(([, p]) => p.kit) ?? null;
+  // The card that snaps back is small enough for its controls and their result to share a screen, so it is the
+  // preview shown while it is an example; else the first preview example.
+  const hero = examples.find(([id, p]) => id === "card-snap-back" && p.kit) ?? examples.find(([, p]) => p.kit) ?? null;
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
   // A returning person with playgrounds sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
