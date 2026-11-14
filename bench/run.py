@@ -218,11 +218,21 @@ def run_check(task_dir, task, work):
         shutil.copytree(os.path.join(task_dir, "check"), chk, dirs_exist_ok=True)
         p = subprocess.Popen(task["check"] + [work], cwd=chk, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, errors="replace", start_new_session=True)
+        timed_out = False
         try:
             out, err = p.communicate(timeout=600)
         except subprocess.TimeoutExpired:
-            os.killpg(p.pid, signal.SIGKILL)  # also the agent's code that the check started
-            p.communicate()
+            timed_out = True
+        finally:
+            try:  # also kills the agent's code that the check started, on a timeout or a normal exit
+                os.killpg(p.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        if timed_out:
+            try:
+                p.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                pass
             return False, "check timed out", "FAIL check-timeout: the hidden check did not finish within 600 s"
         r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
         return r.returncode == 0, (r.stdout + r.stderr)[-600:], next(

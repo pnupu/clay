@@ -59,7 +59,7 @@ def load(run_dirs):
         for r in own:
             r["disputed"] = (not r["passed"]) and any(
                 r["task"] == u["task"] and r["agent"] == u["agent"] and r["model"] == u["model"]
-                and all(x in (r.get("check_fail_line") or "") for x in (u.get("fail_line_contains_all") or [u["fail_line_contains"]])) for u in disputed)
+                and all(x in (r.get("check_fail_line") or "") for x in (u["fail_line_contains_all"] if "fail_line_contains_all" in u else [u["fail_line_contains"]])) for u in disputed)
             r["pass_scored"] = not any(
                 r["task"] == u["task"] and r["repeat"] == u["repeat"] and fnmatch.fnmatch(r["agent"], u["agent"])
                 and fnmatch.fnmatch(r["model"], u["model"]) for u in unknown)
