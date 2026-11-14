@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { atWord, becauseOf, blurbOf, cardText, requestOf } from "./card.ts";
+import { atWord, blurbOf, cardText, reasonOf, requestOf } from "./card.ts";
 import { DOMAIN } from "./domain.ts";
 
 // The notes of the seven examples that are live, as their agents wrote them.
@@ -66,11 +66,10 @@ test("the request is the quoted text after the opening words, up to the quote th
 });
 
 test("what was left out reads as a clause after \"because\"", () => {
-  assert.equal(becauseOf("Its pricing page, read twice, gave neither an allowance nor a price"), "its pricing page, read twice, gave neither an allowance nor a price.");
-  assert.equal(becauseOf("because the page shows prices only through a slider."), "the page shows prices only through a slider.");
-  assert.equal(becauseOf("AWS lists it per region, not as one price"), "AWS lists it per region, not as one price.");
-  // A name at the start keeps its spelling; a one-letter starter loses its capital.
-  assert.equal(becauseOf("Stripe publishes no per-seat price"), "Stripe publishes no per-seat price.");
-  assert.equal(becauseOf("OpenAI lists it per region"), "OpenAI lists it per region.");
-  assert.equal(becauseOf("A sales call is needed to get a price"), "a sales call is needed to get a price.");
+  assert.equal(reasonOf("its pricing page, read twice, gave neither an allowance nor a price"), "Its pricing page, read twice, gave neither an allowance nor a price.");
+  assert.equal(reasonOf("because the page shows prices only through a slider."), "The page shows prices only through a slider.");
+  // A name or an ordinary opener at the start keeps its spelling.
+  assert.equal(reasonOf("AWS lists it per region, not as one price"), "AWS lists it per region, not as one price.");
+  assert.equal(reasonOf("iOS only, with no public price"), "iOS only, with no public price.");
+  assert.equal(reasonOf("Could not read its pricing page after two tries"), "Could not read its pricing page after two tries.");
 });

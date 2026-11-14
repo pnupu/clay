@@ -36,7 +36,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   const url = (id: string) => `${origin}/p/${id}`;
   /** Store what the agent left out and why (when the call says so), and return the stored list for the result. */
   const leftOut = async (id: string, given?: LeftOut[]) => {
-    if (given) await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.map((x) => ({ name: x.name.trim(), reason: x.reason.trim(), at: new Date().toISOString() })).filter((x) => x.name && x.reason); });
+    if (given) await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.map((x) => ({ name: x.name.trim(), reason: x.reason.trim(), at: new Date().toISOString() })).filter((x, i, all) => all.findIndex((y) => y.name === x.name) === i); });
     const stored = (await load()).playgrounds[id]?.leftOut ?? [];
     return stored.length ? { left_out: stored.map((x) => ({ name: x.name, reason: x.reason })) } : {};
   };

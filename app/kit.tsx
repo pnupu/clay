@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { fromFrame, limiter } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
-import { becauseOf } from "@/lib/card";
+import { reasonOf } from "@/lib/card";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
@@ -263,7 +263,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
                 {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} />)}
                 {kit.inline && <li><p className="small">Provided by your agent, not checked: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
-                {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b>, because {becauseOf(x.reason)}</p></li>)}
+                {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b>. {reasonOf(x.reason)}</p></li>)}
               </ul>
             </section>
           )}

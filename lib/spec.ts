@@ -84,7 +84,7 @@ export const specShape = {
   controls: z.array(control).max(KIT_LIMITS.controls).optional().describe("For view preview: the controls, 1 to 12, only from the kit. Choose the few dimensions that matter for this person."),
   view,
   outputs: z.array(output).max(KIT_LIMITS.outputs).optional().describe("For view preview: what goes back to you when the person settles, as code-ready text. At least 1."),
-  left_out: z.array(z.strictObject({ name: upTo(60).describe("What was left out, as the person knows it: a vendor, a model, a source."), reason: upTo(200).describe("Why, in a sentence the person can read: 'its pricing page states no price per seat'.") })).max(6).optional().describe("What you left out of the playground and why: a vendor whose page could not be priced after a repair, an option the person named that does not fit. It is stored, read_playground returns it, and the page can show it, so a later session can still say why something is missing. Give the whole list; an empty list clears it."),
+  left_out: z.array(z.strictObject({ name: text(1, 60).describe("What was left out, as the person knows it: a vendor, a model, a source."), reason: text(1, 200).describe("Why, in a sentence the person can read: 'its pricing page states no price per seat'.") })).max(6).optional().describe("What you left out of the playground and why: a vendor whose page could not be priced after a repair, an option the person named that does not fit. It is stored, read_playground returns it, and the page can show it, so a later session can still say why something is missing. Give the whole list; an empty list clears it."),
 };
 const spec = z.strictObject(specShape);
 export type Spec = z.input<typeof spec>;

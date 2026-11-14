@@ -57,12 +57,14 @@ export const ownerOf = (p: Owned): string | null => p.owner ?? null;
  * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
  * example also unfeatures it. Returns what the playground is now, or the refusal.
  */
-export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: boolean; featured?: boolean }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404; error: string } {
+export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404; error: string } {
   if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
   const p = playgrounds[id];
   if (!p) return { ok: false, status: 404, error: "Playground not found." };
-  if (typeof mark.example !== "boolean" && typeof mark.featured !== "boolean") return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };
-  const example = mark.example ?? isExample(p, id);
+  // A field that is sent must be a boolean: {"example": "false"} is refused, not read as "leave it as it is".
+  const sent = [mark.example, mark.featured].filter((v) => v !== undefined);
+  if (!sent.length || sent.some((v) => typeof v !== "boolean")) return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };
+  const example = typeof mark.example === "boolean" ? mark.example : isExample(p, id);
   if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured. Send {"example": true, "featured": true}.' };
   if (typeof mark.example === "boolean") p.example = mark.example;
   if (mark.featured === true) {

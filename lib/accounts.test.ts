@@ -172,4 +172,6 @@ test("examples: only the admin marks and features; one example is featured at a 
   assert.equal(s.card.featured, true);
   assert.equal((markExample(s, "nope", { example: true }, admin) as { status: number }).status, 404);
   assert.equal((markExample(s, "card", {}, admin) as { status: number }).status, 400);
+  // A field of the wrong type is refused, also beside a valid one.
+  assert.equal((markExample(s, "card", { example: "false", featured: false }, admin) as { status: number }).status, 400);
 });

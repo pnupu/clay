@@ -11,10 +11,8 @@ export async function POST(req: Request, { params }: Ctx) {
   const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
-  const body = (await req.json().catch(() => null)) as { example?: unknown; featured?: unknown } | null;
-  // A field that is sent must be a boolean: {"example": "false"} is refused, not read as "leave it as it is".
-  if (!body || [body.example, body.featured].some((v) => v !== undefined && typeof v !== "boolean")) return Response.json({ error: 'Send {"example": true|false}, {"featured": true|false}, or both.' }, { status: 400 });
-  const mark = { ...(typeof body?.example === "boolean" ? { example: body.example } : {}), ...(typeof body?.featured === "boolean" ? { featured: body.featured } : {}) };
+  const body: unknown = await req.json().catch(() => null);
+  const mark: { example?: unknown; featured?: unknown } = body && typeof body === "object" ? body : {};
   const actor = currentActor();
   const r = await update((s) => markExample(s.playgrounds, pg, mark, actor));
   return r.ok ? Response.json({ id: pg, example: r.example, featured: r.featured }) : Response.json({ error: r.error }, { status: r.status });

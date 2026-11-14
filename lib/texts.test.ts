@@ -34,5 +34,9 @@ test("left_out: what was left out and why is part of a spec, bounded like the re
   assert.equal(parseSpec(price).ok && "leftOut" in parseSpec(price), false);
   const long = parseSpec({ ...price, left_out: [{ name: "SendGrid", reason: "x".repeat(201) }] });
   assert.deepEqual(!long.ok && long.errors, ["left_out.0.reason: at most 200 characters, this one has 201"]);
+  // An entry without a name or a reason is refused with a readable error, not stored empty.
+  const empty = parseSpec({ ...price, left_out: [{ name: "SendGrid", reason: "  " }] });
+  assert.equal(empty.ok, false);
+  assert.match(!empty.ok ? empty.errors.join(" ") : "", /left_out\.0\.reason: at least 1 characters/);
   assert.deepEqual(oversize({ left_out: Array(50).fill({}) }), ["left_out: at most 6 entries, got 50. Nothing was checked or created."]);
 });
