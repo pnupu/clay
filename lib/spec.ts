@@ -77,6 +77,8 @@ export type ParsedSpec = { ok: true; kind: "price"; domain: Domain } | { ok: tru
 export const MAX_SPEC_BYTES = 200_000;
 /** At most this many problems are returned; the rest is counted. A caller cannot make the answer larger than the request. */
 export const MAX_ERRORS = 20;
+/** The most JSON-RPC messages in one request to the MCP endpoint. An agent sends one. */
+export const MAX_BATCH = 10;
 export const capErrors = (errors: string[]): string[] => (errors.length > MAX_ERRORS ? [...errors.slice(0, MAX_ERRORS), `and ${errors.length - MAX_ERRORS} more problems. Fix these first.`] : errors);
 
 /**
@@ -120,7 +122,9 @@ export function oversize(input: unknown): string[] {
  * controls would cost fifty thousand error messages. Here they cost one sentence.
  */
 export function refuseOversize(message: unknown): { id: unknown; text: string } | null {
-  for (const m of Array.isArray(message) ? message.slice(0, 20) : [message]) {
+  // A batch is inspected whole, and it is bounded: a tool call must not hide behind other messages.
+  if (Array.isArray(message) && message.length > MAX_BATCH) return { id: null, text: `A batch may hold at most ${MAX_BATCH} messages, this one has ${message.length}. Nothing was read.` };
+  for (const m of Array.isArray(message) ? message : [message]) {
     const call = m && typeof m === "object" ? (m as { id?: unknown; method?: unknown; params?: { arguments?: unknown } }) : {};
     const errors = call.method === "tools/call" ? oversize(call.params?.arguments) : [];
     if (errors.length) return { id: call.id ?? null, text: `The spec is too large. Nothing was checked or created. Fix these and call the tool again:\n- ${errors.join("\n- ")}` };

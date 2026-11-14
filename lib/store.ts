@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, playgroundCapMessage, type Account } from "./accounts.ts";
+import { canWrite, currentActor, currentUserId, isExample, playgroundCapMessage, type Account } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -229,8 +229,13 @@ export function freeId(wanted: string, taken: (id: string) => boolean, random = 
  * stored together, so parallel creates by one person cannot pass the cap side by side. Nothing slow (a web read) happens
  * before it: a refused create has spent nothing.
  */
-export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string } | { refused: string }> {
+export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean } | { refused: string }> {
   return update((s) => {
+    // A repeated create (the answer of the first one was lost): the caller's own playground with this id and exactly this
+    // spec is the one they mean. Nothing is inserted or read again. Only the caller's own: for anyone else the id is just taken.
+    const mine = s.playgrounds[domain.id];
+    const same = (a: Playground, b: Playground) => JSON.stringify([a.domain, a.kit?.kit ?? null]) === JSON.stringify([b.domain, b.kit?.kit ?? null]);
+    if (mine && !isExample(mine) && canWrite(currentActor(), mine) && same(mine, make(domain))) return { id: domain.id, existed: true };
     const refused = playgroundCapMessage(s.playgrounds);
     if (refused) return { refused };
     const id = freeId(domain.id, (x) => !!s.playgrounds[x]);

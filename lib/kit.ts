@@ -7,6 +7,11 @@ export const KIT_LIMITS = { controls: 12, outputs: 6, options: 12, palette: 16, 
 /** The brandError of a preview playground whose brand read has not ended yet. It is a state, not an error: the read stores its result when it ends. */
 export const BRAND_PENDING = "The brand is still being read.";
 
+/** A function instance lives at most 300 s. A brand read that is older and still marked as pending was cut off. */
+const BRAND_STALE_MS = 330_000;
+/** Is the brand of this preview still being read? A mark that is too old to belong to a living read counts as a failed read. */
+export const brandPending = (k: { brandError: string | null; brandSince?: string | null }, now = Date.now()): boolean => k.brandError === BRAND_PENDING && now - Date.parse(k.brandSince ?? "") < BRAND_STALE_MS;
+
 export type Value = number | string | boolean;
 type Base = { id: string; label: string; meaning: string };
 export type Control =
@@ -31,6 +36,8 @@ export type KitState = {
   rev?: string;
   brandData: BrandData | null;
   brandError: string | null;
+  /** When the brand read that is pending (brandError BRAND_PENDING) was started. */
+  brandSince?: string | null;
   /** The preview code cannot be run on the server. The page reports what happened when it was opened. */
   preview: { status: "unverified" | "ok" | "failed"; error: string | null; at: string | null };
   settled: Settled | null;
@@ -231,9 +238,16 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   const shown = (template: string) => names(template).flatMap((n) => [n, ...controls.filter((c) => c.id === n).flatMap(nestedNames)]);
 
   // ---- Every control must do something, and should come back in an output.
-  const templates = [html, css, ...outputs.map((o) => String(o.template ?? ""))];
+  // The preview fills {{id}} one level only (lib/frame.ts): a toggle or option text that is used in view.html or view.css
+  // must not hold placeholders, or the preview shows the literal "{{accent}}" while the output looks right.
+  for (const [where, text] of [["view.html", html], ["view.css", css]] as const)
+    for (const n of names(text)) {
+      const inner = controls.filter((c) => c.id === n).flatMap(nestedNames);
+      if (inner.length) errors.push(`${where}: {{${n}}} stands for a text that holds {{${inner[0]}}}. That is filled in outputs only, not in the preview. Use {{${inner[0]}}} directly in ${where}, or build that part in view.js from clay.values.`);
+    }
   for (const c of controls) {
-    const bound = templates.some((t) => shown(t).includes(c.id));
+    // Bound: named in the preview's html or css, or returned by an output (also inside a toggle or option text there).
+    const bound = [html, css].some((t) => names(t).includes(c.id)) || outputs.some((o) => shown(String(o.template ?? "")).includes(c.id));
     if (!bound && !word(c.id).test(js)) errors.push(`controls.${c.id}: nothing uses this control. Bind it with {{${c.id}}} in view.html, view.css or an output, or read clay.values.${c.id} in view.js; or remove the control.`);
     else if (!outputs.some((o) => shown(String(o.template ?? "")).includes(c.id))) warnings.push(`controls.${c.id} is in no output. You will get its settled value, but no code-ready text for it.`);
   }

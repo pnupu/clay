@@ -2,7 +2,7 @@
 // Text that came from web pages (plan names, quotes) is cut short and labelled, because the reader is another model.
 import { standing } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
-import { BRAND_PENDING, explorationWords, renderOutputs, valuesNow, type KitState } from "./kit.ts";
+import { BRAND_PENDING, brandPending, explorationWords, renderOutputs, valuesNow, type KitState } from "./kit.ts";
 import { rank, type Assumptions } from "./pricing.ts";
 import { workStatus, type ChangeEvent, type Playground } from "./store.ts";
 
@@ -80,11 +80,14 @@ export function collectionReport(p: Playground) {
   // A page on which fewer than two vendors can be ranked compares nothing. That is a broken build, also when each single
   // gap is "a fact about the page": the agent must change the space (a metric that these pages do not bill by, a starting
   // value above every self-serve plan), not hand it over.
-  if (!pending.size && read.length && ranking.ranked_cheapest_first.length < 2) {
-    const gaps = p.domain.metrics.map((m) => ({ id: m.id, vendors: ranking.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => x.startsWith(`${m.id}:`))).length })).filter((g) => g.vendors > 0).sort((a, b) => b.vendors - a.vendors);
-    const custom = ranking.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => /custom pricing|base price not stated/.test(x))).length;
+  // It is judged at the STARTING values (the build as the agent designed it), not where the person left the controls: a
+  // person who ticks a must-have that one vendor has must not make a healthy playground look broken at hand-back.
+  const start = rankingReport(p, { usage: Object.fromEntries(p.domain.metrics.map((m) => [m.id, m.initial])), required: [] });
+  if (!pending.size && read.length && start.ranked_cheapest_first.length < 2) {
+    const gaps = p.domain.metrics.map((m) => ({ id: m.id, vendors: start.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => x.startsWith(`${m.id}:`))).length })).filter((g) => g.vendors > 0).sort((a, b) => b.vendors - a.vendors);
+    const custom = start.cannot_be_ranked.filter((u) => "unknown" in u && u.unknown!.some((x) => /custom pricing|base price not stated/.test(x))).length;
     problems.unshift(
-      `BROKEN BUILD: only ${ranking.ranked_cheapest_first.length} of ${p.domain.vendors.length} vendors can be ranked at the starting values, so the person would open a page that compares nothing. Do not hand it over like this. Fix it with revise_playground (data.price_pages), then read the result again:` +
+      `BROKEN BUILD: only ${start.ranked_cheapest_first.length} of ${p.domain.vendors.length} vendors can be ranked at the starting values, so the person would open a page that compares nothing. Do not hand it over like this. Fix it with revise_playground (data.price_pages), then read the result again:` +
         (gaps.length ? ` ${gaps.map((g) => `metric ${g.id} has no price on the pages of ${g.vendors} vendor(s)`).join("; ")}. First rewrite its describe in the words those pages use, with synonyms, and say in notes how these vendors bill it (for example "a price per member per month is the price of one seat", or "a plan that does not charge for bandwidth has no bandwidth entry"). If the pages still state no price for it after that, remove the metric; when the person gave a number for it, tell them plainly that these pricing pages do not state it and that the page leaves it out.` : "") +
         (custom ? ` ${custom} vendor(s) have only a custom or unstated base price at these values: lower the starting value into the range of their self-serve plans, or replace the vendor.` : "") +
         ` If a vendor still cannot be priced after one repair, remove it and tell the person. A page that ranks at least two vendors is the goal.`,
@@ -202,7 +205,7 @@ export function previewStatus(k: KitState) {
 
 export function dataReport(k: KitState) {
   return [
-    ...(k.kit.brand ? [{ source: "brand", domain: k.kit.brand.domain, read_by: "Context.dev", read_at: k.brandData?.fetchedAt ?? null, ...(k.brandData ? { untrusted_web_title: cut(k.brandData.title, 60), colors: k.brandData.colors.map((c) => `${c.hex} ${cut(c.name, 30)}`.trim()), logos: k.brandData.logos.length } : k.brandError === BRAND_PENDING ? { status: "still being read", next: "The web reader was busy. Call read_playground again: it waits up to 20 seconds for the brand. Keep calling it until the colours or an error are here (usually well under a minute); do not give the person the url before that, because a palette 'brand' shows only the control's initial colour until the brand arrives." } : { error: cut(k.brandError ?? "not read", 200), effect: "clay.data.brand has no colours and no logos; a palette 'brand' shows only the control's initial colour." }) }] : []),
+    ...(k.kit.brand ? [{ source: "brand", domain: k.kit.brand.domain, read_by: "Context.dev", read_at: k.brandData?.fetchedAt ?? null, ...(k.brandData ? { untrusted_web_title: cut(k.brandData.title, 60), colors: k.brandData.colors.map((c) => `${c.hex} ${cut(c.name, 30)}`.trim()), logos: k.brandData.logos.length } : brandPending(k) ? { status: "still being read", next: "The web reader was busy. Call read_playground again: it waits up to 20 seconds for the brand. Keep calling it until the colours or an error are here (usually well under a minute); do not give the person the url before that, because a palette 'brand' shows only the control's initial colour until the brand arrives." } : { error: k.brandError === BRAND_PENDING ? "The brand read was cut off before it ended." : cut(k.brandError ?? "not read", 200), effect: "clay.data.brand has no colours and no logos; a palette 'brand' shows only the control's initial colour." }) }] : []),
     ...(k.kit.inline ? [{ source: "inline", keys: Object.keys(k.kit.inline), shown_as: "provided by your agent, not checked" }] : []),
   ];
 }

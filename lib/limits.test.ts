@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { bindActor } from "./accounts.ts";
-import { MAX_ERRORS, oversize, parseSpec, refuseOversize } from "./spec.ts";
+import { MAX_BATCH, MAX_ERRORS, oversize, parseSpec, refuseOversize } from "./spec.ts";
 import { freeId, insertPlayground, load, newPlayground } from "./store.ts";
 
 // The store is a file under the working directory: these tests write to a fresh one.
@@ -50,8 +50,11 @@ test("the MCP route refuses an oversized tool call before the SDK validates it",
   assert.equal(refuseOversize(call(preview("fine"))), null);
   assert.equal(refuseOversize({ jsonrpc: "2.0", id: 1, method: "tools/list" }), null);
   assert.equal(refuseOversize(null), null);
-  // A batch: the oversized call in it is found.
+  // A batch: the oversized call in it is found wherever it stands, and a batch itself is bounded.
   assert.equal(refuseOversize([{ jsonrpc: "2.0", id: 1, method: "tools/list" }, call({ outputs: Array(50).fill({}) })])?.id, 7);
+  const pings = (n: number) => Array.from({ length: n }, (_, i) => ({ jsonrpc: "2.0", id: 100 + i, method: "ping" }));
+  assert.equal(refuseOversize([...pings(MAX_BATCH - 1), call({ controls: Array(10_000).fill({}) })])?.id, 7);
+  assert.match(refuseOversize([...pings(MAX_BATCH), call({ controls: Array(10_000).fill({}) })])!.text, /at most 10 messages, this one has 11/);
 });
 
 test("a taken id gets a suffix, inside the length limit of an id", () => {
@@ -89,4 +92,23 @@ test("parallel creates by one person cannot pass the playground cap, and a taken
   const stored = Object.values((await load()).playgrounds);
   assert.equal(stored.filter((p) => p.owner === "u1").length, 20);
   assert.equal(stored.filter((p) => p.owner === "other").length, 1);
+});
+
+test("a repeated create of the caller's own playground with the same spec is the same playground; anything else gets a new id", async () => {
+  const a = parseSpec(preview("idem"));
+  const b = parseSpec(preview("idem", { title: "Another question about the button?" }));
+  assert.ok(a.ok && b.ok);
+  if (!a.ok || !b.ok) return;
+  bindActor().actor = { kind: "user", userId: "u7", via: "key" };
+  assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: "idem" });
+  // The answer was lost and the agent calls again: no second playground, nothing to read again.
+  assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: "idem", existed: true });
+  // Another spec under the same id is another playground.
+  const other = await insertPlayground(b.domain, (d) => newPlayground(d));
+  assert.ok("id" in other && /^idem-[0-9a-f]{6}$/.test(other.id) && !other.existed);
+  // Somebody else with the same spec learns nothing: they get their own, under another id.
+  bindActor().actor = { kind: "user", userId: "u8", via: "key" };
+  const theirs = await insertPlayground(a.domain, (d) => newPlayground(d));
+  assert.ok("id" in theirs && /^idem-[0-9a-f]{6}$/.test(theirs.id) && !theirs.existed);
+  assert.equal(Object.values((await load()).playgrounds).filter((p) => p.owner === "u7").length, 2);
 });

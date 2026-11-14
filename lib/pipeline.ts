@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, normalise, type Domain, type PricingModel, type RawModel } from "./domain";
 import { brand, ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
-import { BRAND_PENDING, runSignature, type Kit, type KitState } from "./kit";
+import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { insertPlayground, load, newPlayground, publicBase, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -125,6 +125,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
   const p = await playground(pg);
   const v = p.domain.vendors.find((x) => x.id === id);
   if (!v) throw new NotFound(`Playground "${pg}" has no vendor "${id}".`);
+  const asked = readSig(p.domain, id);
   const prev = p.sources[id];
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
   src.name = v.name;
@@ -142,12 +143,23 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
     src.lastCheckedAt = new Date().toISOString();
     await update((s) => {
       const now = s.playgrounds[pg];
-      // The playground may have been revised while the page was read: only store a vendor that is still part of it.
-      if (now?.domain.vendors.some((x) => x.id === id)) now.sources[id] = { ...src, monitor: now.sources[id]?.monitor ?? src.monitor };
+      // The playground may have been revised while the page was read (a build answers the agent before it ends, so a
+      // revision can overlap it). A read that was made for other metrics, features or another page is dropped: the
+      // revision reads the vendor itself, and its pending mark is its own.
+      if (!now || readSig(now.domain, id) !== asked) return;
+      now.sources[id] = { ...src, monitor: now.sources[id]?.monitor ?? src.monitor };
       arrived(now, id);
     });
   }
 }
+
+/** What an extraction depends on: the product, the guidance and the metrics and features it looks for. */
+const extractionSig = (d: Domain) => JSON.stringify([d.product, d.notes ?? "", d.metrics.map((m) => [m.id, m.describe]), d.features.map((f) => [f.id, f.describe])]);
+/** What one vendor's read depends on: the extraction and that vendor's page. Null when the vendor is gone. */
+const readSig = (d: Domain, id: string): string | null => {
+  const v = d.vendors.find((x) => x.id === id);
+  return v ? `${extractionSig(d)}|${v.url ?? ""}|${v.domain}` : null;
+};
 
 /** One source of tracked work has arrived (read, or failed): it is no longer pending. */
 const arrived = (p: Playground | undefined, id: string) => {
@@ -184,7 +196,7 @@ export async function settled(pg: string, ms: number, every = 1500): Promise<Pla
   const until = Date.now() + ms;
   for (;;) {
     const p = (await load()).playgrounds[pg];
-    const reading = p && (workStatus(p)?.status === "running" || p.kit?.brandError === BRAND_PENDING);
+    const reading = p && (workStatus(p)?.status === "running" || (p.kit && brandPending(p.kit)));
     if (!p || !reading || Date.now() + every > until) return p;
     await new Promise((r) => setTimeout(r, every));
   }
@@ -205,16 +217,16 @@ export async function collectAll(pg: string, origin: string, ids?: string[]): Pr
  * resolves to the stop error or null. A caller with a short deadline (the MCP tools) answers before it ends and must
  * keep the function alive for it (after() in the route); a caller without one awaits it.
  */
-export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> } | { refused: string }> {
+export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> | null; existed?: boolean } | { refused: string }> {
   const r = await insertPlayground(domain, (d) => newPlayground(d));
-  return "refused" in r ? r : { id: r.id, work: collectAll(r.id, origin) };
+  // `existed`: the caller already has exactly this playground (a repeated call after a lost answer): nothing is read again.
+  return "refused" in r ? r : { id: r.id, work: r.existed ? null : collectAll(r.id, origin), existed: r.existed };
 }
 
 // ---- Preview playgrounds (lib/kit.ts). The only web read is the brand of data.brand, once, at creation or when its domain changes.
 
-async function readBrand(kit: Kit, was?: KitState): Promise<Pick<KitState, "brandData" | "brandError">> {
+async function readBrand(kit: Kit): Promise<Pick<KitState, "brandData" | "brandError">> {
   if (!kit.brand) return { brandData: null, brandError: null };
-  if (was?.brandData?.domain === kit.brand.domain) return { brandData: was.brandData, brandError: null };
   try {
     return { brandData: await brand(kit.brand.domain), brandError: null };
   } catch (e) {
@@ -223,50 +235,64 @@ async function readBrand(kit: Kit, was?: KitState): Promise<Pick<KitState, "bran
 }
 
 /**
- * Create a preview playground from a validated kit. The preview stays "unverified" until the page has run it once.
- * The playground is stored (and the owner's allowance reserved) before the brand is read; `brand` is that read, and it
- * stores its result when it ends. A playground without data.brand is complete at once.
+ * Read the brand of a stored preview playground and store the result. The playground was stored with the brand marked
+ * as pending since `since`; the result fills in only a kit that still waits for exactly this read (a later revision that
+ * asked for another brand, or started its own read, keeps its own). Never rejects: a read that cannot store its result
+ * leaves the mark, which counts as failed once it is older than a function can live (brandPending()).
  */
-export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null } | { refused: string }> {
-  const pending = kit.brand ? BRAND_PENDING : null;
-  const r = await insertPlayground(domain, (d) => ({ ...newPlayground(d), kit: { kit, rev: randomUUID(), brandData: null, brandError: pending, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } }));
-  if ("refused" in r) return r;
-  const brandRead = !kit.brand
-    ? null
-    : readBrand(kit).then((read) =>
-        update((s) => {
-          const k = s.playgrounds[r.id]?.kit;
-          // A revision that came in meanwhile has read its own brand: only fill in a kit that still waits for this one.
-          if (k && k.brandError === pending && k.kit.brand?.domain === kit.brand!.domain) Object.assign(k, read);
-        }),
-      );
-  return { id: r.id, brand: brandRead };
+function readBrandLater(id: string, kit: Kit, since: string): Promise<void> {
+  return readBrand(kit)
+    .then((read) =>
+      update((s) => {
+        const k = s.playgrounds[id]?.kit;
+        if (k && k.brandError === BRAND_PENDING && k.brandSince === since && k.kit.brand?.domain === kit.brand?.domain) Object.assign(k, read, { brandSince: null });
+      }),
+    )
+    .then(() => {}, () => {});
 }
 
 /**
- * Replace the kit of a preview playground. The settled result is cleared (it belongs to the old kit), the preview is
- * unverified again, and the exploration is kept for the controls whose definition did not change.
+ * Create a preview playground from a validated kit. The preview stays "unverified" until the page has run it once.
+ * The playground is stored (and the owner's allowance reserved) before the brand is read; `brand` is that read, and it
+ * stores its result when it ends. A playground without data.brand is complete at once. `existed`: the caller already has
+ * exactly this playground (a repeated call): nothing was created or read.
  */
-export async function revisePreview(domain: Domain, kit: Kit): Promise<{ previewKept: boolean; settledCleared: boolean }> {
-  const was = (await playground(domain.id)).kit;
-  const read = await readBrand(kit, was);
-  return update((s) => {
+export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null; existed?: boolean } | { refused: string }> {
+  const since = new Date().toISOString();
+  const r = await insertPlayground(domain, (d) => ({ ...newPlayground(d), kit: { kit, rev: randomUUID(), brandData: null, brandError: kit.brand ? BRAND_PENDING : null, brandSince: kit.brand ? since : null, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } }));
+  if ("refused" in r) return r;
+  return { id: r.id, brand: kit.brand && !r.existed ? readBrandLater(r.id, kit, since) : null, existed: r.existed };
+}
+
+/**
+ * Replace the kit of a preview playground. When the preview code, the data or a control's values change, the preview is
+ * unverified again, the settled result is cleared, and the exploration is kept for the controls whose definition did not
+ * change. A new brand is read after the kit is stored: `brand` is that read (the tool answers within its deadline).
+ */
+export async function revisePreview(domain: Domain, kit: Kit): Promise<{ previewKept: boolean; outputsKept: boolean; settledCleared: boolean; brand: Promise<void> | null }> {
+  const since = new Date().toISOString();
+  const r = await update((s) => {
     const p = s.playgrounds[domain.id];
     if (!p?.kit) throw new NotFound(`Playground "${domain.id}" does not exist.`);
     const same = (id: string) => JSON.stringify(p.kit!.kit.controls.find((c) => c.id === id)) === JSON.stringify(kit.controls.find((c) => c.id === id));
     const kept = Object.fromEntries(Object.entries(p.kit.exploration?.controls ?? {}).filter(([id]) => same(id)));
+    // The brand that is stored is reused; another brand (or one that never arrived) is read again, after this update.
+    const reread = !!kit.brand && p.kit.brandData?.domain !== kit.brand.domain;
+    const read = !kit.brand ? { brandData: null, brandError: null, brandSince: null } : reread ? { brandData: null, brandError: BRAND_PENDING, brandSince: since } : { brandData: p.kit.brandData, brandError: null, brandSince: null };
     // A revision of words only (title, notes, labels, meanings) runs the same code with the same values: the preview that
-    // was verified stays verified, and the page that is open keeps working. So does a settled result while the outputs
-    // render the same text.
-    const previewKept = runSignature(p.kit.kit) === runSignature(kit) && p.kit.brandData?.domain === read.brandData?.domain;
-    const settledKept = previewKept && JSON.stringify(p.kit.kit.outputs.map((o) => [o.id, o.template])) === JSON.stringify(kit.outputs.map((o) => [o.id, o.template]));
-    const settledCleared = !!p.kit.settled && !settledKept;
+    // was verified stays verified. While the outputs also render the same text, the page that is open keeps working (same
+    // rev) and the settled result stands. Changed outputs get a new rev: an open page shows the old output text, so its
+    // settle must be refused until it is reloaded.
+    const previewKept = runSignature(p.kit.kit) === runSignature(kit) && !reread;
+    const outputsKept = previewKept && JSON.stringify(p.kit.kit.outputs.map((o) => [o.id, o.template])) === JSON.stringify(kit.outputs.map((o) => [o.id, o.template]));
+    const settledCleared = !!p.kit.settled && !outputsKept;
     p.domain = domain;
     p.kit = previewKept
-      ? { ...p.kit, kit, ...read, settled: settledKept ? p.kit.settled : null }
+      ? { ...p.kit, kit, ...read, rev: outputsKept ? p.kit.rev : randomUUID(), settled: outputsKept ? p.kit.settled : null }
       : { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
-    return { previewKept, settledCleared };
+    return { previewKept, outputsKept, settledCleared, reread };
   });
+  return { previewKept: r.previewKept, outputsKept: r.outputsKept, settledCleared: r.settledCleared, brand: r.reread ? readBrandLater(domain.id, kit, since) : null };
 }
 
 /**
@@ -275,7 +301,7 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ preview
  * The saved decision is kept only while its vendor and every control it names still exist.
  */
 export async function revisePlayground(domain: Domain, origin: string): Promise<{ recollected: string[]; decisionCleared: boolean; work: Promise<string | null> | null }> {
-  const sig = (d: Domain) => JSON.stringify([d.product, d.notes ?? "", d.metrics.map((m) => [m.id, m.describe]), d.features.map((f) => [f.id, f.describe])]);
+  const sig = extractionSig;
   const plan = await update((s) => {
     const p = s.playgrounds[domain.id];
     if (!p) throw new NotFound(`Playground "${domain.id}" does not exist.`);

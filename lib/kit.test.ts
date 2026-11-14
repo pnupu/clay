@@ -137,6 +137,12 @@ test("a toggle or option text may use another control's value in an output, one 
   assert.deepEqual(r.warnings, []);
   assert.equal(renderOutputs(r.kit, { accent: "#ff0000", badge: true, size: "text-sm" }).code, '<div><span className="bg-[#ff0000]">Most popular</span></div> text-sm');
   assert.equal(renderOutputs(r.kit, { accent: "#ff0000", badge: false, size: "text-[{{accent}}]" }).code, "<div></div> text-[#ff0000]");
+  // In the preview a placeholder is filled one level only: a text with a placeholder inside must not be used in html or css.
+  const inCss = checkKit({ ...raw, view: { html: "<p>x</p>", css: "p { color: {{accent}}; } .b::after { content: '{{size}}'; }" } });
+  assert.ok(!inCss.ok && inCss.errors.some((e: string) => /view\.css: \{\{size\}\} stands for a text that holds \{\{accent\}\}. That is filled in outputs only/.test(e)));
+  // And a control that only appears inside such a text of the preview is not bound by it.
+  const onlyNested = checkKit({ controls: [raw.controls[0], { id: "ring", type: "toggle", label: "Ring", meaning: "show a ring", initial: false, on: "2px solid {{accent}}", off: "0" }], view: { html: "<p>x</p>", css: "p { outline: {{ring}}; }" }, outputs: [{ id: "o", label: "ring on or off", template: "{{ring}}" }] });
+  assert.ok(!onlyNested.ok && onlyNested.errors.some((e: string) => /view\.css: \{\{ring\}\} stands for a text that holds \{\{accent\}\}/.test(e)));
   // A text that names a control that does not exist, or itself, is refused with the fix.
   const bad = checkKit({ ...raw, controls: [raw.controls[0], { ...raw.controls[1], on: "{{nope}} {{badge}}" }, raw.controls[2]] });
   assert.ok(!bad.ok && bad.errors.some((e: string) => /controls\.badge: its text holds \{\{nope\}\}, which is not a control/.test(e)) && bad.errors.some((e: string) => /is the control itself/.test(e)));

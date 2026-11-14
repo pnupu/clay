@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { LIMITS } from "./config";
 import { DOMAIN } from "./domain";
-import { BRAND_PENDING, initialValues, renderOutputs } from "./kit";
+import { BRAND_PENDING, brandPending, initialValues, renderOutputs } from "./kit";
 import { createPlayground, createPreview, recheckAll, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
 import { BRAND_NOTE, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
@@ -151,10 +151,10 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k),
-      problems: k.brandError && k.brandError !== BRAND_PENDING ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [],
+      problems: k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [],
       warnings,
       next:
-        k.brandError === BRAND_PENDING
+        brandPending(k)
           ? "The brand's colours are still being read (the web reader was busy), so the brand palette is still empty. Call read_playground now: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground again for the settled outputs."
           : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
       ...(k.kit.brand ? { note: BRAND_NOTE } : {}),
@@ -165,18 +165,19 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     const parsed = parseSpec(args);
     if (!parsed.ok) return fail(`The spec is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
     // The id asked for may be taken (by anyone): the playground then gets that id with a suffix, and the result says so.
+    const again = { existing: "You already have a playground with this id and exactly this spec: this is it. Nothing was created or read again. To change it, call revise_playground." };
     const renamed = (id: string) => (id === parsed.domain.id ? {} : { id_note: `The id "${parsed.domain.id}" was taken, so this playground got the id "${id}". Use "${id}" in every later call.` });
     try {
       if (parsed.kind === "preview") {
         const r = await createPreview(parsed.domain, parsed.kit);
         if ("refused" in r) return fail(r.refused);
         await within(r.brand);
-        return preview(r.id, renamed(r.id), parsed.warnings);
+        return preview(r.id, { ...renamed(r.id), ...(r.existed ? again : {}) }, parsed.warnings);
       }
       const r = await createPlayground(parsed.domain, origin);
       if ("refused" in r) return fail(r.refused);
       const w = await within(r.work);
-      return built(r.id, renamed(r.id), w.done ? w.value : null);
+      return built(r.id, { ...renamed(r.id), ...(r.existed ? again : {}) }, w.done ? w.value : null);
     } catch (e) {
       return fail(`The playground could not be built: ${message(e)}`);
     }
@@ -274,7 +275,9 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       try {
         if (parsed.kind === "preview") {
           const r = await revisePreview(parsed.domain, parsed.kit);
-          return preview(playground_id, { settled_result_cleared: r.settledCleared, ...(r.previewKept ? { preview_kept: "Only words changed: the preview code and the controls are the same, so its verified state stands." } : {}), tell_person }, parsed.warnings);
+          await within(r.brand);
+          const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the person must reload the page before they settle.";
+          return preview(playground_id, { settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person }, parsed.warnings);
         }
         const r = await revisePlayground(parsed.domain, origin);
         const w = await within(r.work);

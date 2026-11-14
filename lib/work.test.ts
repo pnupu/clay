@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { retryAfterMs } from "./contextdev.ts";
 import type { Domain } from "./domain.ts";
-import { BRAND_PENDING, checkKit } from "./kit.ts";
+import { BRAND_PENDING, brandPending, checkKit } from "./kit.ts";
 import { buildReport, collectionReport, dataReport } from "./report.ts";
 import { workStatus, type Playground, type Work } from "./store.ts";
 
@@ -58,16 +58,31 @@ test("a build on which fewer than two vendors can be ranked is reported as broke
   const running = { ...playground(work({ pending: ["b"] })), sources: { a: source("a", unstated) } } as unknown as Playground;
   assert.equal(collectionReport(running).problems.some((x) => x.startsWith("BROKEN BUILD")), false);
   assert.equal(buildReport(running).pages, "1 of 2 pricing pages read");
+  // The build is judged at the starting values. A person who then moves a slider beyond every stated price (here: above
+  // the included 100 with no price for more) must not make a healthy build look broken when the agent reads it back.
+  const capped = { included: 100, overage_allowed: true, tiers: [], quote: null };
+  const explored = { ...playground(null), sources: { a: source("a", capped), b: source("b", capped) }, exploration: { updatedAt: "", metrics: { emails: { start: 10, min: 10, max: 500, final: 500 } }, features: {}, selected: null } } as unknown as Playground;
+  const report = collectionReport(explored);
+  assert.equal(report.ranking_at_current_values.ranked_cheapest_first.length, 0);
+  assert.equal(report.problems.some((x) => x.startsWith("BROKEN BUILD")), false);
 });
 
 test("a brand that is still being read is a state the agent waits for, not a failed read", () => {
   const k = checkKit({ controls: [{ id: "bg", type: "color", label: "Background", meaning: "background colour", initial: "#2563eb", palette: "brand" }], view: { html: '<b style="background:{{bg}}">x</b>' }, outputs: [{ id: "css", label: "background", template: "{{bg}}" }], brand: { domain: "stripe.com" } });
   assert.ok(k.ok);
   if (!k.ok) return;
-  const state = (brandError: string | null) => ({ kit: k.kit, rev: "r", brandData: null, brandError, preview: { status: "unverified" as const, error: null, at: null }, settled: null, exploration: null });
+  const state = (brandError: string | null) => ({ kit: k.kit, rev: "r", brandData: null, brandError, brandSince: new Date().toISOString(), preview: { status: "unverified" as const, error: null, at: null }, settled: null, exploration: null });
   const pending = dataReport(state(BRAND_PENDING))[0] as Record<string, unknown>;
   assert.equal(pending.status, "still being read");
   assert.equal("error" in pending, false);
   const failed = dataReport(state("Context.dev POST /brand/retrieve -> 500"))[0] as Record<string, unknown>;
   assert.match(String(failed.error), /500/);
+  // The mark has an end: a read that started longer ago than a function can live was cut off, and counts as failed.
+  const now = Date.now();
+  assert.equal(brandPending({ brandError: BRAND_PENDING, brandSince: new Date(now - 30_000).toISOString() }, now), true);
+  assert.equal(brandPending({ brandError: BRAND_PENDING, brandSince: new Date(now - 400_000).toISOString() }, now), false);
+  assert.equal(brandPending({ brandError: BRAND_PENDING }, now), false);
+  assert.equal(brandPending({ brandError: null, brandSince: new Date(now).toISOString() }, now), false);
+  const cut = dataReport({ ...state(BRAND_PENDING), brandSince: new Date(now - 400_000).toISOString() })[0] as Record<string, unknown>;
+  assert.match(String(cut.error), /cut off/);
 });
