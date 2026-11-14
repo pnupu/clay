@@ -178,8 +178,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           web_changes: webChanges(now.kit!),
           data: dataReport(now.kit!, webReading(now)),
           problems: webProblems(now.kit!, webReading(now)),
-          // One statement, taken from web_changes, so the two cannot disagree.
-          tell_person: (w.value?.changes.length ?? 0) > 0 ? "The page shows the new values after a reload, with what changed since they settled." : `Nothing new to show on the page. ${webChanges(now.kit!).judge}`,
+          // One statement, taken from web_changes, so the two cannot disagree. After a stop (rate limit, cap) it is the stop.
+          tell_person: w.value?.stop ? "Not every page could be read again: say so, and do not say that nothing changed. Do not retry now." : (w.value?.changes.length ?? 0) > 0 ? `The page shows the new values after a reload, with what changed since they settled. ${webChanges(now.kit!).judge}` : `Nothing new to show on the page. ${webChanges(now.kit!).judge}`,
           note: WEB_NOTE,
         });
       }

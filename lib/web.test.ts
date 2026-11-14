@@ -129,3 +129,13 @@ test("second review round: multipliers, tiny numbers, and unique keys for rows t
   assert.deepEqual(r.quotes, { "rows.Opus": "Opus 15", "rows.Opus (2)": "Opus batch" });
   assert.deepEqual(r.quarantined, [{ path: "Opus (2) / price", value: 99 }]);
 });
+
+test("third review round: a dropped row does not shift the keys, and a size in a name is not a multiplier", () => {
+  const tiers: WebSource = { id: "tiers", url: "https://example.org/pricing", rows: { describe: "one row per tier", fields: [{ id: "price", type: "number", describe: "price" }] } };
+  // Two rows without a name: the first loses its only number to the guard and is dropped; the second is row #1 of the read.
+  const r = guard(tiers, { rows: [{ price: 99, quote: "first" }, { price: 15, quote: "second" }] }, "tier 15", { url: tiers.url!, fetchedAt: "2026-11-14T00:00:00.000Z" });
+  assert.deepEqual([r.rows, rowKeys(tiers, r.rows!), r.quotes], [[{ price: 15 }], ["#1"], { "rows.#1": "second" }]);
+  assert.equal(numberOnPage(70, "Llama 3.3 70B"), true);
+  assert.equal(numberOnPage(128, "128K context"), false); // refused on purpose: 128 next to K may be 128,000
+  assert.equal(numberOnPage(128000, "128K context"), true);
+});

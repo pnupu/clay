@@ -127,9 +127,13 @@ test("nothing changed is said only when every page was read again after the sett
   assert.match(webChanges(state({ recheckedAt: "2026-11-14T01:30:00.000Z" }, settledAt)).judge, /No re-check has read every page again/);
   assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z" }, settledAt)).judge, /no fact changed: the settled result stands/);
   // A re-read that failed is not a re-check; a change after the settle is for the agent to judge; one before it is not listed.
-  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge, /a re-read failed, see data/);
+  const broken = webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge;
+  assert.match(broken, /not known whether a fact changed since the person settled\. A page could not be read again/);
+  assert.doesNotMatch(broken, /call recheck_playground first/);
   const change = (at: string) => ({ at, source: "plan", path: "seat", field: "seat", before: 8, after: 10 });
   const after = webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", changes: [change("2026-11-14T03:00:00.000Z"), change("2026-11-14T01:30:00.000Z")] }, settledAt));
   assert.deepEqual([after.changes.length, /whether the settled result still holds/.test(after.judge)], [1, true]);
+  // A change was found earlier and a later re-read of the page fails: the failure is said next to the change.
+  assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z", changes: [change("2026-11-14T03:00:00.000Z")], error: "Context.dev POST /web/scrape -> 500" }, settledAt)).judge, /still holds.* A page could not be read again/);
   assert.match(webChanges(state({ recheckedAt: "2026-11-14T03:00:00.000Z" }, null)).judge, /no fact changed since the build/);
 });

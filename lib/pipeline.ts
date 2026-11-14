@@ -404,13 +404,16 @@ export async function collectWeb(pg: string, ids: string[]): Promise<string | nu
 export function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
   // One re-check of a playground at a time in this instance. A call that comes while one runs joins it: a repeated
   // recheck_playground (the first answered "running") must not start another pass of reads behind it.
+  // An older run may have read its pages before the person settled or the agent revised, so a later call runs after it.
   const running = webRechecks.get(pg);
-  if (running) return running;
-  const run = recheckWebOnce(pg).finally(() => webRechecks.delete(pg));
-  webRechecks.set(pg, run);
+  if (running && Date.now() - running.startedAt < 30_000) return running.run;
+  const run = (running ? running.run.then(() => recheckWebOnce(pg), () => recheckWebOnce(pg)) : recheckWebOnce(pg)).finally(() => {
+    if (webRechecks.get(pg)?.run === run) webRechecks.delete(pg);
+  });
+  webRechecks.set(pg, { run, startedAt: Date.now() });
   return run;
 }
-const webRechecks = new Map<string, Promise<{ changes: WebChange[]; stop: string | null }>>();
+const webRechecks = new Map<string, { run: Promise<{ changes: WebChange[]; stop: string | null }>; startedAt: number }>();
 
 async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
   const k = (await playground(pg)).kit;
@@ -423,8 +426,14 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
         // A source that was never read is read now; nothing can have changed.
         if (!was?.read || !was.url) {
           const r = await readWeb(src, was);
-          // A first read that worked is today's page: it counts as re-checked.
-          if (r.state.read) r.state.recheckedAt = r.state.read.fetchedAt;
+          // A first read that worked is today's page: it counts as re-checked. Its values went from unknown to known,
+          // which can overturn what the person settled: that is recorded as a change of the whole source.
+          if (r.state.read) {
+            r.state.recheckedAt = r.state.read.fetchedAt;
+            const first: WebChange = { at: r.state.read.fetchedAt, source: src.id, path: "the whole source", before: "not read (its values were unknown)", after: "read now" };
+            r.state.changes = [first, ...r.state.changes].slice(0, WEB_LIMITS.changes);
+            changes.push(first);
+          }
           await storeWeb(pg, src, r.state);
           return r.stop;
         }

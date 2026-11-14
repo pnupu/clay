@@ -166,7 +166,10 @@ export function numberOnPage(n: number, pageText: string): boolean {
       // Not a part of a longer number: no digit or decimal point before it, no digit after it, no decimal part after it.
       // A k or M form must end there: the "m" of "1MB" and the "k" of "5kg" are units of something else.
       // A plain number must not carry a multiplier: the 5 of "5k" and the 2 of "2 million" are other numbers.
-      const multiplied = !unit && (/^[kmb](?![a-z])/.test(page.slice(i + f.length, i + f.length + 2)) || /^\s?(thousand|million|billion)/.test(page.slice(i + f.length, i + f.length + 9)));
+      // lean: this also refuses a number that the page writes in thousands on purpose ("128K context" for a field asked
+      // in thousands): it arrives as unknown with a "not used" note. An unknown is the safer error than a value that is
+      // wrong by a factor of 1000. "b" is not a multiplier here: "70B" is a size in a model name.
+      const multiplied = !unit && (/^[km](?![a-z])/.test(page.slice(i + f.length, i + f.length + 2)) || /^\s?(thousand|million|billion)/.test(page.slice(i + f.length, i + f.length + 9)));
       if (!/[\d.]/.test(a) && !/\d/.test(b) && !(b === "." && /\d/.test(c)) && !(unit && /[a-z]/.test(b)) && !multiplied) return true;
     }
     return false;
@@ -243,10 +246,11 @@ export function guard(s: WebSource, raw: unknown, pageText: string, meta: { url:
     // standard and a batch row of one model do not fall on each other.
     const name = rowKey(s, texts, rows.length);
     const nth = (names.get(name) ?? 0) + 1;
-    names.set(name, nth);
     const key = nth === 1 ? name : `${name} (${nth})`;
     const row: WebRow = Object.fromEntries(s.rows!.fields.map((f) => [f.id, f.type === "number" ? value(f, r[f.id], `${key} / ${f.id}`) : texts[f.id]]));
     if (Object.values(row).every((v) => v == null)) continue;
+    // Counted only now: a row that is dropped must not shift the keys of the rows that stay (rowKeys() sees only those).
+    names.set(name, nth);
     if (typeof r.quote === "string" && r.quote.trim()) quotes[`rows.${key}`] = cut(r.quote, WEB_LIMITS.quote);
     rows.push(row);
   }
