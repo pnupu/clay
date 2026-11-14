@@ -4,7 +4,9 @@
 // - visitor: not signed in. May read and use the example labs; may not write or spend anything.
 // - user: a person signed in through Clerk (a browser session) or their agent (a personal agent key). Owns the labs
 //   their agent creates. Only the Clerk user id is stored: no email address or name.
-// - admin: the owner key (CLAY_ACCESS_KEY). May do everything, and marks labs as examples.
+// - admin: the owner key (CLAY_ACCESS_KEY), or a browser session of a Clerk account that CLAY_ADMIN_USER_IDS lists (an
+//   account admin: `userId` is set). May do everything, and marks labs as examples. The agent key of a listed account
+//   stays a person's key: a leaked agent key is never an operator key.
 // A lab with no owner (every lab created before accounts existed) belongs to the admin.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -12,8 +14,19 @@ import { isHosted } from "./access.ts";
 import { DOMAIN } from "./domain.ts";
 import type { Budget } from "./store.ts";
 
-export type Actor = { kind: "visitor" } | { kind: "admin" } | { kind: "user"; userId: string; via: "session" | "key" };
+export type Actor = { kind: "visitor" } | { kind: "admin"; /** Set only for an account admin: the Clerk user id of the session. The owner key has none. */ userId?: string } | { kind: "user"; userId: string; via: "session" | "key" };
 export const VISITOR: Actor = { kind: "visitor" };
+
+/**
+ * Is this Clerk account an admin when it is signed in in a browser? CLAY_ADMIN_USER_IDS is a comma-separated list of
+ * Clerk user ids. Entries are trimmed, empty entries are ignored, and only an exact match counts. Unset or empty: nobody.
+ */
+export function isAdminUser(userId: string | null | undefined, env: Record<string, string | undefined> = process.env): boolean {
+  if (!userId) return false;
+  return (env.CLAY_ADMIN_USER_IDS ?? "").split(",").some((entry) => entry.trim() === userId);
+}
+/** The Clerk user id of a browser session, or null: a person who is signed in, or an account admin. Not an agent key, not the owner key. */
+export const sessionUserId = (a: Actor | null): string | null => (a?.kind === "user" ? (a.via === "session" ? a.userId : null) : a?.kind === "admin" ? (a.userId ?? null) : null);
 
 /** What Sorvi stores per person: the hash of their agent key and their request count of the day. Keyed by Clerk user id. */
 export type Account = {
@@ -40,7 +53,10 @@ export function bindActor(): { actor: Actor } {
 }
 /** The caller of the current request, or null outside a request (scripts, a webhook re-check). */
 export const currentActor = (): Actor | null => als.getStore()?.actor ?? null;
-/** The Clerk user id of the current caller, or null for an admin, a visitor or no request. */
+/**
+ * The Clerk user id of the current caller as a person, or null for an admin, a visitor or no request. Also null for an
+ * account admin: what they create in the browser is the operator's (no owner), and no limit per person counts for them.
+ */
 export const currentUserId = (): string | null => {
   const a = currentActor();
   return a?.kind === "user" ? a.userId : null;
@@ -309,10 +325,11 @@ export function userOfKey(key: string, accounts: Record<string, Account>): strin
 }
 /**
  * Is this viewer past connecting an agent? A person with an agent key, and the operator, whose agent uses the owner key.
+ * An account admin is asked as a person is: /connect gives them a personal agent key, and they may not hold the owner key.
  * The pages then stop asking them to connect one (the headers, the landing page, the example notes, the example refusal).
  * A key only shows that one was created, and nothing is stored for the operator: no text may say that an agent is connected.
  */
-export const agentConnected = (a: Actor | null, accounts: Record<string, Account>): boolean => a?.kind === "admin" || (a?.kind === "user" && !!accounts[a.userId]?.keyHash);
+export const agentConnected = (a: Actor | null, accounts: Record<string, Account>): boolean => (a?.kind === "admin" && !a.userId) || ((a?.kind === "user" || a?.kind === "admin") && !!a.userId && !!accounts[a.userId]?.keyHash);
 
 /**
  * Failed key guesses per client address, per process. After `max` failures in `windowMs` the address is refused until the

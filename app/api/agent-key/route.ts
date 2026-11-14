@@ -1,15 +1,17 @@
 import { clerkVerdict, refused } from "@/app/api/respond";
-import { currentActor, hashKey, newAgentKey, TEST_ACCOUNT_MESSAGE } from "@/lib/accounts";
+import { currentActor, hashKey, newAgentKey, sessionUserId, TEST_ACCOUNT_MESSAGE } from "@/lib/accounts";
 import { update } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-/** Only a person signed in through Clerk in a browser manages their agent key; an agent key cannot replace itself. */
+/**
+ * Only a person signed in through Clerk in a browser manages their agent key; an agent key cannot replace itself. An
+ * account admin is such a person too: their key acts as a person, not as the operator. The owner key has no agent key.
+ */
 async function signedIn(req: Request): Promise<string | Response> {
   const no = await refused(req);
   if (no) return no;
-  const a = currentActor();
-  return a?.kind === "user" && a.via === "session" ? a.userId : Response.json({ error: "Sign in to manage your agent key." }, { status: 401 });
+  return sessionUserId(currentActor()) ?? Response.json({ error: "Sign in to manage your agent key." }, { status: 401 });
 }
 
 /** Create a new agent key, which replaces the old one. The key is in this answer only; Sorvi stores its SHA-256 hash. */

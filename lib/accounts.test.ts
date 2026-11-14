@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentConnected, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, looksLikeAgentKey, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { agentConnected, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isAdminUser, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, looksLikeAgentKey, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, sessionUserId, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
 import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
 import { markLook, viewVersion } from "./report.ts";
@@ -8,6 +8,8 @@ import { markLook, viewVersion } from "./report.ts";
 const look = (p: unknown) => markLook(p as never);
 
 const admin: Actor = { kind: "admin" };
+/** An account admin: a listed Clerk account, signed in in a browser (CLAY_ADMIN_USER_IDS). */
+const adminOlga: Actor = { kind: "admin", userId: "user_olga" };
 const ann: Actor = { kind: "user", userId: "user_ann", via: "session" };
 const bob: Actor = { kind: "user", userId: "user_bob", via: "key" };
 const seed = { domain: { id: DOMAIN.id } };
@@ -31,6 +33,10 @@ test("access: visitor, owner, another person and admin, on examples and private 
     ["admin/private", admin, annPrivate, true, true],
     ["admin/seed", admin, seed, true, true],
     ["admin/legacy", admin, legacy, true, true],
+    ["account admin/another person's private", adminOlga, annPrivate, true, true],
+    ["account admin/own private", adminOlga, { domain: { id: "olga-one" }, owner: "user_olga" }, true, true],
+    ["account admin/seed", adminOlga, seed, true, true],
+    ["account admin/legacy", adminOlga, legacy, true, true],
     ["no request/private", null as unknown as Actor, annPrivate, false, false],
   ];
   for (const [name, a, p, r, w] of rows) assert.deepEqual([canRead(a, p), canWrite(a, p)], [r, w], name);
@@ -479,6 +485,58 @@ test("connected: a person with an agent key and the operator are not asked to co
   assert.equal(agentConnected(bob, accounts), false, "a person whose key was revoked, or who never made one");
   assert.equal(agentConnected({ kind: "user", userId: "user_new", via: "session" }, accounts), false, "a person with no record");
   assert.equal(agentConnected(admin, {}), true, "the operator: the owner key, no record needed");
+  assert.equal(agentConnected(adminOlga, accounts), false, "an account admin without a personal key is asked, as a person is");
+  assert.equal(agentConnected(adminOlga, { ...accounts, user_olga: key }), true, "an account admin with a personal key");
   assert.equal(agentConnected(VISITOR, accounts), false, "a visitor");
   assert.equal(agentConnected(null, accounts), false, "no caller");
+});
+
+test("admin accounts: CLAY_ADMIN_USER_IDS lists Clerk user ids; trimmed, empty entries ignored, exact match only", () => {
+  const env = (list?: string) => (list === undefined ? {} : { CLAY_ADMIN_USER_IDS: list });
+  assert.equal(isAdminUser("user_olga", env()), false, "unset: nobody");
+  assert.equal(isAdminUser("user_olga", env("")), false, "empty: nobody");
+  assert.equal(isAdminUser("user_olga", env(" , ,, ")), false, "only empty entries: nobody");
+  assert.equal(isAdminUser("user_olga", env("user_olga")), true, "one id");
+  assert.equal(isAdminUser("user_pia", env("user_olga,user_pia")), true, "the second of two");
+  assert.equal(isAdminUser("user_olga", env("  user_olga ,\tuser_pia\n")), true, "whitespace around an entry");
+  assert.equal(isAdminUser("user_pia", env("  user_olga ,\tuser_pia\n")), true, "whitespace around the last entry");
+  assert.equal(isAdminUser("user_ol", env("user_olga")), false, "a prefix of a listed id");
+  assert.equal(isAdminUser("user_olga2", env("user_olga")), false, "a listed id is a prefix of it");
+  assert.equal(isAdminUser("USER_OLGA", env("user_olga")), false, "another case");
+  assert.equal(isAdminUser("user_olga,user_pia", env("user_olga,user_pia")), false, "the whole list is not an id");
+  for (const none of ["", " ", null, undefined]) assert.equal(isAdminUser(none, env("user_olga, ,")), false, `no id (${JSON.stringify(none)}) never matches, also not an empty entry`);
+  // The default is the process environment.
+  const before = process.env.CLAY_ADMIN_USER_IDS;
+  try {
+    delete process.env.CLAY_ADMIN_USER_IDS;
+    assert.equal(isAdminUser("user_olga"), false);
+    process.env.CLAY_ADMIN_USER_IDS = "user_olga";
+    assert.equal(isAdminUser("user_olga"), true);
+  } finally {
+    if (before === undefined) delete process.env.CLAY_ADMIN_USER_IDS;
+    else process.env.CLAY_ADMIN_USER_IDS = before;
+  }
+});
+
+test("admin accounts: an account admin is a browser session for the Clerk check and the agent key, and no person for owners and limits", () => {
+  // Who meets the Clerk eligibility check before a write, and who manages a personal agent key: every browser session.
+  assert.equal(sessionUserId(ann), "user_ann", "a person's session");
+  assert.equal(sessionUserId(adminOlga), "user_olga", "an account admin");
+  assert.equal(sessionUserId(bob), null, "an agent key met the check when it was identified");
+  assert.equal(sessionUserId(admin), null, "the owner key has no Clerk account");
+  assert.equal(sessionUserId(VISITOR), null);
+  assert.equal(sessionUserId(null), null);
+  // What an account admin creates in the browser is the operator's (no owner), and the cap per person does not count.
+  bindActor().actor = adminOlga;
+  assert.equal(currentUserId(), null);
+  assert.equal("owner" in newPlayground(DOMAIN), false);
+  process.env.CLAY_USER_PLAYGROUNDS = "1";
+  try {
+    assert.equal(playgroundCapMessage({ a: { owner: "user_olga" } }, adminOlga), null);
+  } finally {
+    delete process.env.CLAY_USER_PLAYGROUNDS;
+  }
+  // The example mark is the operator's, by owner key or by account.
+  const labs = { one: { domain: { id: "one" }, owner: "user_ann" } };
+  assert.deepEqual(markExample(labs, "one", { example: false }, adminOlga, look), { ok: true, example: false, featured: false });
 });
