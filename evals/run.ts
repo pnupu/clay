@@ -13,11 +13,12 @@
 //                         into each scratch directory as CLAUDE.md (claude) or AGENTS.md (codex), where the CLI reads its
 //                         project instructions. A personal skill is installed by the operator in the clean home
 //                         (<home>/.claude/skills/<name>/SKILL.md).
-//                     [--say build|play|slash]   the explicit path: the person ASKS for a playground. The request of every
+//                     [--say build|play|slash|lab|box|claylab|claybox]   the explicit path: the person ASKS for a playground. The request of every
 //                         case that expects a build is said in that form (a case that expects none keeps its request, so
 //                         it still shows that nothing is built unasked): build: "build me a playground for this: <request>";
 //                         play: "<request> ... let me play with it first"; slash: Claude Code's command for the server's
-//                         MCP prompt, "/mcp__clay__playground <request>". The checks are the same; the request that was
+//                         MCP prompt, "/mcp__clay__playground <request>"; lab, box, claylab, claybox: "build me a lab for this:",
+//                         "build me a box for this:", and the same with "clay" before the noun. The checks are the same; the request that was
 //                         sent is kept in each result as `asked`.
 //                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
 //                     [--scratch-root <dir>]   put the agents' scratch directories under <dir>, outside this repository.
@@ -106,10 +107,15 @@ const SAY: Record<string, (request: string) => string> = {
   build: (request) => `build me a playground for this: ${request}`,
   play: (request) => `${request} ... let me play with it first`,
   slash: (request) => `/mcp__clay__playground ${request}`,
+  // Other nouns for the same ask, to measure what the word itself does (the tool names say "playground").
+  lab: (request) => `build me a lab for this: ${request}`,
+  box: (request) => `build me a box for this: ${request}`,
+  claylab: (request) => `build me a clay lab for this: ${request}`,
+  claybox: (request) => `build me a clay box for this: ${request}`,
 };
 // A --say without a value must not run as the unprompted path under an explicit label.
 const say = argv.includes("--say") ? (flag("say") ?? "") : null;
-if (say != null && !Object.hasOwn(SAY, say)) throw new Error("--say is build, play or slash.");
+if (say != null && !Object.hasOwn(SAY, say)) throw new Error(`--say is one of: ${Object.keys(SAY).join(", ")}.`);
 if (say === "slash" && flag("subject") === "codex") throw new Error("--say slash is Claude Code's command form; Codex has no commands for MCP prompts.");
 const asked = (c: Case) => (say && c.expect === "build" ? SAY[say](c.request) : c.request);
 if (memory != null && toolSet !== "normal") throw new Error("--memory needs --tools normal: the files-only mode loads no project instructions.");
