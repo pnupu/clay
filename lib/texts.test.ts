@@ -5,17 +5,41 @@ import { test } from "node:test";
 import { parseSpec, oversize } from "./spec.ts";
 import { readFileSync } from "node:fs";
 import { STANDING_INSTRUCTION } from "../connect/standing-instruction.ts";
-import { INSTRUCTIONS, TOOLS } from "./texts.ts";
+import { INSTRUCTIONS, PROMPTS, TOOLS } from "./texts.ts";
 
-test("the first 200 characters of the server instructions hold the trigger and the name of the create tool", () => {
+test("the first 200 characters of the server instructions say what Clay is for, that the person asks for a playground, and the create tool", () => {
+  // The trigger is explicit now: the person asks for a playground. (Before 9e the head held the unprompted trigger.)
   const head = INSTRUCTIONS.slice(0, 200);
-  assert.match(head, /create_playground/);
-  assert.match(head, /before you answer from memory or search the web/i);
-  assert.match(head, /cannot say exactly what they want/);
-  assert.match(head, /which one/);
-  assert.match(head, /looks or feels off/);
-  // The trigger is a complete sentence inside that window: nothing of it is cut.
+  assert.match(head, /^Clay builds playgrounds: web pages where a person tries the real thing/);
+  assert.match(head, /When a person asks for a playground, call create_playground\./);
+  // Both sentences are complete inside that window: nothing of them is cut.
   assert.ok(INSTRUCTIONS.indexOf("\n") <= 200, "the first paragraph ends inside the first 200 characters");
+  // The words a person uses, and the unprompted trigger as it was measured, follow inside the first 512 characters (Codex).
+  const next = INSTRUCTIONS.slice(0, 512);
+  for (const words of ["build me a playground for", "let me play with it first", "clay this"]) assert.ok(next.includes(words), words);
+  assert.match(next, /BEFORE you answer from memory or search the web when a person cannot say exactly what they want/);
+  assert.match(next, /which one/);
+  assert.match(next, /looks or feels off/);
+});
+
+test("the prompts: the person's own request with the whole loop, short, with and without what they want", () => {
+  const withWhat = PROMPTS.playground.text("  the hover on the button in button.css ");
+  assert.ok(withWhat.startsWith("Build me a Clay playground for this: the hover on the button in button.css\n"));
+  // The loop, in order: the real file first, the reference and the build, the link and the wait, the hand-back.
+  const order = ["read my real file", "kit_reference", "create_playground", "price_ranking", "Give me the link and wait until I say I am done", "read_playground", "decision_record"].map((x) => withWhat.indexOf(x));
+  assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), JSON.stringify(order));
+  assert.match(withWhat, /Do not guess, edit my files or answer the question before that/);
+  // Without it, the agent asks first, then builds by the same loop.
+  const bare = PROMPTS.playground.text();
+  assert.match(bare, /^I want a Clay playground\. Ask me in one line what I want to try, tune or decide/);
+  assert.ok(bare.includes("create_playground") && bare.includes("read_playground"));
+  assert.equal(PROMPTS.playground.text("   "), bare);
+  // The return path.
+  assert.match(PROMPTS.recheck.text(), /^Is my saved decision still right\? Find the decision files in this repository \(\.clay\/decisions\/\*\.md\), call recheck_playground with the playground id in each/);
+  assert.match(PROMPTS.recheck.text("the email provider"), /^Is my saved decision about the email provider still right\? Find the decision file /);
+  assert.match(PROMPTS.recheck.text(), /change nothing until I agree/);
+  // Short: the agent reads them every time.
+  for (const text of [withWhat, bare, PROMPTS.recheck.text("x")]) assert.ok(text.split(/\s+/).length <= 150, String(text.split(/\s+/).length));
 });
 
 test("the standing instruction: the file and the text on /connect are the same, short, and name both tools", () => {

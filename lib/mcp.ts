@@ -2,7 +2,7 @@
 // Built per request (stateless Streamable HTTP), with the app's origin for the playground URLs.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { INSTRUCTIONS, TOOLS } from "./texts";
+import { INSTRUCTIONS, PROMPTS, TOOLS } from "./texts";
 import { DOMAIN } from "./domain";
 import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutputs } from "./kit";
 import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
@@ -113,6 +113,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       ...(k.kit.web?.length || k.kit.brand ? { note: [k.kit.web?.length ? WEB_NOTE : "", k.kit.brand ? BRAND_NOTE : ""].filter(Boolean).join(" ") } : {}),
     });
   };
+
+  // The prompts a person runs to ask for a playground or a re-check (lib/texts.ts). Each returns the person's own request.
+  const said = (text: string) => ({ messages: [{ role: "user" as const, content: { type: "text" as const, text } }] });
+  server.registerPrompt("playground", { title: PROMPTS.playground.title, description: PROMPTS.playground.description, argsSchema: { what: z.string().max(2000).optional().describe(PROMPTS.playground.what) } }, ({ what }) => said(PROMPTS.playground.text(what)));
+  server.registerPrompt("recheck", { title: PROMPTS.recheck.title, description: PROMPTS.recheck.description, argsSchema: { which: z.string().max(300).optional().describe(PROMPTS.recheck.which) } }, ({ which }) => said(PROMPTS.recheck.text(which)));
 
   server.registerTool("create_playground", { title: "Create a playground", description: TOOLS.create_playground, inputSchema: specShape }, async (args) => {
     const parsed = parseSpec(args);

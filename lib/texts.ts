@@ -10,7 +10,9 @@ export const HOLDS_RULE = "A saved decision holds while the chosen vendor can be
  * Server instructions. Many MCP clients load tool descriptions only on demand and show the agent just the tool names,
  * so this short text is what decides whether the agent thinks of the playground at all.
  */
-export const INSTRUCTIONS = `Call create_playground BEFORE you answer from memory or search the web when a person cannot say exactly what they want: a "which one" choice on prices, or something that looks or feels off.
+export const INSTRUCTIONS = `Clay builds playgrounds: web pages where a person tries the real thing with a few controls and settles it by hand. When a person asks for a playground, call create_playground.
+
+They ask in words such as "build me a playground for ...", "make a playground", "let me play with it first" or "clay this". Also call create_playground BEFORE you answer from memory or search the web when a person cannot say exactly what they want: a "which one" choice on prices, or something that looks or feels off.
 
 Clay builds a playground: a web page on which a person finds out what they want by trying concrete things, alone and at full speed. You build it from prebuilt parts, the person explores it, the settled result comes back to you as a precise instruction, and you carry it out. Build one instead of guessing or asking a list of questions. Two kinds:
 
@@ -42,6 +44,31 @@ export const RECORD = {
     `Do these in order. 1. Tell the person in two lines: what changed with the old and the new value, and what the saved rule now picks; give the playground link ${url}. 2. Propose the change${hasPick ? " to the vendor in saved_rule_now_picks" : ""}; do not make it, and do not pick for them. 3. After the person agrees: ask them to save the new choice on the playground page, call read_playground, then update the code and replace the decision file with the new decision_record. Until then only the "Last checked" line of the file changes.`,
   judged: (url: string) =>
     `web_changes lists what changed, with the old and the new value, the source and the time. Work out with the settled values whether the settled result still holds. If it holds: tell the person in one line, with the numbers, and update the "Last checked" line of the decision file. If it does not: tell the person in two lines what changed and what the rule now gives, with the playground link ${url}; propose the change; after the person has settled again on the page, call read_playground, then update the code and replace the decision file with the new decision_record.`,
+};
+
+/**
+ * The MCP prompts: what a person runs to ask for a playground or a re-check, with nothing pasted anywhere. In Claude Code
+ * they are the commands /mcp__clay__playground and /mcp__clay__recheck (listed as /clay:playground). The text is the
+ * person's own request, in their voice, with the whole loop; it is short, because the agent reads it every time.
+ */
+const LOOP = `1. First read my real file, or find the real pages that state the facts. 2. Build it: for a look, a feel or a choice that depends on my own numbers, call kit_reference once, then create_playground; for a choice between priced services, create_playground with view.type "price_ranking". 3. Give me the link and wait until I say I am done. Do not guess, edit my files or answer the question before that. 4. Then call read_playground and carry out what I settled: write the outputs into my files exactly as given, and when the result has decision_record, write that file too.`;
+export const PROMPTS = {
+  playground: {
+    title: "Build me a playground",
+    description: "Build a Clay playground for something you want to try, tune or decide, then carry out what you settle.",
+    what: "What you want to try, tune or decide. For example: the hover on the button in button.css; which email provider for 40,000 emails a month.",
+    text: (what?: string) =>
+      what?.trim()
+        ? `Build me a Clay playground for this: ${what.trim()}\n\n${LOOP}`
+        : `I want a Clay playground. Ask me in one line what I want to try, tune or decide (how something looks, how a motion feels, which service, model or plan to pick). When I have answered, build it:\n\n${LOOP}`,
+  },
+  recheck: {
+    title: "Is my saved decision still right?",
+    description: "Re-check a decision that Clay keeps in this repository (.clay/decisions/) against today's prices and facts.",
+    which: "Which decision, in your words (for example: the email provider). Leave it out to check every decision file.",
+    text: (which?: string) =>
+      `Is my saved decision${which?.trim() ? ` about ${which.trim()}` : ""} still right? Find the decision ${which?.trim() ? "file" : "files"} in this repository (.clay/decisions/*.md), call recheck_playground with the playground id in ${which?.trim() ? "it" : "each"}, and tell me in one or two lines whether it still holds. Follow do_now in the answer: when it no longer holds, say what changed and what the saved rule now picks, give me the link, and propose the change; change nothing until I agree.`,
+  },
 };
 
 export const TOOLS = {
