@@ -4,7 +4,7 @@ import { update } from "@/lib/store";
 
 /**
  * Mark ({"example": true}) or unmark a playground as an example that anyone may open without signing in, and choose the
- * featured example ({"example": true, "featured": true}): the one the landing page embeds. Featuring one unfeatures the
+ * featured example ({"featured": true} for an example, or {"example": true, "featured": true}): the one the landing page embeds. Featuring one unfeatures the
  * others. Admin only: refused() refuses everyone else on this route, and markExample() checks the caller again.
  */
 export async function POST(req: Request, { params }: Ctx) {

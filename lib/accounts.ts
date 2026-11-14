@@ -65,7 +65,7 @@ export function markExample(playgrounds: Record<string, Owned>, id: string, mark
   const sent = [mark.example, mark.featured].filter((v) => v !== undefined);
   if (!sent.length || sent.some((v) => typeof v !== "boolean")) return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };
   const example = typeof mark.example === "boolean" ? mark.example : isExample(p, id);
-  if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured. Send {"example": true, "featured": true}.' };
+  if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured: mark it as an example first, or send {"example": true, "featured": true}.' };
   if (typeof mark.example === "boolean") p.example = mark.example;
   if (mark.featured === true) {
     for (const other of Object.values(playgrounds)) delete other.featured;

@@ -65,11 +65,10 @@ test("the request is the quoted text after the opening words, up to the quote th
   assert.ok("quote" in said && said.quote.endsWith("…") && said.quote.length <= 200 && !/\s…$/.test(said.quote));
 });
 
-test("what was left out reads as a clause after \"because\"", () => {
-  assert.equal(reasonOf("its pricing page, read twice, gave neither an allowance nor a price"), "Its pricing page, read twice, gave neither an allowance nor a price.");
-  assert.equal(reasonOf("because the page shows prices only through a slider."), "The page shows prices only through a slider.");
-  // A name or an ordinary opener at the start keeps its spelling.
-  assert.equal(reasonOf("AWS lists it per region, not as one price"), "AWS lists it per region, not as one price.");
-  assert.equal(reasonOf("iOS only, with no public price"), "iOS only, with no public price.");
-  assert.equal(reasonOf("Could not read its pricing page after two tries"), "Could not read its pricing page after two tries.");
+test("a left-out reason stays as the agent wrote it; only a missing full stop is added", () => {
+  assert.equal(reasonOf("its pricing page, read twice, gave neither an allowance nor a price"), "its pricing page, read twice, gave neither an allowance nor a price.");
+  assert.equal(reasonOf(" because of rate limits on its pricing page. "), "because of rate limits on its pricing page.");
+  assert.equal(reasonOf("npm package has no public price"), "npm package has no public price.");
+  assert.equal(reasonOf("AWS lists it per region, not as one price!"), "AWS lists it per region, not as one price!");
+  assert.equal(reasonOf('Its page says "contact sales."'), 'Its page says "contact sales."');
 });

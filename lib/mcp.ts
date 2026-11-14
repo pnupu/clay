@@ -35,8 +35,9 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
   /** Store what the agent left out and why (when the call says so), and return the stored list for the result. */
+  // One line per name is stored: the last reason given for it.
   const leftOut = async (id: string, given?: LeftOut[]) => {
-    if (given) await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.map((x) => ({ name: x.name.trim(), reason: x.reason.trim(), at: new Date().toISOString() })).filter((x, i, all) => all.findIndex((y) => y.name === x.name) === i); });
+    if (given) await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.filter((x, i) => !given.slice(i + 1).some((y) => y.name.toLowerCase() === x.name.toLowerCase())).map((x) => ({ ...x, at: new Date().toISOString() })); });
     const stored = (await load()).playgrounds[id]?.leftOut ?? [];
     return stored.length ? { left_out: stored.map((x) => ({ name: x.name, reason: x.reason })) } : {};
   };

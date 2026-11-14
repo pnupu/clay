@@ -67,12 +67,11 @@ export function cardText(note: string, max = 200): { quote: string } | { blurb: 
 }
 
 /**
- * Why the agent left something out of a playground, as its own sentence after the name: "Its pricing page states no
- * price." The reason is the agent's text: a leading "because" is dropped, a first word in lower case gets a capital (a
- * name such as iOS keeps its spelling), and a full stop is added.
+ * Why the agent left something out of a playground, as the page shows it after the name and a dash: "SendGrid — its
+ * pricing page states no price." The reason is the agent's own text and stays as written (no word is re-cased, so a name
+ * keeps its spelling); only a full stop is added when the text does not end a sentence.
  */
 export function reasonOf(reason: string): string {
-  const text = reason.trim().replace(/^because\s+/i, "");
-  const first = /^[a-z]+\b/.test(text) ? text[0].toUpperCase() + text.slice(1) : text;
-  return /[.!?]$/.test(first) ? first : `${first}.`;
+  const text = reason.trim();
+  return /[.!?]["”')\]]?$/.test(text) ? text : `${text}.`;
 }
