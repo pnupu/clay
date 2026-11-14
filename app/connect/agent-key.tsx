@@ -117,6 +117,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
       <section className="card">
         <h2>Later</h2>
         <ul className="plain">
+          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds. Each run spends web requests from your daily allowance.</li>
           <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>
           <li><strong>Remove Clay:</strong> <code>claude mcp remove clay</code> or <code>codex mcp remove clay</code>. If Claude Code says clay exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local clay</code> in that folder and <code>claude mcp remove --scope user clay</code>.</li>
         </ul>
