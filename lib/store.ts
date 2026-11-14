@@ -43,6 +43,8 @@ export type Source = {
   /** When a re-check first read no price on a page that stated prices; the prices stay until a later re-check agrees (noPriceRead in lib/diff.ts). Cleared by every other re-check that did not fail, and by a build or a revision that stores a new read. */
   noPriceSeenAt?: string | null;
   monitor: { id: string; secret: string; webhookUrl: string } | null;
+  /** How the monitor of this source is created when it is not the default (daily, no wait): lib/contextdev.ts, MonitorWatch. Set by the operator; used by the next start of the monitors. */
+  watch?: { minutes?: number; waitMs?: number } | null;
 };
 
 export type ChangeEvent = {

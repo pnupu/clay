@@ -1,25 +1,42 @@
 import { failure, refused, stateResponse, type Ctx } from "@/app/api/respond";
-import { ContextDevError, createMonitor, deleteMonitor } from "@/lib/contextdev";
+import { ContextDevError, createMonitor, deleteMonitor, parseWatch } from "@/lib/contextdev";
 import { load, publicBase, update } from "@/lib/store";
 
 const INSTRUCTIONS = "Report changes to prices, plan names, included quantities, usage tiers, limits and feature availability. Ignore navigation, testimonials, counters, dates and marketing copy.";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Start watching: one Context.dev page monitor per source, with a signed webhook back to this deployment. Needs a public URL. */
+/**
+ * Start watching: one Context.dev page monitor per source, with a signed webhook back to this deployment. Needs a public URL.
+ * A monitor runs once a day and reads the page without a wait, unless the source says otherwise. The body may set that
+ * per source, {"sources": {"vastai": {"minutes": 60, "waitMs": 5000}}}: it is stored with the source and used for the
+ * monitor that this call, or a later one, creates for it. A monitor that already runs is not changed.
+ */
 export async function POST(req: Request, { params }: Ctx) {
   const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
   const base = publicBase();
   if (!base) return Response.json({ error: "This app has no public URL. Context.dev can only deliver webhooks to a public URL." }, { status: 409 });
+  const body = (await req.json().catch(() => null)) as { sources?: unknown } | null;
+  const asked = parseWatch(body?.sources, Object.keys((await load()).playgrounds[pg]?.sources ?? {}));
+  if (!asked.ok) return Response.json({ error: asked.error }, { status: 400 });
+  if (Object.keys(asked.watch).length) {
+    await update((s) => {
+      for (const [id, w] of Object.entries(asked.watch)) {
+        const src = s.playgrounds[pg]?.sources[id];
+        // An empty object puts the source back to the default.
+        if (src) src.watch = Object.keys(w).length ? { ...src.watch, ...w } : null;
+      }
+    });
+  }
   /** A monitor that exists at Context.dev and is not stored yet. */
   let unstored: string | null = null;
   try {
     for (const src of Object.values((await load()).playgrounds[pg]?.sources ?? {})) {
       if (src.monitor || !src.url) continue;
       const webhookUrl = `${base}/api/webhooks/context/${pg}/${src.id}`;
-      const m = await createMonitor(`Clay ${pg}: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS);
+      const m = await createMonitor(`Clay ${pg}: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS, src.watch ?? {});
       unstored = m.id;
       if (!m.webhook?.secret) throw new Error("Monitor created without a webhook secret; the API key needs monitors:write.");
       // Another request may have stored a monitor for this source meanwhile: its record stays, and this monitor is deleted.

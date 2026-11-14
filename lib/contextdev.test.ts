@@ -51,3 +51,39 @@ test("an answer that says it came from a cache is refused where it is read; one 
   // Unknown age without a hit: kept, and dated as unknown by capturedAt, so it certifies nothing.
   for (const meta of [undefined, null, {}, { status: "miss" }, { status: "zdr" }, { status: "miss", age_ms: -5 }]) assert.equal(servedFromCache(meta, 1200), false, JSON.stringify(meta));
 });
+
+test("a monitor is daily and without a wait by default; a source's own settings set the interval and the wait", async () => {
+  const { monitorBody, parseWatch } = await import("./contextdev.ts");
+  const body = (watch: Parameters<typeof monitorBody>[4], env = 0) => monitorBody("Clay x: Vast.ai pricing", "https://vast.ai/pricing", "https://clay.example/api/webhooks/context/x/vastai", "Report prices.", watch, env);
+  // Default: no schedule (the API then runs it once a day) and no browser action.
+  assert.deepEqual(body({}), {
+    name: "Clay x: Vast.ai pricing",
+    tags: ["clay"],
+    target: { type: "page", url: "https://vast.ai/pricing", instructions: "Report prices." },
+    webhook: { url: "https://clay.example/api/webhooks/context/x/vastai", events: ["change.detected"], retry: {} },
+  });
+  // What was set by hand at Context.dev on 2026-11-14 for vast.ai: hourly, with a wait of five seconds before the capture.
+  const vast = body({ minutes: 60, waitMs: 5000 });
+  assert.deepEqual(vast.schedule, { type: "interval", frequency: 60, unit: "minutes" });
+  assert.deepEqual(vast.target.actions, [{ do: "wait", timeMs: 5000 }]);
+  // The deployment's interval applies when the source has none; the source's own wins. Values are kept inside the API's limits.
+  assert.deepEqual(body({}, 360).schedule, { type: "interval", frequency: 360, unit: "minutes" });
+  assert.deepEqual(body({ minutes: 60 }, 360).schedule, { type: "interval", frequency: 60, unit: "minutes" });
+  assert.deepEqual(body({ minutes: 3 }).schedule, { type: "interval", frequency: 10, unit: "minutes" });
+  assert.deepEqual(body({ waitMs: 90_000 }).target.actions, [{ do: "wait", timeMs: 30_000 }]);
+  assert.equal("actions" in body({ waitMs: 0 }).target, false);
+  assert.equal("schedule" in body({}, Number.NaN), false);
+
+  // The request that stores the settings: known sources, the two fields, whole numbers inside the limits.
+  const ids = ["vastai", "runpod"];
+  assert.deepEqual(parseWatch(undefined, ids), { ok: true, watch: {} });
+  assert.deepEqual(parseWatch({ vastai: { minutes: 60, waitMs: 5000 }, runpod: {} }, ids), { ok: true, watch: { vastai: { minutes: 60, waitMs: 5000 }, runpod: {} } });
+  const bad = (x: unknown) => { const r = parseWatch(x, ids); return r.ok ? "" : r.error; };
+  assert.match(bad({ lambda: { minutes: 60 } }), /sources\.lambda: this playground has no such source/);
+  assert.match(bad({ vastai: { minutes: 5 } }), /sources\.vastai\.minutes: a whole number from 10 to 525600/);
+  assert.match(bad({ vastai: { waitMs: 60_000 } }), /sources\.vastai\.waitMs: a whole number from 0 to 30000/);
+  assert.match(bad({ vastai: { minutes: 60.5 } }), /a whole number/);
+  assert.match(bad({ vastai: { url: "https://evil.example" } }), /only "minutes" and "waitMs" can be set/);
+  assert.match(bad({ vastai: 60 }), /give \{"minutes"\?, "waitMs"\?\}/);
+  assert.match(bad([{ minutes: 60 }]), /sources must be an object/);
+});

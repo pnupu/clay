@@ -341,11 +341,12 @@ Environment variables (Vercel project `clay`, Production):
 | `CONTEXT_DEV_REQUESTS_PER_MINUTE` | Optional. Request pacing per function instance, default 10. |
 | `CONTEXT_DEV_CONCURRENCY` | Optional. Context.dev requests in flight per function instance, default 4; 0 turns the cap off. See Limits for the values per kind of account. |
 | `PUBLIC_BASE_URL` | Optional. The public https origin. On Vercel it defaults to `https://$VERCEL_PROJECT_PRODUCTION_URL`. It is used for playground URLs, webhook URLs and the demo page URL. Setting it makes the owner key mandatory. |
-| `MONITOR_INTERVAL_MINUTES` | Optional. Interval of new webhook monitors, 10 or more; the API default is one run per day. |
+| `MONITOR_INTERVAL_MINUTES` | Optional. Interval of new webhook monitors, 10 or more, for sources without their own setting; without it a monitor runs once a day. |
 
 - Storage: one private Vercel Blob document (`clay/store.json`). It holds the webhook secrets, so the store is private. Reads bypass the CDN cache. Every write is conditional on the version that was read (the MD5 of the document, which is the blob's ETag); a writer that loses re-reads and applies its change again.
 - Function duration: the routes that read pricing pages set `maxDuration = 300` seconds. Vercel Pro allows 800 seconds with fluid compute; a build takes 10 to 120 seconds, and goes on in the same function after the agent's tool call has answered (`after()` in `app/api/mcp/route.ts`), so 300 seconds is also the longest a build can run.
 - Webhook URL: `<public base URL>/api/webhooks/context/<playgroundId>/<sourceId>`, set per monitor by "Start webhook monitors". A page monitor run costs 1 Context.dev credit.
+- A monitor runs once a day and reads the page without running its scripts. A source can have its own interval and a wait before the capture, stored with the playground: `POST /api/p/<id>/watch` with `{"sources": {"<source id>": {"minutes": 60, "waitMs": 5000}}}` (operator only; 10 minutes to a year; a wait of at most 30 seconds). The setting is used for the monitor that this call or a later "Start webhook monitors" creates for the source; a monitor that already runs is not changed (stop the monitors and start them again). A page that fills in its prices by script, such as vast.ai/pricing, needs the wait: without it the monitor never sees a price. A run with a wait costs 2 credits.
 - Known limits: request pacing and the re-check queue are per function instance (see the `lean:` comments in `lib/contextdev.ts` and `lib/pipeline.ts`). `run/requests.jsonl` logging is skipped where the filesystem is read-only.
 
 ## Live web facts for any playground (`data.web`)

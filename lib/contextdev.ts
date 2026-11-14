@@ -316,17 +316,59 @@ export async function brand(domain: string): Promise<BrandData> {
 
 export type Monitor = { id: string; status: string; webhook: { url: string; secret?: string; events: string[] } | null; initial_run_id: string | null };
 
-/** Page monitor with semantic detection and a signed webhook (POST /monitors). The secret is only returned to keys with monitors:write. */
-export function createMonitor(name: string, url: string, webhookUrl: string, instructions: string, minutes = Number(process.env.MONITOR_INTERVAL_MINUTES ?? 0)) {
-  return cd<Monitor>("POST", "/monitors", {
+/**
+ * How the monitor of one source is created, when it differs from the default (one run a day, no wait). Stored with the
+ * source (lib/store.ts), set by the operator with the start of the monitors.
+ * - minutes: the interval between runs, 10 minutes to one year (docs.context.dev/monitors/schedules).
+ * - waitMs: a pause in a browser before the page is captured, at most 30 seconds. A monitor reads a page without
+ *   running its scripts (about half a second a run), so a page that fills in its prices by script (vast.ai/pricing)
+ *   never shows it a price; with a wait the page is rendered first. Such a run costs 2 credits, not 1.
+ */
+export type MonitorWatch = { minutes?: number; waitMs?: number };
+export const WATCH_LIMITS = { minutes: [10, 525_600], waitMs: [0, 30_000] } as const;
+
+/** Check per-source monitor settings from a request: {"<source id>": {"minutes"?, "waitMs"?}}. Whole numbers inside the limits, for known sources only. */
+export function parseWatch(input: unknown, sourceIds: string[]): { ok: true; watch: Record<string, MonitorWatch> } | { ok: false; error: string } {
+  if (input == null) return { ok: true, watch: {} };
+  if (typeof input !== "object" || Array.isArray(input)) return { ok: false, error: 'sources must be an object: {"<source id>": {"minutes": 60, "waitMs": 5000}}' };
+  const watch: Record<string, MonitorWatch> = {};
+  for (const [id, raw] of Object.entries(input as Record<string, unknown>)) {
+    if (!sourceIds.includes(id)) return { ok: false, error: `sources.${id}: this playground has no such source. Its sources: ${sourceIds.join(", ")}` };
+    if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: `sources.${id}: give {"minutes"?, "waitMs"?}` };
+    const one: MonitorWatch = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (k !== "minutes" && k !== "waitMs") return { ok: false, error: `sources.${id}.${k}: only "minutes" and "waitMs" can be set` };
+      const [min, max] = WATCH_LIMITS[k];
+      if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) return { ok: false, error: `sources.${id}.${k}: a whole number from ${min} to ${max}` };
+      one[k] = v;
+    }
+    watch[id] = one;
+  }
+  return { ok: true, watch };
+}
+
+/**
+ * The body of POST /monitors for one page. Without a setting the monitor runs once a day (the API default), or every
+ * MONITOR_INTERVAL_MINUTES when the deployment sets that; a source's own `minutes` wins over both. `waitMs` adds one
+ * browser action before the capture ({"do": "wait", "timeMs"}, the shape the API accepted on 2026-11-14).
+ */
+export function monitorBody(name: string, url: string, webhookUrl: string, instructions: string, watch: MonitorWatch = {}, envMinutes = Number(process.env.MONITOR_INTERVAL_MINUTES ?? 0)) {
+  const clamp = (n: number, [min, max]: readonly [number, number]) => Math.min(max, Math.max(min, Math.round(n)));
+  const minutes = watch.minutes ?? (Number.isFinite(envMinutes) && envMinutes > 0 ? envMinutes : 0);
+  const waitMs = watch.waitMs ?? 0;
+  return {
     name,
     tags: ["clay"],
-    target: { type: "page", url, instructions },
+    target: { type: "page", url, instructions, ...(waitMs > 0 ? { actions: [{ do: "wait", timeMs: clamp(waitMs, WATCH_LIMITS.waitMs) }] } : {}) },
     webhook: { url: webhookUrl, events: ["change.detected"], retry: {} },
-    // The API default is one run per day; the shortest interval the docs allow is 10 minutes, so a smaller value is raised to 10.
-    // Not yet exercised against the API.
-    ...(minutes > 0 ? { schedule: { type: "interval", frequency: Math.max(10, Math.round(minutes)), unit: "minutes" } } : {}),
-  });
+    // No schedule means the API default, one run a day. The shortest interval the API allows is 10 minutes.
+    ...(minutes > 0 ? { schedule: { type: "interval", frequency: clamp(minutes, WATCH_LIMITS.minutes), unit: "minutes" } } : {}),
+  };
+}
+
+/** Page monitor with semantic detection and a signed webhook (POST /monitors). The secret is only returned to keys with monitors:write. */
+export function createMonitor(name: string, url: string, webhookUrl: string, instructions: string, watch: MonitorWatch = {}) {
+  return cd<Monitor>("POST", "/monitors", monitorBody(name, url, webhookUrl, instructions, watch));
 }
 
 export const deleteMonitor = (id: string) => cd<{ id: string; deleted: boolean }>("DELETE", `/monitors/${id}`);
