@@ -26,7 +26,7 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, reading = false, leftOut = [] }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[] }) {
+export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, reading = false, leftOut = [], version }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
@@ -121,13 +121,13 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   // What happened is stored for the agent, only from the browser of someone who may write the playground: "ok" once the preview has run 1.5 s without an error, else the error.
   const reports = useRef(0);
   useEffect(() => {
-    if (!canWrite || frame.status === "loading" || reports.current >= 3) return;
+    if (!canWrite || version || frame.status === "loading" || reports.current >= 3) return;
     const t = setTimeout(() => {
       reports.current++;
       fetch(`${api}/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rev: state.rev, ...(frame.status === "ok" ? { ok: true } : { error: frame.error }) }) }).catch(() => {});
     }, frame.status === "ok" ? 1500 : 0);
     return () => clearTimeout(t);
-  }, [frame, canWrite, api, state.rev]);
+  }, [frame, canWrite, version, api, state.rev]);
 
   // ---- The exploration summary for the agent: per control, what was tried since the last report. Sent after a pause.
   const seen = useRef<Record<string, { min?: number; max?: number; tried: Value[] }>>({});
@@ -222,7 +222,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               </p>
             )}
             <div className={css.mat}>
-              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: Math.max(120, Math.min(contentHeight ?? kit.preview.height, Math.round(screenH ?? Infinity))) }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
+              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: Math.max(120, Math.min(contentHeight ?? kit.preview.height, Math.round(screenH ?? Infinity))) }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
           <p className={`small muted ${css.caption}`}>

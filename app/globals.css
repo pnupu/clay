@@ -77,6 +77,7 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--page); border
 .top { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .actions { display: flex; gap: 8px; align-items: center; }
 .alert { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 8px 12px; }
+.operator-bar { max-width: 1440px; margin: 12px auto 0; padding: 0 20px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .grid { display: grid; grid-template-columns: 260px minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
 .results, .side { display: grid; gap: 16px; min-width: 0; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }

@@ -192,6 +192,13 @@ const bare = await fetch(`${base}/p/sbx-probe-${tag}/frame`);
 check("frame URL without Fetch Metadata headers: refused, with a notice and no script", bare.status === 403 && /Preview unavailable/.test(await bare.text()) && /^sandbox; default-src 'none'/.test(bare.headers.get("content-security-policy") ?? ""), `status ${bare.status}`);
 const csp = res.headers.get("content-security-policy") ?? "";
 check("the frame response carries the sandbox policy as a header", /^sandbox allow-scripts; default-src 'none'/.test(csp) && csp.includes("connect-src 'none'") && csp.includes("frame-ancestors 'self'"), csp.slice(0, 60));
+// The admin's playground page pins its frame to the version that page rendered (app/manage.tsx, MarkExample): a frame
+// pinned to another version runs none of the current code, and one pinned to the current version runs it.
+const FM = { "Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "same-origin" };
+const now = (await (await fetch(`${base}/api/p/sbx-probe-${tag}/state`)).json()).version as string;
+const stale = await (await fetch(`${base}/p/sbx-probe-${tag}/frame?v=0000000000000000`, { headers: FM })).text();
+const current = await (await fetch(`${base}/p/sbx-probe-${tag}/frame?v=${now}`, { headers: FM })).text();
+check("a frame pinned to another version runs none of the current code", /changed after this page loaded/.test(stale) && !stale.includes("attempt(") && current.includes("attempt("), `version ${now}`);
 
 for (const [id, what, text] of [[`sbx-flood-${tag}`, "a message flood stops the preview and removes the frame", /too many messages/], [`sbx-nav-${tag}`, "a preview that navigates its own frame is removed", /navigated away/]] as const) {
   const page = await context.newPage();
