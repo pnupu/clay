@@ -120,8 +120,8 @@ export function rank(models: Record<string, PricingModel | null>, a: Assumptions
       // No known cost at all: say the price is not stated, not "costs at least $0".
       else if (cents(v.best.cost) === 0) effect = top == null ? "Its price is not stated; nothing else can be ranked either." : `Its price is not stated. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top))} per month. The winner depends on this.`;
       else if (top == null) effect = `Costs at least $${fmtN(Math.round(v.best.cost))}; nothing else can be ranked either.`;
-      else if (v.best.cost >= top) effect = `Costs at least $${fmtN(Math.round(v.best.cost))}, which is already above the cheapest. The missing facts cannot change the winner.`;
-      else effect = `Costs at least $${fmtN(Math.round(v.best.cost))}. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top - v.best.cost))} per month. The winner depends on this.`;
+      else if (v.best.cost >= top) effect = `Costs at least ${usdc(v.best.cost)}, which is already above the cheapest. The missing facts cannot change the winner.`;
+      else effect = `Costs at least ${usdc(v.best.cost)}. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top - v.best.cost))} per month. The winner depends on this.`;
       return { ...v, effect };
     });
   return { ranked, unranked, cheapest: ranked[0]?.id ?? null };
@@ -215,6 +215,8 @@ export function sameAssumptions(now: Assumptions, saved: Assumptions): boolean {
 }
 
 const usd = (n: number) => "$" + fmtN(Math.round(n));
+/** As usd(), with cents below a dollar, so a gap or a bound of $0.30 is not called $0. */
+const usdc = (n: number) => (Math.abs(n) < 1 && cents(n) !== 0 ? "$" + n.toFixed(2) : usd(n));
 
 /**
  * One sentence about a stand. `tried`: the person is only trying these values (nothing is saved under them), so the
@@ -223,7 +225,7 @@ const usd = (n: number) => "$" + fmtN(Math.round(n));
  */
 export function standSentence(s: Stand, name: string, cheapestName: string | null, tried = false, words: (text: string) => string = (t) => t, own = true): string {
   const costs = tried ? "would cost" : "costs";
-  const more = `${name} ${costs} ${usd(s.cost ?? 0)} per month, ${usd(s.gap ?? 0)} more than ${cheapestName ?? "the cheapest vendor"}, the cheapest.`;
+  const more = `${name} ${costs} ${usd(s.cost ?? 0)} per month, ${usdc(s.gap ?? 0)} more than ${cheapestName ?? "the cheapest vendor"}, the cheapest.`;
   switch (s.state) {
     case "cheapest":
       // In a tie the ranking names the first vendor by the tie rule: the verdict says "level with" it, not "the cheapest".
@@ -233,7 +235,7 @@ export function standSentence(s: Stand, name: string, cheapestName: string | nul
     case "outside":
       return `${more} ${s.tolerance > 0 ? `That is above ${own ? "your" : "the saved"} tolerance of ${usd(s.tolerance)}.` : `${own ? "You saved it" : "It was saved"} with no tolerance, so it holds only while it is the cheapest.`}`;
     case "unknown":
-      return `${name} cannot be fully priced${s.why ? `: ${words(s.why)}` : ""}.${Math.round(s.cost ?? 0) > 0 ? ` Its known costs are at least ${usd(s.cost ?? 0)} per month.` : ""}`;
+      return `${name} cannot be fully priced${s.why ? `: ${words(s.why)}` : ""}.${cents(s.cost ?? 0) > 0 ? ` Its known costs are at least ${usdc(s.cost ?? 0)} per month.` : ""}`;
     case "ineligible":
       return `no ${name} plan fits${s.why ? `: ${words(s.why)}` : ""}.`;
     default:

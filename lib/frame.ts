@@ -140,7 +140,7 @@ function contentHeight() {
   return Math.ceil(h);
 }
 function reportHeight() {
-  var h = contentHeight(), now = Date.now();
+  var h = Math.min(contentHeight(), 4000), now = Date.now(); // the page accepts up to MAX_FRAME_HEIGHT
   if (Math.abs(h - lastH) < 2) return;
   if (now - lastT < 1000) { if (!later) later = setTimeout(function () { later = null; reportHeight(); }, 1000 - (now - lastT)); return; }
   lastH = h; lastT = now;

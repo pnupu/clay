@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
-import { crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
+import { cents, crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
 import { reasonOf } from "@/lib/card";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { commitNumber, liveNumber } from "@/lib/numberbox";
@@ -12,6 +12,8 @@ import type { Exploration, PublicState } from "@/lib/store";
 type Src = PublicState["sources"][string];
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+/** An amount that can be below a dollar (a gap, a lower bound): cents when it is, so "$0" never stands for $0.30. */
+const amount = (n: number) => (Math.abs(n) < 1 && Math.round(n * 100) !== 0 ? "$" + n.toFixed(2) : money(n));
 const num = (n: number) => n.toLocaleString("en-US");
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 /** Names and colours that depend on the playground's domain. */
@@ -236,10 +238,12 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     <p className="small select-next" data-select-next>Not saved yet. <button className="link" onClick={toSave}>Save this choice ↓</button></p>
   ) : null;
   /**
-   * When the tolerance box corrected a typed value: the tap on Save that left the box (and so caused the correction) only
-   * shows it, so nothing is saved that the person did not see. A later tap saves.
+   * When a number box (a metric or the tolerance) corrected a typed value: the tap on Save that left the box, and so
+   * caused the correction, only shows it, so nothing is saved that the person did not see. A later tap saves.
+   * lean: a time window (1 s) marks "the tap that caused it"; a press held longer than that saves the corrected value,
+   * which the box then shows with its note.
    */
-  const toleranceCorrectedAt = useRef(0);
+  const correctedAt = useRef(0);
 
   if (!state) return <Shell className={shell}><p className="muted">Loading…</p></Shell>;
 
@@ -300,7 +304,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
             {metrics.map((m) => (
               <div className="control" key={m.id}>
                 <label htmlFor={m.id}>{m.label}</label>
-                <NumberBox className="value" value={usage[m.id]} min={m.min} max={m.max} label={`${m.label}, exact value`} onChange={(v) => setUsage((u) => ({ ...u, [m.id]: v }))} />
+                <NumberBox className="value" value={usage[m.id]} min={m.min} max={m.max} label={`${m.label}, exact value`} onChange={(v) => setUsage((u) => ({ ...u, [m.id]: v }))} onCorrected={() => (correctedAt.current = Date.now())} />
                 {/* The slider moves on an internal 0 to 1000 scale; a screen reader hears the value and its unit. */}
                 <input id={m.id} type="range" min={0} max={1000} value={toPos(m, usage[m.id])} aria-valuetext={`${num(usage[m.id])} ${m.unit}`} onChange={(e) => setUsage({ ...usage, [m.id]: toValue(m, Number(e.target.value)) })} />
               </div>
@@ -327,7 +331,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {ranking.ranked[0] && (
                 <p className="answer">
                   {maybeCheaper.length ? "Cheapest of the fully priced vendors" : "Cheapest"}: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month
-                  {ranking.ranked[1] ? (Math.round(gap * 100) === 0 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${money(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
+                  {ranking.ranked[1] ? (cents(gap) === 0 ? `, level with ${sources[ranking.ranked[1].id]?.name}` : `, ${amount(gap)} less than ${sources[ranking.ranked[1].id]?.name}`) : ""}.
                   {maybeCheaper.length > 0 && <span className="warn"> {maybeCheaper.map((v) => sources[v.id]?.name).join(", ")} could be cheaper: a price is unknown.</span>}
                   {nextCross && <span className="muted"> The cheapest changes at {num(nextCross.at)} {lower(axisDef.label)}.</span>}
                 </p>
@@ -393,11 +397,11 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                   <p className="small">You selected <b>{sources[pick]?.name}</b> for {wordsOf(a)}. {decision ? "It is not saved: your saved decision is still as shown above." : "It is not saved yet."}</p>
                   <label className="small tolerance">
                     Still fine if within $
-                    <NumberBox value={tolerance} min={0} label="Tolerance in dollars per month" onChange={setTolerance} onCorrected={() => (toleranceCorrectedAt.current = Date.now())} />
+                    <NumberBox value={tolerance} min={0} label="Tolerance in dollars per month" onChange={setTolerance} onCorrected={() => (correctedAt.current = Date.now())} />
                     per month of the cheapest
                   </label>
                   <button className="primary" disabled={!!busy} onClick={() => {
-                    if (Date.now() - toleranceCorrectedAt.current < 1000) return;
+                    if (Date.now() - correctedAt.current < 1000) return;
                     run("Saving", `${api}/decision`, "POST", { usage, required, chosen: pick, tolerance });
                   }}>
                     {!decision ? "Save decision:" : decision.chosen === pick ? "Update saved decision:" : "Replace saved decision with"} {sources[pick]?.name}
@@ -489,9 +493,9 @@ function why(st: Stand, own: boolean, chosen: string): string {
       // In a tie the ranking names another vendor first (the tie rule of lib/pricing.ts).
       return st.cheapest && st.cheapest !== chosen ? "it is level with the cheapest" : "it is the cheapest";
     case "within":
-      return `${money(st.gap ?? 0)} above the cheapest, inside ${tol}`;
+      return `${amount(st.gap ?? 0)} above the cheapest, inside ${tol}`;
     case "outside":
-      return st.tolerance > 0 ? `${money(st.gap ?? 0)} above the cheapest, more than ${tol}` : `${money(st.gap ?? 0)} above the cheapest, and it was saved with no tolerance`;
+      return st.tolerance > 0 ? `${amount(st.gap ?? 0)} above the cheapest, more than ${tol}` : `${amount(st.gap ?? 0)} above the cheapest, and it was saved with no tolerance`;
     case "unknown":
       return "a price of it is unknown";
     case "ineligible":
@@ -508,12 +512,14 @@ function why(st: Stand, own: boolean, chosen: string): string {
  */
 function NumberBox({ value, min, max, label, className, onChange, onCorrected }: { value: number; min: number; max?: number; label: string; className?: string; onChange: (v: number) => void; onCorrected?: () => void }) {
   const [text, setText] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  // A note is about the value it set: it goes away when the value changes another way (the slider, the saved values).
+  const [noteOf, setNoteOf] = useState<{ text: string; value: number } | null>(null);
+  const note = noteOf && noteOf.value === value ? noteOf.text : null;
   const commit = () => {
     if (text == null) return;
     const r = commitNumber(text, { min, max, prev: value });
     onChange(r.value);
-    setNote(r.note);
+    setNoteOf(r.note ? { text: r.note, value: r.value } : null);
     if (r.note) onCorrected?.();
     setText(null);
   };
@@ -528,7 +534,7 @@ function NumberBox({ value, min, max, label, className, onChange, onCorrected }:
         aria-invalid={note ? true : undefined}
         onChange={(e) => {
           setText(e.target.value);
-          setNote(null);
+          setNoteOf(null);
           const live = liveNumber(e.target.value, { min, max });
           if (live != null) onChange(live);
         }}
@@ -570,7 +576,7 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
         {/* The cost and its button are one unit: on a narrow screen they take a line of their own (globals.css). */}
         <span className="buy">
           {/* A row that cannot be ranked shows its known costs as a lower bound; with none known it says the price is unknown. */}
-          <span className="cost">{p ? (place ? money(p.cost) : Math.round(p.cost) > 0 ? `≥ ${money(p.cost)}` : <span className="small warn">price unknown</span>) : "—"}{p && (place || Math.round(p.cost) > 0) ? <span className="muted small"> / month</span> : null}</span>
+          <span className="cost">{p ? (place ? money(p.cost) : cents(p.cost) > 0 ? `≥ ${amount(p.cost)}` : <span className="small warn">price unknown</span>) : "—"}{p && (place || cents(p.cost) > 0) ? <span className="muted small"> / month</span> : null}</span>
           {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
         </span>
       </div>
@@ -693,11 +699,12 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
   const H = 250, L = 56, R = 12, T = 10, B = 28;
   const v = a.usage[axis.id] ?? axis.initial;
   const log = isLog(axis);
+  const cubic = !log && isCubic(axis);
   // The control's own range, as the sentence under the chart and the slider: one range everywhere.
   const lo = axis.min;
   const hi = axis.max;
   const N = 96;
-  const xs = useMemo(() => Array.from({ length: N + 1 }, (_, i) => (log ? lo * Math.pow(hi / lo, i / N) : lo + ((hi - lo) * i) / N)), [log, lo, hi]);
+  const xs = useMemo(() => Array.from({ length: N + 1 }, (_, i) => (log ? lo * Math.pow(hi / lo, i / N) : cubic ? lo + (hi - lo) * Math.pow(i / N, 3) : lo + ((hi - lo) * i) / N)), [log, cubic, lo, hi]);
   const series = useMemo(
     () => Object.keys(models).filter((id) => models[id]).map((id) => ({ id, ys: xs.map((x) => { const c = vendorCost(id, models[id], { ...a, usage: { ...a.usage, [axis.id]: Math.round(x) } }); return c.complete ? c.best!.cost : null; }) })),
     [models, a, axis.id, xs],
@@ -706,11 +713,11 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
   const at = (x: number) => ({ x, rows: series.map((s) => ({ id: s.id, y: vendorCost(s.id, models[s.id], { ...a, usage: { ...a.usage, [axis.id]: Math.round(x) } }) })) });
   const here = at(v);
   const yMax = Math.max(1, ...series.flatMap((s) => s.ys.filter((y): y is number => y != null)), ...here.rows.filter((r) => r.y.complete).map((r) => r.y.best!.cost)) * 1.08;
-  const sx = (x: number) => L + (W - L - R) * (log ? Math.log(x / lo) / Math.log(hi / lo) : (x - lo) / (hi - lo || 1));
+  const sx = (x: number) => L + (W - L - R) * (log ? Math.log(x / lo) / Math.log(hi / lo) : cubic ? Math.cbrt(Math.max(0, x - lo) / (hi - lo || 1)) : (x - lo) / (hi - lo || 1));
   const sy = (y: number) => T + (H - T - B) * (1 - y / yMax);
-  const inv = (px: number) => { const t = Math.min(1, Math.max(0, (px - L) / (W - L - R))); return log ? lo * Math.pow(hi / lo, t) : lo + (hi - lo) * t; };
+  const inv = (px: number) => { const t = Math.min(1, Math.max(0, (px - L) / (W - L - R))); return log ? lo * Math.pow(hi / lo, t) : cubic ? lo + (hi - lo) * Math.pow(t, 3) : lo + (hi - lo) * t; };
   const path = (ys: (number | null)[]) => ys.map((y, i) => (y == null ? "" : `${i === 0 || ys[i - 1] == null ? "M" : "L"}${sx(xs[i]).toFixed(1)},${sy(y).toFixed(1)}`)).join("");
-  const xt = log ? [lo, Math.sqrt(lo * hi), hi] : [lo, (lo + hi) / 2, hi];
+  const xt = log ? [lo, Math.sqrt(lo * hi), hi] : cubic ? [lo, lo + (hi - lo) / 8, hi] : [lo, (lo + hi) / 2, hi];
   const yt = [0, yMax / 2 / 1.08, yMax / 1.08];
   const tip = hover == null ? null : at(hover);
   const short = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}k` : `${Math.round(n)}`);

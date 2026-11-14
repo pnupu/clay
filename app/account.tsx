@@ -14,7 +14,9 @@ export default function Account() {
     if (!el) return;
     const fix = () => {
       el.querySelectorAll("img").forEach((img) => img.getAttribute("alt") !== "" && img.setAttribute("alt", ""));
-      el.querySelectorAll("button").forEach((b) => b.getAttribute("aria-label") !== "Your account" && b.setAttribute("aria-label", "Your account"));
+      // Only the trigger: the menu items (Manage account, Sign out) keep their own names.
+      const trigger = el.querySelector("button");
+      if (trigger && trigger.getAttribute("aria-label") !== "Your account") trigger.setAttribute("aria-label", "Your account");
     };
     fix();
     const mo = new MutationObserver(fix);

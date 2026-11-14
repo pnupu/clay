@@ -220,7 +220,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
               </p>
             )}
             <div className={css.mat}>
-              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: contentHeight && screenH ? Math.max(120, Math.min(contentHeight, Math.round(screenH))) : kit.preview.height }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
+              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: Math.max(120, Math.min(contentHeight ?? kit.preview.height, Math.round(screenH ?? Infinity))) }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
           <p className={`small muted ${css.caption}`}>
@@ -324,18 +324,20 @@ const asHex = (raw: string): string | null => {
 /** A typed colour. Text that is not a colour keeps the previous colour, and a note says so; nothing turns black silently. */
 function HexBox({ label, value, onChange }: { label: string; value: string; onChange: (v: unknown) => void }) {
   const [text, setText] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  // A note is about the colour it kept: it goes away when the colour changes another way (a swatch, the picker).
+  const [noteOf, setNoteOf] = useState<{ text: string; value: string } | null>(null);
+  const note = noteOf && noteOf.value === value ? noteOf.text : null;
   const commit = () => {
     if (text == null) return;
     const hex = asHex(text);
     if (hex) onChange(hex);
-    setNote(hex ? null : `“${text.trim().slice(0, 20)}” is not a colour. Use #rrggbb, for example #2563eb. The colour stays ${value}.`);
+    setNoteOf(hex ? null : { text: `“${text.trim().slice(0, 20)}” is not a colour. Use #rrggbb, for example #2563eb. The colour stays ${value}.`, value });
     setText(null);
   };
   return (
     <>
       <input className={css.hex} type="text" spellCheck={false} autoCapitalize="off" value={text ?? value} aria-label={`${label}, colour code`} aria-invalid={note ? true : undefined}
-        onChange={(e) => { setText(e.target.value); setNote(null); }} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        onChange={(e) => { setText(e.target.value); setNoteOf(null); }} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} />
       {note && <span className="small warn" role="status" style={{ flexBasis: "100%" }}>{note}</span>}
     </>
   );

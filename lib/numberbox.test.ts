@@ -8,6 +8,9 @@ test("number box: an empty box or text keeps the previous value and says so", ()
   assert.deepEqual(commitNumber("banana", { min: 0, prev: 25 }).value, 25);
   assert.match(commitNumber("banana", { min: 0, prev: 25 }).note!, /not a number/);
   assert.equal(commitNumber("12abc", { min: 0, prev: 7 }).value, 7);
+  // Separators alone, and a decimal comma, are not numbers: nothing is set silently.
+  for (const t of [",", "_", "1 000", "12,5"]) assert.deepEqual(commitNumber(t, { min: 0, prev: 7 }).value, 7, t);
+  assert.equal(liveNumber("1,5", { min: 0 }), null);
 });
 
 test("number box: a typed value is kept exactly; outside the range it goes to the nearest end, with a note", () => {
