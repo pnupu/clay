@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { BrandData } from "./kit.ts";
 import { dailyCap, spend, update } from "./store.ts";
-import { currentUserId, userCapMessage, userDailyCap } from "./accounts.ts";
+import { currentUserId, limit, userCapMessage, userDailyCap } from "./accounts.ts";
 
 // CONTEXT_DEV_BASE_URL points the client at the local fixture API (scripts/fixture-api.ts) for checks that must not spend requests.
 const FIXTURE = process.env.CONTEXT_DEV_BASE_URL;
@@ -19,10 +19,8 @@ const BASE = FIXTURE ?? "https://api.context.dev/v1";
 // lean: one function instance cannot see the others, so the real ceiling across instances is (instances) x each limit.
 // Context.dev then answers 429, and the call waits as the answer says and sends again (cd()). Move the counts into the
 // store if that happens in practice.
-const env = (name: string, fallback: number) => {
-  const n = Number(process.env[name] ?? fallback);
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
-};
+// Only an explicit 0 turns a limit off; a missing, empty or malformed value gives the default (accounts.ts, limit()).
+const env = (name: string, fallback: number) => limit(process.env[name], fallback);
 /** Milliseconds until the next request may start, given the start times of earlier requests (oldest first). */
 export function waitFor(starts: number[], now: number, perMinute: number): number {
   const recent = starts.filter((t) => now - t < 60_000);
@@ -31,8 +29,10 @@ export function waitFor(starts: number[], now: number, perMinute: number): numbe
 /**
  * The slot of one request: first a place among the requests in flight (at most `concurrency()`, first come first served),
  * then its turn in the per-minute pacing, taken while holding that place, so the send is never earlier than either limit
- * allows. Resolves to the function that gives the place back (once). An urgent request skips the pacing queue, not the
- * cap. `concurrency()` and `perMinute()` are read at each request; 0 turns a limit off.
+ * allows. Resolves to the function that gives the place back (once). An urgent request (one a person waits for) skips the
+ * pacing queue, and may take one place more than the cap, so it never waits behind paced requests that hold their places
+ * while they sleep for their turn in the minute. `concurrency()` and `perMinute()` are read at each request; 0 turns a
+ * limit off.
  */
 export function limiter(o: { concurrency: () => number; perMinute: () => number; now?: () => number; sleep?: (ms: number) => Promise<void> }) {
   const now = o.now ?? (() => Date.now());
@@ -46,19 +46,22 @@ export function limiter(o: { concurrency: () => number; perMinute: () => number;
     if (next) next(); // the place passes straight to the next waiting request
     else active--;
   };
-  const pace = () =>
-    (gate = gate.then(async () => {
+  const pace = () => {
+    const turn = gate.then(async () => {
       const perMinute = o.perMinute();
       const wait = perMinute > 0 ? waitFor(starts, now(), perMinute) : 0;
       if (wait > 0) await sleep(wait + 100);
       starts.push(now());
       if (starts.length > 200) starts.splice(0, 100);
-    }));
+    });
+    gate = turn.catch(() => {}); // a failed turn does not block the ones after it
+    return turn;
+  };
   return {
     inFlight: () => active,
     async acquire(urgent = false): Promise<() => void> {
       const cap = o.concurrency();
-      if (cap > 0 && active >= cap) await new Promise<void>((r) => queue.push(r));
+      if (cap > 0 && active >= cap + (urgent ? 1 : 0)) await new Promise<void>((r) => queue.push(r));
       else active++;
       let given = false;
       const done = () => void (given || ((given = true), give()));
@@ -95,6 +98,8 @@ export class ContextDevError extends Error {
 type Json = Record<string, unknown>;
 
 const RATE_LIMIT_RETRIES = 3;
+/** The longest one call waits for its retries in all. */
+const RETRY_WAIT_MS = 120_000;
 /**
  * How long to wait before a rate-limited request is sent again: the answer's Retry-After header (seconds, or an HTTP
  * date), else the "Retry in N seconds" of its message, else 5 s; plus 1 to 3 s, at least 1 s and at most 65 s (a
@@ -173,23 +178,25 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   // is cheap and a stopped build is not: a rate-limited 429 is sent again after the wait the answer states (Retry-After),
   // up to 3 times. The first attempt is reserved at once, so a request over the cap is refused without waiting for a slot.
   let reserved = await reserve();
+  let waited = 0;
   for (let attempt = 0; ; attempt++) {
     // An urgent request does not queue behind the paced ones: it is a single request that a person is waiting for (the
     // brand of a preview playground) while a price build may hold the queue for minutes. It still takes a place among the
     // requests in flight and counts as a start, and a 429 is retried below like any other.
+    // A retry is a new request sent: it is reserved too, before it waits for a place (the place is held for the send, not
+    // for the store). Reached here, the earlier attempts were sent, and no more are.
+    if (attempt > 0)
+      reserved = await reserve().catch((e) => {
+        if (e instanceof ContextDevError) throw new ContextDevError(e.status, e.code, `${e.message} (${attempt} earlier ${attempt === 1 ? "attempt was" : "attempts were"} sent and rate-limited; no more are sent.)`);
+        throw e;
+      });
     const done = await slots.acquire(opts.urgent);
     let res: Response | null = null;
     let data: Json = {};
     let t0 = 0;
     try {
-      // The first reservation was made before the wait for a slot. When the day changed meanwhile, it is given back and made
+      // Each reservation was made before the wait for a place. When the day changed meanwhile, it is given back and made
       // again on the new day, right before the send (nothing has been sent on it).
-      // A retry is a new request sent: it is reserved too. Reached here, the earlier attempts were sent, and no more are.
-      if (attempt > 0)
-        reserved = await reserve().catch((e) => {
-          if (e instanceof ContextDevError) throw new ContextDevError(e.status, e.code, `${e.message} (${attempt} earlier ${attempt === 1 ? "attempt was" : "attempts were"} sent and rate-limited; no more are sent.)`);
-          throw e;
-        });
       // Every reservation, the first (made before the pacing wait) and each retry's, must be for the day of this send: one
       // made on an earlier day is given back and made again, until it is for today (a refusal ends the call).
       while (reserved && [reserved.global, reserved.personal].some((d) => d != null && d < today())) {
@@ -230,11 +237,17 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
       done(); // the place is free before any wait for a retry
     }
     const ms = Date.now() - t0;
-    // Rate-limited: the code says so, or a 429 states when to try again (a quota that is used up says neither).
+    // Rate-limited: the code says so, or a 429 without a code states when to try again. Any other code (a quota, credits)
+    // is not retried. The waits of one call stay within RETRY_WAIT_MS, so a background build ends inside its function's
+    // 300 s (maxDuration).
     const retryAfter = res.headers.get("retry-after");
-    if (res.status === 429 && (data.error_code === "RATE_LIMITED" || (retryAfter && data.error_code !== "USAGE_EXCEEDED")) && attempt < RATE_LIMIT_RETRIES) {
-      await new Promise((r) => setTimeout(r, retryAfterMs(String(data.message ?? ""), Math.random(), retryAfter)));
-      continue;
+    if (res.status === 429 && (data.error_code === "RATE_LIMITED" || (retryAfter && data.error_code == null)) && attempt < RATE_LIMIT_RETRIES) {
+      const wait = retryAfterMs(String(data.message ?? ""), Math.random(), retryAfter);
+      if (waited + wait <= RETRY_WAIT_MS) {
+        waited += wait;
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
     }
     // The message of an error may be an object (an input validation error lists its issues): say it, not "[object Object]".
     const said = typeof data.message === "string" ? data.message : data.message == null ? "" : JSON.stringify(data.message).slice(0, 300);
