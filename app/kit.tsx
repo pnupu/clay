@@ -28,7 +28,9 @@ export default function Kit({ id, title, state, canWrite, embedded = false }: { 
   }).length;
   const api = `/api/p/${id}`;
   const { kit } = state;
-  const [values, setValues] = useState<Values>(() => valuesNow(state));
+  // The owner comes back to where they left the controls. Anyone else gets the start values: an example opens on the
+  // unsatisfying state that the person asked about, whatever its owner tried later.
+  const [values, setValues] = useState<Values>(() => (canWrite ? valuesNow(state) : initialValues(kit.controls)));
   const [settled, setSettled] = useState(state.settled);
   const [frame, setFrame] = useState<Frame>({ status: "loading", error: null });
   const [busy, setBusy] = useState(false);
