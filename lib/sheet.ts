@@ -60,8 +60,9 @@ tr.out > td, .card.out { color: var(--muted); }
 .card.pick { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-bg); }
 .card.out { background: transparent; }
 .card h3, .card h4 { font-size: 16px; color: inherit; letter-spacing: -0.01em; }
-/* A mark next to a name. */
-.badge { display: inline-block; font-size: 12px; line-height: 1.6; font-weight: 500; padding: 0 8px; border-radius: 999px; background: var(--tone); color: var(--ink); white-space: nowrap; vertical-align: 1px; }
+/* A mark next to a name: two or three words on one line. A longer one wraps in itself where its place is narrow (a
+   card, a column), at every width, so it never pushes its card or its table wider than the frame. */
+.badge { display: inline-block; max-width: 100%; font-size: 12px; line-height: 1.6; font-weight: 500; padding: 0 8px; border-radius: 10px; background: var(--tone); color: var(--ink); vertical-align: 1px; }
 .badge.pick { background: var(--accent); color: #fff; }
 .badge.ok { background: var(--ok-bg); color: var(--ok); } .badge.warn { background: var(--warn-bg); color: var(--warn); } .badge.bad { background: var(--bad-bg); color: var(--bad); }
 /* One number with its label: a span (the label) and a b (the number) in a .stat. */
@@ -91,9 +92,8 @@ summary { cursor: pointer; font-weight: 500; }
   table.stack td { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; border: 0; text-align: right; white-space: normal; background: none; box-shadow: none; }
   table.stack td::before { content: attr(data-label); color: var(--muted); font-weight: 400; text-align: left; }
   /* The first cell is the name of the row, not a label with its value: plain text, so a badge after the name goes to
-     the next line when the card is narrow, and a long badge wraps in itself. */
+     the next line when the card is narrow. */
   table.stack td:first-child { display: block; font-weight: 600; text-align: left; }
-  .badge { white-space: normal; border-radius: 10px; }
   table.stack td:first-child::before, table.stack td:not([data-label])::before { content: none; }
   table.stack tr.pick { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-bg); }
   table.stack tr.pick > td, table.stack tr.pick > td:first-child { background: none; box-shadow: none; }

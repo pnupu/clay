@@ -59,6 +59,8 @@ test("the reference teaches the parts the sheet styles, and the sheet has no tex
   const nowrap = [...css.matchAll(/\.num\b[^{}]*\{[^}]*white-space: nowrap/g)].map((m) => m.index);
   const wraps = css.search(/:where\(th\)\.num \{[^}]*white-space: normal/);
   assert.ok(nowrap.length === 1 && wraps > nowrap[0], "a number stays on one line, and the head of its column may wrap");
+  // A badge may wrap in itself: a long one must not push its card or its column wider than a narrow frame.
+  assert.doesNotMatch(css, /\.badge\b[^{}]*\{[^}]*nowrap/);
   assert.match(KIT_REFERENCE, /## A data view \(view\.data: true\)/);
 });
 
