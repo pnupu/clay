@@ -214,3 +214,29 @@ test("the worked example with live web facts passes the validator, and data.web 
   const other = parseSpec(data([{ ...MODEL_EXAMPLE.data!.web![0], find: "another page of the site" }, MODEL_EXAMPLE.data!.web![1]]));
   assert.ok(other.ok && other.kind === "preview" && runSignature(other.kit) !== runSignature(ok.kit));
 });
+
+test("outputs: a spec whose outputs could expand past the limit is refused; a stored one renders a short notice", async () => {
+  const { OUTPUT_LIMIT, outputsSize, initialValues: init, renderOutputs: rend, checkKit: check } = await import("./kit.ts");
+  // The reviewer's case: a toggle text that repeats another toggle's text, repeated again in the output template.
+  const raw = (n: number, m: number, l: number) => ({
+    controls: [
+      { id: "aa", type: "toggle", label: "Outer", meaning: "outer repeated output", initial: true, on: "{{bb}}".repeat(n), off: "" },
+      { id: "bb", type: "toggle", label: "Inner", meaning: "inner repeated output", initial: true, on: "x".repeat(l), off: "" },
+    ],
+    view: { type: "preview", html: "<p>Output probe</p>" },
+    outputs: [{ id: "out0", label: "Output 0", template: "{{aa}}".repeat(m) }],
+  });
+  const big = check(raw(30, 100, 1000) as never);
+  assert.equal(big.ok, false);
+  assert.match((big as { errors: string[] }).errors.join(" "), /would hold 3000000 characters; the limit is 32000/);
+  // A kit already stored with such outputs (from before the limit) is not rendered: nothing large is built.
+  const stored = { controls: raw(30, 100, 1000).controls, outputs: raw(30, 100, 1000).outputs } as never;
+  assert.equal(outputsSize(stored, null), 3_000_000);
+  const out = rend(stored, init((stored as { controls: never[] }).controls));
+  assert.ok(JSON.stringify(out).length < 200);
+  assert.match(out.out0, /not rendered: the outputs would hold 3000000 characters, the limit is 32000/);
+  // An ordinary nested toggle stays valid and renders.
+  const ok = check(raw(1, 1, 40) as never);
+  assert.equal(ok.ok, true);
+  assert.ok(OUTPUT_LIMIT >= 32_000);
+});

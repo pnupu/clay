@@ -110,6 +110,31 @@ export function render(template: string, controls: Control[], values: Values): s
   };
   return template.replace(PLACEHOLDER, (all, name: string) => text(name, all, true));
 }
+/**
+ * The most text all outputs of a playground may hold together, in characters. A class string, a config or a CSS file is
+ * far below it. checkKit() rejects a kit whose outputs could exceed it at any values; renderOutputs() checks the exact size
+ * before it builds anything, so no path can produce or store more (a nested toggle text can otherwise multiply).
+ */
+export const OUTPUT_LIMIT = 32_000;
+/** The longest decimal text a number can take here (sign, digits, point, rounding noise). */
+const NUMBER_TEXT = 24;
+/**
+ * The size of a template once filled: exact for `values`, or the worst case over every value when `values` is null. Only
+ * lengths are summed; nothing is built. Nesting is one level deep, as in render().
+ */
+function filledSize(template: string, controls: Control[], values: Values | null): number {
+  const size = (name: string, all: string, nested: boolean): number => {
+    const c = controls.find((x) => x.id === name);
+    if (!c || (values && values[name] === undefined)) return all.length;
+    const texts = values ? [textOf(c, values[name])] : c.type === "toggle" ? [c.on, c.off] : c.type === "select" ? c.options.map((o) => o.value) : c.type === "color" ? ["#rrggbb"] : ["x".repeat(NUMBER_TEXT)];
+    const one = (t: string) => (nested && (c.type === "toggle" || c.type === "select") ? t.length + [...t.matchAll(new RegExp(PLACEHOLDER.source, "g"))].reduce((n, m) => n + (m[1] === name ? 0 : size(m[1], m[0], false) - m[0].length), 0) : t.length);
+    return Math.max(0, ...texts.map(one));
+  };
+  return template.length + [...template.matchAll(new RegExp(PLACEHOLDER.source, "g"))].reduce((n, m) => n + size(m[1], m[0], true) - m[0].length, 0);
+}
+/** The size of all outputs together: at these values, or at worst (null). */
+export const outputsSize = (kit: Pick<Kit, "outputs" | "controls">, values: Values | null): number => kit.outputs.reduce((n, o) => n + filledSize(o.template, kit.controls, values), 0);
+
 /** The placeholders inside the texts that a toggle or a select can stand for. */
 const nestedNames = (c: Control): string[] => (c.type === "toggle" ? [c.on, c.off] : c.type === "select" ? c.options.map((o) => o.value) : []).flatMap((t) => [...t.matchAll(PLACEHOLDER)].map((m) => m[1]));
 /**
@@ -119,7 +144,12 @@ const nestedNames = (c: Control): string[] => (c.type === "toggle" ? [c.on, c.of
 export const runSignature = (kit: Kit): string => JSON.stringify([kit.preview, kit.inline, kit.brand, kit.web ?? null, kit.controls.map((c) => ({ ...c, label: "", meaning: "", ...(c.type === "select" ? { options: c.options.map((o) => o.value) } : {}) }))]);
 /** A one-line output (a class string) loses the gaps that an empty toggle text leaves. A multi-line output (CSS, JSON) keeps its layout. */
 const tidy = (text: string) => (text.includes("\n") ? text.replace(/[ \t]+$/gm, "").trim() : text.replace(/\s+/g, " ").trim());
-export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => Object.fromEntries(kit.outputs.map((o) => [o.id, tidy(render(o.template, kit.controls, values))]));
+export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => {
+  // The exact size first, from lengths alone: a kit stored before the limit existed cannot make this allocate gigabytes.
+  const size = outputsSize(kit, values);
+  if (size > OUTPUT_LIMIT) return Object.fromEntries(kit.outputs.map((o) => [o.id, `(not rendered: the outputs would hold ${size} characters, the limit is ${OUTPUT_LIMIT})`]));
+  return Object.fromEntries(kit.outputs.map((o) => [o.id, tidy(render(o.template, kit.controls, values))]));
+};
 
 const names = (template: string) => [...template.matchAll(PLACEHOLDER)].map((m) => m[1]);
 const word = (id: string) => new RegExp(`(?<![\\w$])${id}(?![\\w$])`);
@@ -255,6 +285,12 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
     const bound = [html, css].some((t) => names(t).includes(c.id)) || outputs.some((o) => shown(String(o.template ?? "")).includes(c.id));
     if (!bound && !word(c.id).test(js)) errors.push(`controls.${c.id}: nothing uses this control. Bind it with {{${c.id}}} in view.html, view.css or an output, or read clay.values.${c.id} in view.js; or remove the control.`);
     else if (!outputs.some((o) => shown(String(o.template ?? "")).includes(c.id))) warnings.push(`controls.${c.id} is in no output. You will get its settled value, but no code-ready text for it.`);
+  }
+
+  // ---- The outputs at their largest: a toggle or option text that holds another control's text, used many times, multiplies.
+  if (!errors.length) {
+    const worst = outputsSize({ outputs: outputs as Kit["outputs"], controls: controls as Control[] }, null);
+    if (worst > OUTPUT_LIMIT) errors.push(`outputs: at their largest the outputs would hold ${worst} characters; the limit is ${OUTPUT_LIMIT} for all outputs together. A toggle or option text that holds {{another_control}}, used many times, multiplies. Use each placeholder once and keep long texts out of nested toggle and option texts.`);
   }
 
   if (raw.inline && JSON.stringify(raw.inline).length > KIT_LIMITS.inline) errors.push(`data.inline: at most ${KIT_LIMITS.inline} characters of JSON.`);

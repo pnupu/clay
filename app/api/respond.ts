@@ -1,7 +1,7 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
-import { bindActor, canRead, canWrite, guessLimiter, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, userOfKey, VISITOR, type Actor, type ClerkVerdict } from "@/lib/accounts";
+import { bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
 import { load, publicBase, publicState, update } from "@/lib/store";
 
@@ -38,10 +38,23 @@ export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
  * gone. Parallel requests of one person share one Clerk call. After Clerk failed to answer, this instance does not ask
  * again for 60 seconds (the grace rule decides meanwhile), so an outage does not make every request wait 5 seconds.
  */
-const pending = new Map<string, Promise<"ok" | "revoked" | "unavailable">>();
+type Confirmed = "ok" | "revoked" | "test" | "unavailable";
+const pending = new Map<string, Promise<Confirmed>>();
 const unreachableUntil = new Map<string, number>();
-async function confirmKey(userId: string, checkedAt: string | null | undefined): Promise<"ok" | "revoked" | "unavailable"> {
-  if (!needsCheck({ checkedAt }, Date.now())) return "ok";
+/**
+ * A refusal is remembered for KEY_CHECK_MS in this instance, so a test or blocked account that keeps trying costs no Clerk
+ * call per request. lean: per instance; a cold instance asks Clerk once more.
+ */
+const refusedUntil = new Map<string, { verdict: "revoked" | "test"; until: number }>();
+/**
+ * The one eligibility rule for a person who may create or spend, by agent key or by browser session: Clerk confirms at
+ * most every 10 minutes that the account exists, is not banned and is not a Clerk test account on a public app.
+ */
+async function confirmPerson(userId: string, checkedAt: string | null | undefined): Promise<Confirmed> {
+  const now = Date.now();
+  const refused = refusedUntil.get(userId);
+  if (refused && refused.until > now) return refused.verdict;
+  if (!needsCheck({ checkedAt }, now)) return "ok";
   let run = pending.get(userId);
   if (!run) {
     run = checkKey(userId, checkedAt).finally(() => pending.delete(userId));
@@ -50,7 +63,7 @@ async function confirmKey(userId: string, checkedAt: string | null | undefined):
   return run;
 }
 /** One check: one Clerk call and at most one store write, shared by every request that waits for it. */
-async function checkKey(userId: string, checkedAt: string | null | undefined): Promise<"ok" | "revoked" | "unavailable"> {
+async function checkKey(userId: string, checkedAt: string | null | undefined): Promise<Confirmed> {
   const now = Date.now();
   const verdict: ClerkVerdict = (unreachableUntil.get(userId) ?? 0) > now ? "unknown" : await clerkVerdict(userId);
   if (verdict === "unknown") unreachableUntil.set(userId, now + 60_000);
@@ -59,11 +72,13 @@ async function checkKey(userId: string, checkedAt: string | null | undefined): P
   if (d.revoke || d.checkedAt)
     await update((s) => {
       const a = s.users[userId];
-      if (!a) return;
-      if (d.revoke) s.users[userId] = { ...a, keyHash: null, keyCreatedAt: null, checkedAt: null };
-      else a.checkedAt = d.checkedAt;
+      if (d.revoke) {
+        if (a) s.users[userId] = { ...a, keyHash: null, keyCreatedAt: null, checkedAt: null };
+      } else s.users[userId] = { ...(a ?? { keyHash: null, keyCreatedAt: null, usage: null }), checkedAt: d.checkedAt }; // a session-only person gets a record too: only the Clerk id and the time
     });
-  return d.allow ? "ok" : d.revoke ? "revoked" : "unavailable";
+  if (d.revoke) refusedUntil.set(userId, { verdict: verdict === "test" ? "test" : "revoked", until: now + KEY_CHECK_MS });
+  if (refusedUntil.size > 10_000) refusedUntil.clear();
+  return d.allow ? "ok" : d.revoke ? (verdict === "test" ? "test" : "revoked") : "unavailable";
 }
 
 /**
@@ -84,8 +99,10 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
     const users = looksLikeAgentKey(bearer) ? (await load()).users : {};
     const userId = userOfKey(bearer, users);
     if (userId) {
-      const confirmed = await confirmKey(userId, users[userId]?.checkedAt);
-      return confirmed === "ok" ? { actor: { kind: "user", userId, via: "key" }, bad: null } : { actor: VISITOR, bad: confirmed };
+      const confirmed = await confirmPerson(userId, users[userId]?.checkedAt);
+      // A refused person's key is removed, also when the refusal came from the remembered verdict (no new Clerk call).
+      if (confirmed === "test" || confirmed === "revoked") await update((s) => void (s.users[userId]?.keyHash && (s.users[userId] = { ...s.users[userId], keyHash: null, keyCreatedAt: null, checkedAt: null })));
+      return confirmed === "ok" ? { actor: { kind: "user", userId, via: "key" }, bad: null } : { actor: VISITOR, bad: confirmed === "test" ? "revoked" : confirmed };
     }
     const ip = clientIp(h);
     if (guesses.blocked(ip)) return { actor: VISITOR, bad: "blocked" };
@@ -181,6 +198,14 @@ export async function refused(req: Request): Promise<Response | null> {
   holder.actor = actor;
   const badAnswer = badKey(bad, req);
   if (badAnswer) return badAnswer;
+  // A browser session meets the same eligibility rule as an agent key before it may create or spend (an agent key met it in
+  // identify()). Signing in and looking at pages need nothing more.
+  if (actor.kind === "user" && actor.via === "session") {
+    const confirmed = await confirmPerson(actor.userId, (await load()).users[actor.userId]?.checkedAt);
+    if (confirmed === "test") return Response.json({ error: `${TEST_ACCOUNT_LOOK_ONLY} ${`${publicBase() ?? new URL(req.url).origin}/sign-up`}` }, { status: 403 });
+    if (confirmed === "revoked") return Response.json({ error: "This account is deleted or blocked, so it cannot build or change playgrounds." }, { status: 403 });
+    if (confirmed === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
+  }
   if (actor.kind === "visitor") return Response.json({ error: `Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one at ${publicBase() ?? new URL(req.url).origin}/connect` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   // Decoded, so an encoded form of an admin-only path (for example /api/p/x/%77atch) is recognised too.
   let path: string;

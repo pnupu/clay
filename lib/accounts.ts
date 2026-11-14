@@ -187,4 +187,6 @@ export const onlyTestAddresses = (emails: { address: string; verified: boolean }
 export const testAccountsAllowed = (hosted: boolean, env: Record<string, string | undefined> = process.env) => !hosted || env.CLAY_ALLOW_TEST_ACCOUNTS === "1";
 /** The one test-account rule, for the key check and the Clerk webhook: only test identifiers, on a public app, not allowed. */
 export const refusesTestAccount = (ids: { address: string; verified: boolean }[]): boolean => onlyTestAddresses(ids) && !testAccountsAllowed(isHosted());
+/** What a Clerk test account hears when it tries to build or spend on a public app (it may still sign in and look). */
+export const TEST_ACCOUNT_LOOK_ONLY = "This account's only email address is a Clerk test address (+clerk_test). It can sign in and look around, but not build, change or re-check playgrounds, or spend web requests. Sign up with an email address you own:";
 export const TEST_ACCOUNT_MESSAGE = "Clay gives no agent key to an account whose only email address is a Clerk test address (+clerk_test). Sign up with an email address you own";
