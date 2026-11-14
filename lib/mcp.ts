@@ -11,7 +11,7 @@ import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems,
 import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
-import { EXAMPLE_CLEARED, canRead, canWrite, currentActor, publishedRefusal } from "./accounts";
+import { EXAMPLE_CLEARED, canRead, canWrite, currentActor, publishedRefusal, StorageRefused } from "./accounts";
 import { decisionRecord, guardDecision, priceGaps, recheckFile, recheckVerdict } from "./record";
 
 /**
@@ -38,7 +38,14 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   /** Store what the agent left out and why (when the call says so), and return the stored list for the result. */
   // One line per name is stored: the last reason given for it.
   const leftOut = async (id: string, given?: LeftOut[]) => {
-    if (given) await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.filter((x, i) => !given.slice(i + 1).some((y) => y.name.toLowerCase() === x.name.toLowerCase())).map((x) => ({ ...x, at: new Date().toISOString() })); });
+    // The playground itself is stored by now: a storage refusal of the list is said, not turned into a failed call.
+    if (given)
+      try {
+        await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.filter((x, i) => !given.slice(i + 1).some((y) => y.name.toLowerCase() === x.name.toLowerCase())).map((x) => ({ ...x, at: new Date().toISOString() })); });
+      } catch (e) {
+        if (!(e instanceof StorageRefused)) throw e;
+        return { left_out_not_stored: e.message };
+      }
     const stored = (await load()).playgrounds[id]?.leftOut ?? [];
     return stored.length ? { left_out: stored.map((x) => ({ name: x.name, reason: x.reason })) } : {};
   };

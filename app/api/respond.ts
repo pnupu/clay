@@ -2,7 +2,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
 import { viewVersion } from "@/lib/report";
-import { bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal } from "@/lib/accounts";
+import { bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal, StorageRefused } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
 import { load, publicBase, publicState, update } from "@/lib/store";
 
@@ -169,7 +169,12 @@ export async function stateResponse(pg: string, error: string | null = null, sta
   return Response.json({ ...publicState(s, pg, owner), version: viewVersion(s.playgrounds[pg]), error }, { status });
 }
 
-export const failure = (e: unknown) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: e instanceof NotFound ? 404 : 502 });
+export const failure = (e: unknown) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: e instanceof NotFound ? 404 : e instanceof StorageRefused ? 429 : 502 });
+/** A write that the storage bounds refused (lib/accounts.ts, boundStorage): 429 with the reason. Anything else is thrown on. */
+export function storageFull(e: unknown): Response {
+  if (e instanceof StorageRefused) return Response.json({ error: e.message }, { status: 429 });
+  throw e;
+}
 
 /**
  * The guard of every route that changes state or spends Context.dev requests. Returns the refusal, or null when the request

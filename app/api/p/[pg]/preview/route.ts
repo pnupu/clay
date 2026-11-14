@@ -1,4 +1,4 @@
-import { refused, type Ctx } from "@/app/api/respond";
+import { refused, storageFull, type Ctx } from "@/app/api/respond";
 import { isCurrent } from "@/lib/kit";
 import { update } from "@/lib/store";
 
@@ -21,6 +21,6 @@ export async function POST(req: Request, { params }: Ctx) {
     if (!isCurrent(k, body?.rev)) return 409;
     k.preview = { status: error ? "failed" : "ok", error, at: new Date().toISOString() };
     return 204;
-  });
-  return new Response(null, { status });
+  }).catch(storageFull);
+  return status instanceof Response ? status : new Response(null, { status });
 }

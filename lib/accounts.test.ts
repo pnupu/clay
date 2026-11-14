@@ -372,3 +372,26 @@ test("storage bounds: a person's allowance and a full store hold for every write
   delete process.env.CLAY_USER_STORE_BYTES;
   delete process.env.CLAY_MAX_STORE_BYTES;
 });
+
+test("review fixes: work bookkeeping is not growth; notes of discarded writes end with the publication", async () => {
+  const { boundStorage, keepPublished, markExample: mark, unpublishOnRevision: unpublish } = await import("./accounts.ts");
+  process.env.CLAY_USER_STORE_BYTES = "200";
+  const s = { a: { domain: { id: "a" }, owner: "user_ann", pad: "x".repeat(150), work: null as unknown } } as Record<string, { domain: { id: string }; owner: string; pad: string; work: unknown; example?: boolean; discardedWrites?: import("./accounts.ts").Discarded[] }>;
+  // Ending tracked work, with the reason it stopped, passes at the allowance.
+  const bound = boundStorage(s, ann);
+  s.a.work = { id: "w", stop: "y".repeat(300), finishedAt: "t" };
+  bound(s, () => 0);
+  delete process.env.CLAY_USER_STORE_BYTES;
+  // A discarded write by someone who is not the owner is not called the owner's.
+  s.a.example = true;
+  const keep = keepPublished(s, bob, () => "t1");
+  s.a.pad = "changed";
+  keep(s);
+  assert.deepEqual(s.a.discardedWrites, [{ at: "t1", by: "another caller" }]);
+  // The owner's revision unpublishes it, and the notes go with the publication; so does a new mark.
+  unpublish(s.a, "a", ann, "t2");
+  assert.equal(s.a.discardedWrites, undefined);
+  s.a.discardedWrites = [{ at: "t3", by: "its owner" }];
+  assert.equal(mark(s, "a", { example: true, version: viewVersion(s.a as never) }, admin, look).ok, true);
+  assert.equal(s.a.discardedWrites, undefined);
+});

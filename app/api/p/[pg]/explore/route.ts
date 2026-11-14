@@ -1,4 +1,4 @@
-import { refused, type Ctx } from "@/app/api/respond";
+import { refused, storageFull, type Ctx } from "@/app/api/respond";
 import { mergeExploration } from "@/lib/explore";
 import { isCurrent, mergeKitExploration } from "@/lib/kit";
 import { update } from "@/lib/store";
@@ -23,6 +23,6 @@ export async function POST(req: Request, { params }: Ctx) {
     if (!merged) return 400;
     p.exploration = merged;
     return 204;
-  });
-  return new Response(null, { status });
+  }).catch(storageFull);
+  return status instanceof Response ? status : new Response(null, { status });
 }

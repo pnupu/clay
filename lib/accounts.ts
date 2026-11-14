@@ -61,6 +61,7 @@ export function unpublishOnRevision(p: Owned & { featured?: boolean; exampleClea
   p.example = false;
   delete p.featured;
   p.exampleCleared = now;
+  delete (p as { discardedWrites?: unknown }).discardedWrites; // they were about the published example
   return true;
 }
 export const EXAMPLE_CLEARED = "This playground was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Clay deployment looks at it and marks it again.";
@@ -92,7 +93,10 @@ export function markExample(playgrounds: Record<string, Owned>, id: string, mark
   }
   const example = typeof mark.example === "boolean" ? mark.example : isExample(p, id);
   if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured: mark it as an example first, or send {"example": true, "featured": true}.' };
-  if (typeof mark.example === "boolean") p.example = mark.example;
+  if (typeof mark.example === "boolean") {
+    p.example = mark.example;
+    delete (p as { discardedWrites?: unknown }).discardedWrites; // a new publication, or none: the old notes are done
+  }
   if (mark.example === true) delete (p as { exampleCleared?: string | null }).exampleCleared;
   if (mark.featured === true) {
     for (const other of Object.values(playgrounds)) delete other.featured;
@@ -134,7 +138,7 @@ export function publishedRefusal(a: Actor | null, p: Owned, id: string): string 
 }
 
 /** A write that keepPublished() discarded, as its owner is told (lib/report.ts). */
-export type Discarded = { at: string; by: "its owner" | "a web monitor or other work with no caller" };
+export type Discarded = { at: string; by: "its owner" | "another caller" | "a web monitor or other work with no caller" };
 /**
  * The in-update half of publishedRefusal: store.ts update() calls this before every write and the function it returns
  * after it. A published example that the write changed gets back what it was before the write, so it keeps what the
@@ -156,7 +160,7 @@ export function keepPublished<P extends Owned & { work?: unknown; discardedWrite
       if ((p && !isExample(p, id)) || (p && seen(p) === was)) continue;
       const kept = JSON.parse(was) as P;
       if (p && p.work !== undefined) kept.work = p.work;
-      kept.discardedWrites = [{ at: now(), by: a ? ("its owner" as const) : ("a web monitor or other work with no caller" as const) }, ...(kept.discardedWrites ?? [])].slice(0, 10);
+      kept.discardedWrites = [{ at: now(), by: !a ? ("a web monitor or other work with no caller" as const) : a.kind === "user" && ownerOf(kept) === a.userId ? ("its owner" as const) : ("another caller" as const) }, ...(kept.discardedWrites ?? [])].slice(0, 10);
       after[id] = kept;
     }
   };
@@ -215,7 +219,8 @@ export class StorageRefused extends Error {}
 export function boundStorage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): (after: Record<string, Owned>, storeChars: () => number) => void {
   if (a?.kind !== "user") return () => {};
   const mine = (all: Record<string, Owned>) => Object.values(all).filter((p) => ownerOf(p) === a.userId);
-  const chars = (ps: Owned[]) => ps.reduce((n, p) => n + JSON.stringify(p).length, 0);
+  // The work bookkeeping is not counted: ending tracked work (and storing why it stopped) must always pass.
+  const chars = (ps: Owned[]) => ps.reduce((n, p) => n + JSON.stringify({ ...p, work: undefined }).length, 0);
   const owned = mine(playgrounds);
   const before = chars(owned);
   return (after, storeChars) => {

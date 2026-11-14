@@ -1,4 +1,4 @@
-import { refused, stateResponse, type Ctx } from "@/app/api/respond";
+import { refused, stateResponse, storageFull, type Ctx } from "@/app/api/respond";
 import { load, update } from "@/lib/store";
 
 const bad = (error: string) => Response.json({ error }, { status: 400 });
@@ -24,7 +24,11 @@ export async function POST(req: Request, { params }: Ctx) {
     usage[m.id] = n;
   }
   const required = p.domain.features.map((f) => f.id).filter((id) => (b.required as unknown[]).includes(id));
-  await update((s) => void (s.playgrounds[pg] && (s.playgrounds[pg].decision = { usage, required, chosen: b.chosen as string, tolerance, savedAt: new Date().toISOString() })));
+  try {
+    await update((s) => void (s.playgrounds[pg] && (s.playgrounds[pg].decision = { usage, required, chosen: b.chosen as string, tolerance, savedAt: new Date().toISOString() })));
+  } catch (e) {
+    return storageFull(e);
+  }
   return stateResponse(pg);
 }
 

@@ -1,4 +1,4 @@
-import { refused, type Ctx } from "@/app/api/respond";
+import { refused, storageFull, type Ctx } from "@/app/api/respond";
 import { cleanValues, isCurrent, mergeKitExploration, OUTPUT_LIMIT, outputsSize, renderOutputs } from "@/lib/kit";
 import { update } from "@/lib/store";
 
@@ -22,5 +22,5 @@ export async function POST(req: Request, { params }: Ctx) {
     // The settled values are also where the controls are now.
     k.exploration = mergeKitExploration(k.kit.controls, k.exploration, { controls: Object.fromEntries(Object.entries(values).map(([id, final]) => [id, { final }])) }, at) ?? k.exploration;
     return Response.json({ settled: k.settled });
-  });
+  }).catch(storageFull);
 }
