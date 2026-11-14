@@ -24,10 +24,13 @@ export default async function Connect() {
                 <h1 id="connect-h" className="t-h2">Connect your agent to Clay</h1>
                 <p className="t-lead">Your agent builds a playground for you, and you try it here: only you can open it. Add Clay to Claude Code or Codex once (it connects as an MCP server), then type “build me a playground for …”.</p>
                 <p>A choice that rests on live prices is kept as a small file in your repository, so any later session of your agent can re-check it.</p>
-                <ul className="rows doc__limits" aria-label="Limits per person">
-                  <li><span className="rows__name">Playgrounds</span><p>Delete old ones on the home page.</p><span className="rows__value">{userPlaygroundCap() || "No limit"}</span></li>
-                  <li><span className="rows__name">Web requests a day</span><p>For reading prices, brands and web pages (a brand counts as 2). The count resets at 00:00 UTC. Moving the controls needs none, and a preview playground without web data needs none.</p><span className="rows__value">{userDailyCap() || "No limit"}</span></li>
-                </ul>
+                {/* The limits are per person; the operator has none. */}
+                {me.kind !== "admin" && (
+                  <ul className="rows doc__limits" aria-label="Limits per person">
+                    <li><span className="rows__name">Playgrounds</span><p>Delete old ones on the home page.</p><span className="rows__value">{userPlaygroundCap() || "No limit"}</span></li>
+                    <li><span className="rows__name">Web requests a day</span><p>For reading prices, brands and web pages (a brand counts as 2). The count resets at 00:00 UTC. Moving the controls needs none, and a preview playground without web data needs none.</p><span className="rows__value">{userDailyCap() || "No limit"}</span></li>
+                  </ul>
+                )}
               </div>
               <div className="span-7 start-6 doc__steps clay">
                 {me.kind === "visitor" ? (
@@ -41,7 +44,7 @@ export default async function Connect() {
                     <p className="small muted">Want to look first? <a href="/#examples">Try an example</a>, no account needed.</p>
                   </section>
                 ) : me.kind === "admin" ? (
-                  <AgentKey endpoint={endpoint} createdAt={null} operator />
+                  <AgentKey endpoint={endpoint} createdAt={null} operator keyless={!process.env.CLAY_ACCESS_KEY} />
                 ) : (
                   <AgentKey endpoint={endpoint} createdAt={(await load()).users[me.userId]?.keyCreatedAt ?? null} />
                 )}

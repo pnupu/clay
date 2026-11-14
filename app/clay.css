@@ -247,3 +247,6 @@
 
 /* The operator session, said in one small word where a person has their account button. */
 .who { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; font: 500 13px/1 var(--font-text); color: var(--p-ink); border: 1px solid var(--c-line-2); border-radius: 999px; white-space: nowrap; }
+/* On a narrow app header there is no room beside the menu and the button; in the website's open menu the word stands at the left. */
+@media (max-width: 519px) { header.bar .who { display: none; } }
+.nav.is-open .nav__actions .who { align-self: flex-start; }

@@ -10,15 +10,16 @@ const EXAMPLES = [
   { kind: "A decision on prices", text: "build me a playground for this: which transactional email service for about 30,000 emails a month now, maybe 200,000 later?" },
 ];
 
-/** The person's agent key: shown once after it is created, then only its creation time. The server keeps a hash. */
 /** What stands in a command for the operator's key. The page never has the key itself: it lives in the deployment's settings. */
 const OWNER_PLACEHOLDER = "<owner key>";
 
 /**
+ * The person's agent key: shown once after it is created, then only its creation time. The server keeps a hash.
  * `operator`: the viewer is in with the owner key (the operator session), not as a person. The same three steps, adapted:
- * no key is created or shown; the commands carry the placeholder and can be copied with it.
+ * no key is created or shown; the commands carry the placeholder and can be copied with it. `keyless`: the open
+ * development server, where no owner key is set and an agent needs none.
  */
-export default function AgentKey({ endpoint, createdAt, operator = false }: { endpoint: string; createdAt: string | null; operator?: boolean }) {
+export default function AgentKey({ endpoint, createdAt, operator = false, keyless = false }: { endpoint: string; createdAt: string | null; operator?: boolean; keyless?: boolean }) {
   const [key, setKey] = useState<string | null>(null);
   const [since, setSince] = useState(createdAt);
   const [busy, setBusy] = useState(false);
@@ -77,17 +78,24 @@ export default function AgentKey({ endpoint, createdAt, operator = false }: { en
       {byHand(id, needsKey)}
     </>
   );
-  const claude = withKey((k) => `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${k}"`);
-  const env = operator ? "CLAY_ACCESS_KEY" : "CLAY_AGENT_KEY";
-  const codex = withKey((k) => `export ${env}=${k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var ${env}`);
+  // CLAY_AGENT_KEY is the name on the agent's side for every viewer, also when it holds the owner key: CLAY_ACCESS_KEY is
+  // the server's own setting, and in a shell profile it would also reach a local `pnpm dev`. In the Codex command the
+  // operator's placeholder is quoted: pasted as it is, a shell would read "<owner" as a redirection.
+  const claude = keyless ? { text: `claude mcp add --scope user --transport http clay ${endpoint}`, real: `claude mcp add --scope user --transport http clay ${endpoint}` } : withKey((k) => `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${k}"`);
+  const codex = keyless ? { text: `codex mcp add clay --url ${endpoint}`, real: `codex mcp add clay --url ${endpoint}` } : withKey((k) => `export CLAY_AGENT_KEY=${operator ? `'${k}'` : k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var CLAY_AGENT_KEY`);
+  const env = "CLAY_AGENT_KEY";
 
   return (
     <>
       {operator ? (
         <section className="pane" data-operator>
           <h2>1. You are in as the operator</h2>
-          <p>You are in as the operator (the owner key). Your agent connects with that same key. This page does not have the key: it is the value of <code>CLAY_ACCESS_KEY</code> in the deployment’s settings. In the commands below, put it in place of <code>{OWNER_PLACEHOLDER}</code>.</p>
-          <p className="small muted">Playgrounds that your agent builds with the owner key are the operator’s, and can be marked as examples. To see Clay as a new person does, leave the operator session (clear this site’s cookies in your browser), then sign up.</p>
+          {keyless ? (
+            <p>This development server is open: no owner key is set (<code>CLAY_ACCESS_KEY</code>), and your agent needs none here. Everyone who can reach it is the operator.</p>
+          ) : (
+            <p>You are in as the operator (the owner key). Your agent connects with that same key. This page does not have the key: it is the value of <code>CLAY_ACCESS_KEY</code> in the deployment’s settings. In the commands below, put it in place of <code>{OWNER_PLACEHOLDER}</code>.</p>
+          )}
+          <p className="small muted">Playgrounds that your agent builds as the operator are the operator’s, and can be marked as examples.{keyless ? "" : " The operator session is a cookie of this browser: to see Clay as a new person does, open it in a private window."}</p>
         </section>
       ) : (
       <section className="pane">
@@ -137,7 +145,7 @@ export default function AgentKey({ endpoint, createdAt, operator = false }: { en
         {block("codex-resume", `codex exec -s workspace-write resume --last "I'm done."`, false)}
 
         <h3>Another agent</h3>
-        <p className="small">Any MCP client that speaks Streamable HTTP: URL <code>{endpoint}</code>, header <code>Authorization: Bearer {shown}</code>.{key && !visible ? " The key is hidden here: press “Show key” above to read it, or copy it from the key block." : ""}</p>
+        <p className="small">Any MCP client that speaks Streamable HTTP: URL <code>{endpoint}</code>{keyless ? "" : <>, header <code>Authorization: Bearer {shown}</code></>}.{key && !visible ? " The key is hidden here: press “Show key” above to read it, or copy it from the key block." : ""}</p>
       </section>
 
       <section className="pane">
@@ -166,8 +174,8 @@ export default function AgentKey({ endpoint, createdAt, operator = false }: { en
       <section className="pane">
         <h2>Later</h2>
         <ul className="plain">
-          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__clay__recheck</code>). Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds. Each run spends web requests from your daily allowance.</li>
-{!operator &&           <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>}
+          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__clay__recheck</code>). Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds.{operator ? "" : " Each run spends web requests from your daily allowance."}</li>
+          {!operator && <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>}
           <li><strong>Remove Clay:</strong> <code>claude mcp remove clay</code> or <code>codex mcp remove clay</code>. If Claude Code says clay exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local clay</code> in that folder and <code>claude mcp remove --scope user clay</code>.</li>
         </ul>
       </section>
