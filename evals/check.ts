@@ -70,6 +70,9 @@ export function creation(calls: Call[], saidToPerson: string, final: string[] | 
   if (last.stopped) return { id: "agent_run", status: "fail", reason: `the server stopped reading: ${cut(last.stopped)}` };
   // `final`: the server's problems list after the build has ended. Without it, the list of the agent's last build result.
   const open = (final ?? last.problems).filter(isBuildError);
+  // A page that ranks fewer than two vendors compares nothing, whatever the agent says about it: it must be repaired.
+  const broken = open.find((p) => p.startsWith("BROKEN BUILD"));
+  if (broken) return fail("creation", `the build was handed over although it compares nothing: ${cut(broken, 110)}`);
   if (!open.length) return pass("creation", `built ${last.id}${builds.length > 1 ? ` in ${builds.length} build calls` : ""}, no open build problem`);
   const said = saidToPerson.toLowerCase().replace(/[_-]/g, " ");
   const untold = open.filter((p) => !said.includes(problemSubject(p).toLowerCase().replace(/[_-]/g, " ")));

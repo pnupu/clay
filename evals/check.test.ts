@@ -122,7 +122,9 @@ test("creation: a failed build, a repaired build, and a problem left untold", ()
   assert.equal(creation(early, "Here is your page.").status, "pass");
   assert.match(creation(early, "Here is your page.", ["resend: the pricing page was not read (timeout). Fix: ..."]).reason, /not told: resend/);
   assert.equal(creation(early, "Resend could not be read, so I left it out.", ["resend: the pricing page was not read (timeout)."]).status, "pass");
-  assert.equal(creation(early, "Here is your page.", ["BROKEN BUILD: only 1 of 4 vendors can be ranked at the starting values"]).status, "fail");
+  const nothing = creation(early, "Only Resend could be priced, so the page compares nothing yet.", ["BROKEN BUILD: only 1 of 4 vendors can be ranked at the starting values"]);
+  assert.equal(nothing.status, "fail");
+  assert.match(nothing.reason, /handed over although it compares nothing/);
   assert.deepEqual(finalProblems(JSON.stringify({ build: { status: "running" }, problems: [] })), null);
   assert.deepEqual(finalProblems(JSON.stringify({ build: { status: "done" }, problems: ["x: y"] })), ["x: y"]);
   assert.deepEqual(finalProblems(JSON.stringify({ kind: "preview" })), null);

@@ -194,12 +194,22 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   const built = { id: build.last?.id ?? build.attempted };
   // What the server says is wrong with the build once its reading has ended (the read tool waits 20 s per call).
   let final: string[] | null = null;
-  for (let i = 0; built.id && build.last && i < 12 && final == null; i++) {
+  /** "none": a playground without a build report (a preview). "unknown": the final state could not be learned. */
+  let state: "done" | "none" | "unknown" = built.id && build.last ? "unknown" : "none";
+  for (let i = 0; state === "unknown" && i < 12; i++) {
     const res = await mcp("tools/call", { name: TOOL.read, arguments: { playground_id: built.id } }).catch(() => null);
     const text = String((res?.content as { text?: string }[] | undefined)?.[0]?.text ?? "");
+    let report: { build?: { status?: string } } | null = null;
+    try {
+      report = JSON.parse(text);
+    } catch {}
     final = finalProblems(text);
-    if (final == null && !/"status": "running"/.test(text)) break; // a playground without a build (a preview), or an error
+    if (final) state = "done";
+    else if (!report || res?.isError) break; // the read failed: the state stays unknown
+    else if (!report.build) state = "none";
   }
+  // Without the final list the check would pass on the agent's early, empty one. That is said, not passed over.
+  if (state === "unknown") add({ id: "agent_run", status: "fail", reason: "the harness could not learn the final state of the build (the read failed, or the build still ran after 12 reads), so the build check has no evidence" });
   add(creation(first.calls, first.allText, final));
   const url = built.id ? pageUrl(built.id) : null;
   if (!built.id || !url) return finish();
