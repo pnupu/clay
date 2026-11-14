@@ -32,8 +32,11 @@ test("the capture time of an answer fails closed: a cache hit of unknown age is 
   const now = Date.parse("2026-11-20T08:30:00.000Z");
   assert.equal(capturedAt({ status: "miss", age_ms: 0 }, now), "2026-11-20T08:30:00.000Z");
   assert.equal(capturedAt({ status: "hit", age_ms: 86_400_000 }, now), "2026-11-19T08:30:00.000Z");
-  // No metadata at all is an answer that was not served from a cache as far as it says: the time of the call.
-  assert.equal(capturedAt(undefined, now), "2026-11-20T08:30:00.000Z");
-  // A hit without an age, an age that is no number, and a negative age: unknown, so as old as can be.
-  for (const meta of [{ status: "hit" }, { status: "hit", age_ms: "86400000" }, { status: "miss", age_ms: -5 }, { status: "hit", age_ms: Number.NaN }]) assert.equal(capturedAt(meta, now), "1970-01-01T00:00:00.000Z", JSON.stringify(meta));
+  // A fresh capture that gives no age is of the time of the call.
+  assert.equal(capturedAt({ status: "miss" }, now), "2026-11-20T08:30:00.000Z");
+  // Review 7: an answer without the block says nothing about its age. Every successful live answer carries the block, so
+  // a missing one is refused like any unknown age: as old as can be.
+  for (const meta of [undefined, null, {}]) assert.equal(capturedAt(meta, now), "1970-01-01T00:00:00.000Z", JSON.stringify(meta));
+  // A hit without an age, an age that is no number, a negative age, and a status that is not a fresh capture: unknown too.
+  for (const meta of [{ status: "hit" }, { status: "hit", age_ms: "86400000" }, { status: "miss", age_ms: -5 }, { status: "hit", age_ms: Number.NaN }, { status: "zdr" }]) assert.equal(capturedAt(meta, now), "1970-01-01T00:00:00.000Z", JSON.stringify(meta));
 });
