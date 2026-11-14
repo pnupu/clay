@@ -19,7 +19,7 @@ try:
         p = os.path.join(tmp, f"s{seed}.csv")
         generate(p, 300 + seed * 37, seed)
         try:
-            want, _ = run(orig, p, 120)
+            want, _ = run(orig, p, 30)
         except subprocess.TimeoutExpired:
             print("FAIL check-timeout: the original job was too slow on this machine"); sys.exit(1)
         try:

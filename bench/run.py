@@ -213,30 +213,34 @@ def classify(timed_out, exit_code, parsed, stderr):
     return "none"
 
 
-def run_check(task_dir, task, work):
+def run_check(task_dir, task, work, limit=600):
+    """Run the hidden check on `work`. Returns (passed, last output, first FAIL line or None).
+
+    Output goes to files, not pipes, so a process the check leaves behind cannot block the wait; the
+    check's whole process group is killed afterwards, also on a normal exit.
+    """
     with tempfile.TemporaryDirectory(prefix="bench-check-") as chk:
         shutil.copytree(os.path.join(task_dir, "check"), chk, dirs_exist_ok=True)
-        p = subprocess.Popen(task["check"] + [work], cwd=chk, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, errors="replace", start_new_session=True)
-        timed_out = False
-        try:
-            out, err = p.communicate(timeout=600)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-        finally:
-            try:  # also kills the agent's code that the check started, on a timeout or a normal exit
-                os.killpg(p.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-        if timed_out:
+        out_path = os.path.join(chk, ".check-output")
+        with open(out_path, "w") as out_f:
+            p = subprocess.Popen(task["check"] + [work], cwd=chk, stdout=out_f, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, start_new_session=True)
             try:
-                p.communicate(timeout=15)
+                p.wait(timeout=limit)
+                timed_out = False
             except subprocess.TimeoutExpired:
-                pass
-            return False, "check timed out", "FAIL check-timeout: the hidden check did not finish within 600 s"
-        r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
-        return r.returncode == 0, (r.stdout + r.stderr)[-600:], next(
-            (ln.strip() for ln in r.stdout.splitlines() if ln.startswith("FAIL")), None)
+                timed_out = True
+            finally:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                p.wait()
+        text = open(out_path, errors="replace").read()
+        fail = next((ln.strip() for ln in text.splitlines() if ln.startswith("FAIL")), None)
+        if timed_out:
+            return False, text[-600:], fail or f"FAIL check-timeout: the hidden check did not finish within {limit} s"
+        return p.returncode == 0, text[-600:], fail
 
 
 def tree_digest(d):

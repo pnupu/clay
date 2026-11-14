@@ -2,20 +2,17 @@
 """Usage: python3 bench/validate.py [task-set dir, default tasks]
 
 Validate every task: the hidden check must FAIL on the starting state and PASS on the reference solution."""
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, shutil, sys, tempfile
+
+import run  # the same hidden-check runner as the benchmark
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TASKS = os.path.join(HERE, sys.argv[1] if len(sys.argv) > 1 else "tasks")
 
 
 def run_check(task_dir, task, work):
-    with tempfile.TemporaryDirectory(prefix="bench-check-") as chk:
-        shutil.copytree(os.path.join(task_dir, "check"), chk, dirs_exist_ok=True)
-        try:
-            r = subprocess.run(task["check"] + [work], cwd=chk, capture_output=True, text=True, timeout=180)
-        except subprocess.TimeoutExpired:
-            return False, "check timeout"
-        return r.returncode == 0, (r.stdout + r.stderr)[-400:]
+    passed, out, _ = run.run_check(task_dir, task, work)
+    return passed, out
 
 
 def main():
