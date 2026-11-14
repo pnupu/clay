@@ -34,6 +34,8 @@ export type Source = {
   snapshot: Snapshot | null;
   lastCheckedAt: string | null;
   error: string | null;
+  /** When the page of the last successful read was captured, an unchanged page included. lastCheckedAt is the time of the attempt; a cached answer is older than it. */
+  readAt?: string | null;
   /** The last read succeeded and the page states no price: `error` is then the explanation of that, not a failed read (fullRead() in lib/record.ts). */
   unpriced?: boolean;
   monitor: { id: string; secret: string; webhookUrl: string } | null;

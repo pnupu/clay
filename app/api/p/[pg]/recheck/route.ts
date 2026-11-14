@@ -33,17 +33,19 @@ export async function POST(req: Request, { params }: Ctx) {
 async function withVerdict(req: Request, pg: string, before: Playground, trigger: "manual" | "auto") {
   const url = `${originOf(req)}/p/${pg}`;
   const head = { playground_id: pg, url };
+  // The start of this check: the verdict counts only pages that were read, and captured, in it (fullRead in lib/record.ts).
+  const began = new Date().toISOString();
   if (before.kit) {
     if (!before.kit.kit.web?.length) return Response.json({ ...head, verdict: "Nothing to re-check: this playground reads no web page." });
     const w = await recheckWeb(pg);
     const now = (await load()).playgrounds[pg];
     const checked_at = new Date().toISOString();
     const changes = webChanges(now.kit!).changes;
-    return Response.json({ ...head, checked_at, ...(w.stop ? { stopped: w.stop } : {}), ...recheckFile(now, url, checked_at, changes.length, !!w.stop), web_changes: changes });
+    return Response.json({ ...head, checked_at, ...(w.stop ? { stopped: w.stop } : {}), ...recheckFile(now, url, checked_at, changes.length, !!w.stop, began), web_changes: changes });
   }
   const results = await recheckAll(pg, before.domain.vendors.map((v) => v.id), trigger, originOf(req));
   const stop = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
   const now = (await load()).playgrounds[pg];
   const checked_at = new Date().toISOString();
-  return Response.json({ ...head, checked_at, ...(stop ? { stopped: String(stop.reason?.message ?? stop.reason).slice(0, 300) } : {}), ...recheckVerdict(now, url, checked_at, !!stop) });
+  return Response.json({ ...head, checked_at, ...(stop ? { stopped: String(stop.reason?.message ?? stop.reason).slice(0, 300) } : {}), ...recheckVerdict(now, url, checked_at, !!stop, began) });
 }

@@ -296,8 +296,9 @@ test("review 5, finding 3: in the re-check answer foreign text is quoted data, a
 /** A price playground whose re-check began at SINCE and read every page again in full. */
 const SINCE = "2026-11-20T08:29:00.000Z";
 const rechecked = (bases: Record<string, number>, extra: object = {}) => {
-  const p = price(bases, extra) as unknown as { sources: Record<string, { lastCheckedAt: string; unpriced?: boolean; error: string | null; snapshot: { fetchedAt: string; model: unknown; quarantined: object[]; truncated: boolean } | null }> };
-  for (const s of Object.values(p.sources)) { s.lastCheckedAt = "2026-11-20T08:29:30.000Z"; s.snapshot!.fetchedAt = "2026-11-20T08:29:30.000Z"; }
+  const p = price(bases, extra) as unknown as { sources: Record<string, { lastCheckedAt: string; readAt?: string | null; unpriced?: boolean; error: string | null; snapshot: { fetchedAt: string; model: unknown; quarantined: object[]; truncated: boolean } | null }> };
+  // Every page was read in this check, and the capture of each read is of this check too (readAt).
+  for (const s of Object.values(p.sources)) { s.lastCheckedAt = "2026-11-20T08:29:30.000Z"; s.readAt = "2026-11-20T08:29:30.000Z"; s.snapshot!.fetchedAt = "2026-11-20T08:29:30.000Z"; }
   return p;
 };
 
@@ -518,4 +519,27 @@ test("review 6: the reviewers' rule stands beside it: a failed, stale, cut or do
     assert.match(a.if_this_repeats ?? "", /offer to remove it from the comparison or to give its exact pricing page/, name);
     assert.deepEqual(a.decision_file, { path: ".clay/decisions/email-provider.md", keep: "Leave the file as it is: its check line is changed only after a full read." }, name);
   }
+});
+
+test("review 6: a capture from a cache is not today's read, whatever the time of the attempt", () => {
+  // The reviewer's case: both pages answered from a cache, captured a day earlier; the attempts are of this check.
+  const cached = rechecked({ resend: 20, postmark: 25 });
+  for (const s of Object.values(cached.sources)) s.readAt = "2026-11-19T08:29:30.000Z";
+  const a = answerOf(cached);
+  assert.match(a.verdict, /^NOT KNOWN/);
+  assert.deepEqual(a.not_read_in_full?.map((g) => g.reason), ["its pricing page came from a cache: the capture is older than this check", "its pricing page came from a cache: the capture is older than this check"]);
+  // One cached page among fresh ones is enough.
+  const one = rechecked({ resend: 20, postmark: 25 }); one.sources.postmark.readAt = "2026-11-20T08:20:00.000Z";
+  assert.match(answerOf(one).verdict, /^NOT KNOWN/);
+  // The tolerance: a capture up to one minute before the check began is of this check (a call can join a re-check that began moments ago).
+  const near = rechecked({ resend: 20, postmark: 25 }); near.sources.postmark.readAt = "2026-11-20T08:28:10.000Z";
+  assert.match(answerOf(near).verdict, /^STILL HOLDS/);
+  const far = rechecked({ resend: 20, postmark: 25 }); far.sources.postmark.readAt = "2026-11-20T08:27:50.000Z";
+  assert.match(answerOf(far).verdict, /^NOT KNOWN/);
+  // A source stored before the capture time was kept has none: in a re-check that is not a fresh read either.
+  const legacy = rechecked({ resend: 20, postmark: 25 }); delete legacy.sources.postmark.readAt;
+  assert.match(answerOf(legacy).verdict, /^NOT KNOWN/);
+  // The check line of a record is the time of the oldest capture, not of the attempt.
+  const rec = rechecked({ resend: 20, postmark: 25 }); rec.sources.postmark.readAt = "2026-11-20T08:28:10.000Z";
+  assert.match(decisionRecord(rec as never, URL)!.text, /^- Last checked: 2026-11-20 08:28 UTC: holds\.$/m);
 });

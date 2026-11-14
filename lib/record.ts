@@ -63,6 +63,9 @@ const oldest = (times: (string | null | undefined)[]) => (times.length && times.
  * on such a read. Not a full read: a page that was never read, a read that failed (its stored error; the facts are the
  * old ones), two reads that disagreed (stored as an error too), a number that was quarantined, a page cut for length.
  * `since`: the read must also be from this re-check (its start time), so a page that was skipped or is stale is not full.
+ * For a price playground "from this re-check" is judged on the time the page was CAPTURED (readAt), not on the time of
+ * the attempt: an answer from a cache is as old as its capture. The tolerance is the minute below: Clay asks for a
+ * fresh capture (maxAgeMs 0), so an honest answer is seconds old, and an older one is not today's page.
  * A page that was read and states no price ("contact sales") is a full read: its stored `error` is the explanation of
  * that, the vendor stays out of the comparison, and the rule is judged over the vendors that have a price. Why this
  * state and no other: its facts are complete and known (there is no price). A cut page or a number that is not on its
@@ -84,6 +87,8 @@ export function priceGaps(p: Playground, since: string | null = null): { vendor:
       : src.snapshot.quarantined?.length ? "a number that was read is not on its page"
       : src.snapshot.truncated ? "its pricing page was cut for length"
       : !inCheck(src.lastCheckedAt) ? "its pricing page was not read in this check"
+      // Only a re-check has a start time; the capture time is kept since this rule exists, so an older store has none.
+      : from && !inCheck(src.readAt) ? "its pricing page came from a cache: the capture is older than this check"
       : null;
     return reason ? [{ vendor: quoted(p, v.id), reason }] : [];
   });
@@ -121,7 +126,7 @@ export function checkedLine(p: Playground, at: string | null = null): string | n
   if (!fullRead(p)) return `${CHECKED} not known: at the last check not every pricing page could be read in full.`;
   // The last check of each page. A check that failed or disagreed stores an error, and fullRead above excludes it, so
   // this is the time of a full read, never of an attempt.
-  const time = at ?? oldest(p.domain.vendors.map((v) => p.sources[v.id]?.lastCheckedAt ?? p.sources[v.id]?.snapshot?.fetchedAt));
+  const time = at ?? oldest(p.domain.vendors.map((v) => p.sources[v.id]?.readAt ?? p.sources[v.id]?.lastCheckedAt ?? p.sources[v.id]?.snapshot?.fetchedAt));
   return `${CHECKED} ${when(time)}: ${standing(p.decision, models(p)).holds ? "holds" : "no longer holds; see the playground"}.`;
 }
 

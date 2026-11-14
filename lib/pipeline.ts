@@ -71,12 +71,12 @@ export function verify(model: PricingModel, pageText: string): Pick<Snapshot, "m
 
 // ---- Reading a page
 
-/** Cheap read: page text only. Used as the gate before a paid structured extraction. */
-async function readText(src: Source, origin: string): Promise<string> {
-  if (src.demo && demoIsLocal()) return (await fetch(demoUrl(origin), { cache: "no-store" })).text();
+/** Cheap read: page text only, and when that text was captured (a cached answer is older than this call). Used as the gate before a paid structured extraction. */
+async function readText(src: Source, origin: string): Promise<{ text: string; at: string }> {
+  if (src.demo && demoIsLocal()) return { text: await (await fetch(demoUrl(origin), { cache: "no-store" })).text(), at: new Date().toISOString() };
   const r = await scrape(src.url!);
   if (!r.markdown.success || r.markdown.data == null) throw new Error(`Page text not readable: ${r.markdown.error_code ?? "unknown"} ${r.markdown.message ?? ""}`);
-  return r.markdown.data;
+  return { text: r.markdown.data, at: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString() };
 }
 
 /** Full read: structured extraction plus the page text of the same capture. */
@@ -158,6 +158,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
       Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
       src.snapshot = await readModel(p.domain, src, origin);
       src.error = null;
+      src.readAt = src.snapshot.fetchedAt;
     } else {
       const tried: { url: string; why: string }[] = [];
       let best: { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null = null;
@@ -166,7 +167,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         try {
           const snapshot = await readModel(p.domain, { ...src, url }, origin);
           if (hasPrices(snapshot.model)) {
-            Object.assign(src, { url, foundVia: via, snapshot, error: null });
+            Object.assign(src, { url, foundVia: via, snapshot, error: null, readAt: snapshot.fetchedAt });
             return true;
           }
           tried.push({ url, why: emptyReason(snapshot.model) });
@@ -198,7 +199,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         // The best read is kept, so the page can show the plan names it did find; the source says what is missing.
         const kept = best as { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null;
         // That page was read; it states no price. This is a fact of the page, kept apart from a failed read (unpriced).
-        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, unpriced: true });
+        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, readAt: kept.snapshot.fetchedAt, unpriced: true });
         src.error = hadPrices ? `${v.name}'s pricing page could not be read again (${tried[0]?.why ?? "unknown reason"}). The earlier read is kept.` : said;
       }
     }
@@ -593,8 +594,12 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   let unconfirmed = 0;
   /** Shown on the source like an error, until a re-check settles it. */
   let note: string | null = null;
+  /** When the page of this re-check was captured: the text read, or the older extraction when the page was read in full. */
+  let readAt: string | null = null;
   try {
-    if (hash(await readText(src, origin)) !== src.snapshot.textHash) {
+    const page = await readText(src, origin);
+    readAt = page.at;
+    if (hash(page.text) !== src.snapshot.textHash) {
       const first = await readModel(before.domain, src, origin);
       let next = first;
       if (first.extractor === "context.dev" && diffModels(src.snapshot.model, first.model).length) {
@@ -618,6 +623,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       }
       const changes = diffModels(src.snapshot.model, next.model);
       snapshot = next;
+      if (next.fetchedAt < readAt) readAt = next.fetchedAt;
       if (changes.length) {
         const models = (s: typeof before, own: PricingModel) => Object.fromEntries(Object.entries(s.sources).map(([k, x]) => [k, k === id ? own : (x.snapshot?.model ?? null)]));
         event = {
@@ -644,7 +650,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       if (cur?.textHash !== src.snapshot!.textHash || cur?.fetchedAt !== src.snapshot!.fetchedAt) return void (event = null);
       // The demo page lives on this app's origin, which changes with the port.
       // A read that gives no price keeps its explanation (collect(): what was tried and why) until a read gives one.
-      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? (hasPrices(snapshot.model) ? null : p.sources[id].error), unpriced: error == null && note == null && !hasPrices(snapshot.model), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
+      Object.assign(p.sources[id], { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? (hasPrices(snapshot.model) ? null : p.sources[id].error), unpriced: error == null && note == null && !hasPrices(snapshot.model), ...(error == null && readAt ? { readAt } : {}), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
     });
   }
