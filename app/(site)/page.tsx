@@ -8,6 +8,7 @@ import { crossovers } from "@/lib/pricing";
 import { load, type Playground } from "@/lib/store";
 import Kit from "@/app/kit";
 import HeroRanking from "./hero-ranking";
+import Say from "./say";
 import Manage from "@/app/manage";
 
 export const dynamic = "force-dynamic";
@@ -96,7 +97,7 @@ export default async function Home() {
             <div className="span-5 hero__words">
               <h1 id="hero-h">Playgrounds your own agent builds</h1>
               <p className="hero__lead">Say it to Claude Code or Codex:</p>
-              <p className="say">build me a playground for …</p>
+              <Say />
               <p className="hero__lead">It builds a page where the real thing runs under a few controls: a price choice read live from the vendors’ own pages, your component, an animation. One command connects it.</p>
               <div className="btn-row">
                 {connected ? <a className="btn btn--primary" href="#yours">Your playgrounds<Arrow /></a> : <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>}

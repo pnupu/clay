@@ -18,8 +18,14 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
 .hero--clay .hero__words > h1 + * { margin-top: var(--s-6); }
 .hero--clay .hero__lead { font-size: var(--t-lead); line-height: 1.5; max-width: 40ch; }
 .hero--clay .btn-row { margin-top: var(--s-6); }
-/* The sentence a person types, set as they type it. */
+/* The sentence a person types, set as they type it. The request (app/(site)/say.tsx) is typed on a line of its own,
+   which the caret keeps open when it is empty, so the hero keeps its size while the text changes. */
 .say { font: 500 20px/1.4 var(--font-mono); letter-spacing: -0.01em; color: var(--ink); }
+.say__what { display: block; white-space: nowrap; }
+.say__what::after { content: ""; display: inline-block; width: 0.55em; height: 1.1em; vertical-align: text-bottom; background: var(--ink); }
+.say__what--held::after { animation: say-caret 1s steps(1) infinite; }
+@keyframes say-caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .say__what::after { display: none; } }
 @media (max-width: 1023px) {
   .hero--clay .hero__grid { display: flex; flex-direction: column; gap: var(--s-7); }
   html[data-type] main > .hero.hero--clay { padding-top: calc(var(--nav) + var(--s-6)); padding-bottom: var(--s-8); }
