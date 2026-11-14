@@ -103,8 +103,8 @@ export function ClayPlayground(props: {
   const changes = (u: ClayUse) => changesAt(level, u);
   const applied = (u: ClayUse): ClayApplied => {
     if (!changes(u)) return same;
-    const mine = moved.flatMap((c) => (c.type === "scale" && !c.token && !own(level, u).includes(c.css) ? [c] : []));
-    return { className: mine.filter(onScale).map((c) => values[c.id]).join(" "), style: Object.fromEntries(mine.filter((c) => !onScale(c)).map((c) => [c.css, String(values[c.id])])) as CSSProperties, values: Object.fromEntries(moved.filter((c) => !c.token).map((c) => [c.id, values[c.id]])), changes: true };
+    const mine = moved.flatMap((c) => (c.type === "scale" && !c.token && reaches(c, level, u) ? [c] : []));
+    return { className: mine.filter(onScale).map((c) => values[c.id]).join(" "), style: Object.fromEntries(mine.filter((c) => !onScale(c)).map((c) => [c.css, String(values[c.id])])) as CSSProperties, values: Object.fromEntries(moved.filter((c) => !c.token && reaches(c, level, u)).map((c) => [c.id, values[c.id]])), changes: true };
   };
 
   // The level "token": the variable is set on the page root, as the theme file would set it. The browser decides what changes.
