@@ -185,7 +185,7 @@ export function nonOwnerView(p: Playground): Playground {
   // alone can tell which values the owner tried, when code fails only for some. A non-owner gets none of it.
   const preview = p.kit ? { status: "unverified" as const, error: null, at: null } : undefined;
   // discardedWrites: told to the owner only.
-  return { ...p, exploration: null, discardedWrites: undefined, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
+  return { ...p, exploration: null, discardedWrites: undefined, storageKept: undefined, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
 }
 /**
  * The version of what a visitor sees of a playground: a hash of the non-owner view itself (nonOwnerView), so whatever
@@ -210,11 +210,10 @@ export const NOT_YOURS = "This is someone else's example, to look at. It is not 
 
 /** Said to the owner when writes on their published example were discarded (accounts.ts, keepPublished). */
 export const discardedReport = (p: Playground) => {
-  const all = p.discardedWrites ?? [];
-  const published = all.filter((x) => x.why !== "storage"), storage = all.filter((x) => x.why === "storage");
+  const published = p.discardedWrites ?? [], storage = p.storageKept ?? [];
   return {
     ...(published.length ? { published_example_kept: `While this playground was a published example, ${published.length === 10 ? "10 or more" : published.length} write(s) that arrived later were discarded, the last at ${published[0].at} (by ${published[0].by}): the example keeps what the operator approved. To change it, revise it with revise_playground (that unpublishes it), or ask the operator.` } : {}),
-    ...(storage.length ? { storage_kept: `${storage.length} result(s) of a web monitor's re-check were not stored, the last at ${storage[0].at}: they would take this person's playgrounds over their storage allowance, or grow them a lot while the Clay deployment's storage is full. The playground keeps what it held. To make room, delete a playground the person no longer needs, or make one smaller.` } : {}),
+    ...(storage.length ? { storage_kept: `${storage.length === 10 ? "10 or more" : storage.length} result(s) of a web monitor's re-check were not stored, the last at ${storage[0].at}: they would take this person's playgrounds over their storage allowance, or grow them a lot while the Clay deployment's storage is full. The playground keeps what it held. To make room, delete a playground the person no longer needs, or make one smaller.` } : {}),
   };
 };
 

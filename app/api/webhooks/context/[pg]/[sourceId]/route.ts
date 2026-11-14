@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { verifyWebhook } from "@/lib/contextdev";
 import { originOf, recheck } from "@/lib/pipeline";
-import { isExample, ownerOf } from "@/lib/accounts";
+import { atAllowance, isExample, ownerOf } from "@/lib/accounts";
 import { load, update } from "@/lib/store";
 
 export const maxDuration = 300;
@@ -13,7 +13,8 @@ export const maxDuration = 300;
 export async function POST(req: Request, { params }: { params: Promise<{ pg: string; sourceId: string }> }) {
   const { pg, sourceId } = await params;
   const raw = Buffer.from(await req.arrayBuffer()); // raw bytes first: verify before parsing
-  const p = (await load()).playgrounds[pg];
+  const all = (await load()).playgrounds;
+  const p = all[pg];
   const src = p?.sources[sourceId];
   if (!src?.monitor || !verifyWebhook(raw, req.headers.get("x-context-signature") ?? "", src.monitor.secret)) return new Response("Invalid webhook signature", { status: 401 });
 
@@ -29,6 +30,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ pg: str
   // A person's published example keeps what the operator approved (lib/accounts.ts, keepPublished would discard the
   // result): it is not re-read, so nothing is spent. An example that the operator owns follows its pages, by design.
   if (p && isExample(p, pg) && ownerOf(p)) return new Response(null, { status: 204 });
+  // A person at their storage allowance: the result could not be stored (lib/accounts.ts, boundOwners), so nothing is read.
+  if (p && ownerOf(p) && atAllowance(all, ownerOf(p)!)) return new Response(null, { status: 204 });
   // Persist the event id before acknowledging; a retry or replay of the same id is acknowledged without a second run.
   const fresh = await update((s) => {
     if (s.webhookEventIds.includes(event.id as string)) return false;

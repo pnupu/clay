@@ -125,6 +125,8 @@ export type Playground = {
   leftOut?: { name: string; reason: string; at: string }[];
   /** Writes that arrived on this playground while it was a published example and were discarded (accounts.ts, keepPublished). Owner only. */
   discardedWrites?: Discarded[];
+  /** Results of a webhook monitor's re-check that the owner's storage bounds kept out (accounts.ts, boundOwners). Owner only. */
+  storageKept?: { at: string }[];
 };
 
 export type Store = {

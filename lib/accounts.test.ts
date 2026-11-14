@@ -427,7 +427,7 @@ test("storage bounds: a webhook monitor's write is bound by the owner's allowanc
   const { discardedReport } = await import("./report.ts");
   process.env.CLAY_USER_STORE_BYTES = "5000";
   process.env.CLAY_MAX_STORE_BYTES = "100000";
-  type P = { domain: { id: string }; owner?: string; sources: { alpha: { plans: string } }; work?: unknown; discardedWrites?: import("./accounts.ts").Discarded[] };
+  type P = { domain: { id: string }; owner?: string; example?: boolean; sources: { alpha: { plans: string } }; work?: unknown; storageKept?: { at: string }[] };
   const s = () => ({ ann: { domain: { id: "ann" }, owner: "user_ann", sources: { alpha: { plans: "x".repeat(4000) } } }, ours: { domain: { id: "ours" }, sources: { alpha: { plans: "x" } } } }) as Record<string, P>;
   const monitor = (change: (x: Record<string, P>) => void, store = 50) => {
     const x = s();
@@ -438,13 +438,23 @@ test("storage bounds: a webhook monitor's write is bound by the owner's allowanc
   };
   // A re-check that takes Ann over her allowance: her playground keeps the earlier read (its work bookkeeping is new).
   let x = monitor((y) => Object.assign(y.ann, { sources: { alpha: { plans: "x".repeat(6000) } }, work: { finishedAt: "t" } }));
-  assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.work, x.ann.discardedWrites?.[0].why], [4000, { finishedAt: "t" }, "storage"]);
+  assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.work, x.ann.storageKept?.length], [4000, { finishedAt: "t" }, 1]);
   assert.match(discardedReport(x.ann as never).storage_kept ?? "", /1 result\(s\) of a web monitor's re-check were not stored/);
-  // Within her allowance it is stored, also while the deployment's store is full; the operator's own playground is not bound.
-  x = monitor((y) => (y.ann.sources.alpha.plans = "x".repeat(4500)), 200000);
-  assert.equal(x.ann.sources.alpha.plans.length, 4500);
+  // Within her allowance it is stored, also while the deployment's store is full, and a stored write clears the note;
+  // the operator's own playground is not bound.
+  x = monitor((y) => Object.assign(y.ann, { storageKept: [{ at: "t0" }], sources: { alpha: { plans: "x".repeat(4500) } } }), 200000);
+  assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.storageKept], [4500, undefined]);
   x = monitor((y) => (y.ours.sources.alpha.plans = "x".repeat(SMALL_WRITE * 2)), 200000);
   assert.equal(x.ours.sources.alpha.plans.length, SMALL_WRITE * 2);
+  // A deleted playground is not brought back, and a published example is left to keepPublished.
+  x = monitor((y) => { delete (y as Record<string, unknown>).ann; });
+  assert.equal(x.ann, undefined);
+  x = s();
+  x.ann.example = true;
+  const kb = boundStorage(x, null);
+  x.ann.sources.alpha.plans = "x".repeat(6000);
+  kb(x, () => 50);
+  assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.storageKept], [6000, undefined]);
   // Large growth (over SMALL_WRITE) of a person's playground while the store is full is not stored.
   process.env.CLAY_USER_STORE_BYTES = "0";
   x = monitor((y) => (y.ann.sources.alpha.plans = "x".repeat(SMALL_WRITE + 5000)), 200000);
