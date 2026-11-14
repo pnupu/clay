@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Summarize a bench run: python3 bench/summarize.py bench/results/<run-id> [more run dirs to merge ...]
 
-Writes summary.json, SUMMARY.md and clay-inline.json into the LAST run directory given, so merging a new
+Writes summary.json, SUMMARY.md and clay-inline.json into the LAST run directory given (it refuses to
+replace an existing summary unless --overwrite is passed), so merging a new
 run never overwrites the summary of an earlier one.
 No prices: those come live from the web in the product.
 """
 import fnmatch, json, math, os, statistics, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ERROR_CLASSES = ["none", "timeout", "rate_or_usage_limit", "tool_or_cli_error", "refused"]
+ERROR_CLASSES = ["none", "timeout", "rate_or_usage_limit", "tool_or_cli_error", "refused", "harness_error"]
 
 
 def pct(xs, p):
@@ -25,19 +26,17 @@ def mean(xs):
 
 
 def load(run_dirs):
-    recs, unknown = [], []
+    """Records of all run dirs; each dir's adjustments apply only to that dir's own records."""
+    recs = []
     for d in run_dirs:
-        for line in open(os.path.join(d, "runs.jsonl")):
-            recs.append(json.loads(line))
+        own = [json.loads(line) for line in open(os.path.join(d, "runs.jsonl"))]
         adj = os.path.join(d, "adjustments.json")
-        if os.path.exists(adj):
-            unknown += json.load(open(adj)).get("pass_unknown", [])
-    for r in recs:
-        r["pass_scored"] = True
-        for u in unknown:
-            if (r["task"] == u["task"] and r["repeat"] == u["repeat"] and fnmatch.fnmatch(r["agent"], u["agent"])
-                    and fnmatch.fnmatch(r["model"], u["model"])):
-                r["pass_scored"] = False
+        unknown = json.load(open(adj)).get("pass_unknown", []) if os.path.exists(adj) else []
+        for r in own:
+            r["pass_scored"] = not any(
+                r["task"] == u["task"] and r["repeat"] == u["repeat"] and fnmatch.fnmatch(r["agent"], u["agent"])
+                and fnmatch.fnmatch(r["model"], u["model"]) for u in unknown)
+        recs += own
     return recs
 
 
@@ -49,12 +48,13 @@ def summarize(recs):
         rs = [r for r in recs if (r["agent"], r["model"]) == (ag, m)]
         scored = [r for r in rs if r["pass_scored"]]
         passed = [r for r in scored if r["passed"]]
-        secs = [r["wall_seconds"] for r in rs]
+        secs = [r["wall_seconds"] for r in rs if r["wall_seconds"] is not None]
         rows.append({
             "agent": ag, "model": m, "agent_version": rs[0]["agent_version"], "effort": rs[0]["effort"],
             "runs": len(rs), "scored_runs": len(scored), "passed": len(passed),
             "pass_rate": round(len(passed) / len(scored), 3) if scored else None,
-            "median_seconds": round(statistics.median(secs), 1), "p90_seconds": round(pct(secs, 90), 1),
+            "median_seconds": round(statistics.median(secs), 1) if secs else None,
+            "p90_seconds": round(pct(secs, 90), 1) if secs else None,
             "median_seconds_passed": round(statistics.median([r["wall_seconds"] for r in passed]), 1) if passed else None,
             "per_task": {k: mean([r.get(k) for r in rs]) for k in
                          ("input_tokens", "cached_input_tokens", "cache_write_tokens", "output_tokens",
@@ -98,7 +98,7 @@ def markdown(rows, per_task, manifests, recs):
     for r in rows:
         errs = ", ".join(f"{k} {v}" for k, v in r["errors"].items() if k != "none" and v) or "none"
         out.append(f"| {r['agent']} | {r['model']} | {r['effort']} | {r['runs']} | {r['passed']}/{r['scored_runs']} | "
-                   f"{r['pass_rate']:.0%} | {r['median_seconds']} | {r['p90_seconds']} | {fmt(r['per_task']['input_tokens'])} | "
+                   f"{'–' if r['pass_rate'] is None else format(r['pass_rate'], '.0%')} | {r['median_seconds']} | {r['p90_seconds']} | {fmt(r['per_task']['input_tokens'])} | "
                    f"{fmt(r['per_task']['cached_input_tokens'])} | {fmt(r['per_task']['output_tokens'])} | "
                    f"{fmt(r['per_passed_task']['input_tokens'])} | {fmt(r['per_passed_task']['output_tokens'])} | "
                    f"{fmt(r['per_task']['tool_calls'])} | {errs} |")
@@ -119,9 +119,13 @@ def markdown(rows, per_task, manifests, recs):
 
 
 def main():
-    dirs = sys.argv[1:]
+    overwrite = "--overwrite" in sys.argv
+    dirs = [a for a in sys.argv[1:] if a != "--overwrite"]
     if not dirs:
         sys.exit(__doc__)
+    outs = [os.path.join(dirs[-1], n) for n in ("summary.json", "SUMMARY.md", "clay-inline.json")]
+    if not overwrite and any(os.path.exists(o) for o in outs):
+        sys.exit(f"refusing to overwrite the summary in {dirs[-1]}; pass --overwrite to regenerate it")
     recs = load(dirs)
     rows, per_task = summarize(recs)
     manifests = [json.load(open(os.path.join(d, "manifest.json"))) for d in dirs if os.path.exists(os.path.join(d, "manifest.json"))]

@@ -25,7 +25,8 @@ human in the loop. Each run records:
 - **tool_calls**: Claude `tool_use` blocks; codex `command_execution`, `file_change`, `mcp_tool_call` and
   `web_search` items. **turns**: Claude `num_turns`; codex turns (always 1 for `codex exec`).
 - **error_class**: `none`, `timeout` (killed at the task's time limit), `rate_or_usage_limit`,
-  `tool_or_cli_error` (non-zero exit or an error result), or `refused`. The class comes only from the
+  `tool_or_cli_error` (non-zero exit or an error result), `refused`, or `harness_error` (the runner
+  itself failed on that run; the other runs continue). The class comes only from the
   CLI's own result and error events and its exit status, never from tool output. A run can have error
   class `none` and still fail the check: the agent stopped and its answer was wrong.
 
@@ -64,8 +65,16 @@ Both CLIs use the subscription logins on the machine, not API keys.
 
 Both CLIs run inside bubblewrap (`bwrap`). The whole filesystem is read-only except the task's work
 directory and the CLI's own state directory (`~/.claude` and `~/.claude.json`, or `~/.codex`). `/tmp` is a
-private empty tmpfs. The `bench/` directory, with the hidden checks, is hidden behind an empty tmpfs. The
-network is not restricted, because the CLIs need it.
+private empty tmpfs, and the CLI gets its own PID namespace, so no process it starts outlives it.
+The network is not restricted, because the CLIs need it.
+
+The hidden checks and reference solutions also exist outside `bench/tasks/`: in the repository's `.git`,
+and in agent session stores that can hold the transcript of whoever wrote the tasks. In runs made after
+commit `e4557ab`, the whole repository checkout, `~/agent-runs`, `~/.claude/projects`, `~/.codex/sessions`
+and `~/.t3` are hidden behind empty tmpfs mounts (and `~/.claude` for codex). In runs `20261114-main` and
+`20261114-final`, only `bench/` was hidden, so an agent *could* have reached a check through `.git` or a
+session store. An audit of all 124 transcripts found no tool call that names a check or reference file,
+`.git`, `agent-runs`, `.claude/projects`, `.codex/sessions` or `.t3`.
 
 Two choices differ from the CLIs' built-in sandboxes, for reasons found on this machine:
 
@@ -108,6 +117,11 @@ the CLI's output. It should be false for every run.
   directories were already deleted). They count for time, tokens and errors, but not for pass rate
   (`results/20261114-final/adjustments.json`).
 
+- **Source commit of the committed runs.** `manifest.json` of runs `20261114-main` and `20261114-final`
+  says `source_commit` `b3d97f8`, but `bench/` was not committed yet at that time. The code that ran is
+  commit `e4557ab`, except two later changes: the `csv-totals` check (changed during the run, see above)
+  and the `started_utc` fix. Later manifests also record `source_dirty` (uncommitted changes in `bench/`)
+  and `bench_sha256` (a hash of `run.py` and every task file).
 - **Record field fix.** In runs `20261114-main` and `20261114-final`, the field `started_utc` holds the
   time each run *ended* (a harness bug, fixed afterwards). Durations are in `wall_seconds` and are correct.
 
@@ -116,7 +130,7 @@ the CLI's output. It should be false for every run.
 ```bash
 python3 bench/validate.py                                   # every check fails on start/ and passes on ref/
 python3 bench/run.py --run-id <new-id> --repeats 2 --concurrency 3
-python3 bench/summarize.py bench/results/<new-id>
+python3 bench/summarize.py bench/results/<new-id>          # add --overwrite to regenerate an existing summary
 ```
 
 To add a model, run only that subject into a new run directory, then summarize both runs together. The

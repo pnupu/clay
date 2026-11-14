@@ -31,11 +31,28 @@ DEFAULT_SUBJECTS = [
 HOME = os.path.expanduser("~")
 
 
+# Places where the hidden checks and reference solutions can also be read: the repository itself (its
+# .git holds every committed check), and agent session stores, which may hold the transcript of whoever
+# wrote the tasks. Each one that exists is hidden behind an empty tmpfs.
+REPO = os.path.dirname(HERE)
+SESSION_STORES = [f"{HOME}/.claude/projects", f"{HOME}/.codex/sessions", f"{HOME}/.codex/archived_sessions",
+                  f"{HOME}/.t3", f"{HOME}/.t3code", f"{HOME}/agent-runs"]
+
+
+def sandbox(work, writable, hidden=()):
+    """bwrap prefix: read-only root, private /tmp and PID namespace, writable `work` and `writable` paths."""
+    pre = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-pid",
+           "--tmpfs", "/tmp"]
+    for w in writable:
+        pre += ["--bind", w, w]
+    for h in [*SESSION_STORES, *hidden, REPO]:
+        if os.path.exists(h):
+            pre += ["--tmpfs", h]
+    return pre + ["--bind", work, work, "--chdir", work, "--die-with-parent", "--"]
+
+
 def bwrap_prefix(work):
-    return ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
-            "--tmpfs", HERE, "--bind", f"{HOME}/.claude", f"{HOME}/.claude",
-            "--bind", f"{HOME}/.claude.json", f"{HOME}/.claude.json",
-            "--bind", work, work, "--chdir", work, "--die-with-parent", "--"]
+    return sandbox(work, [f"{HOME}/.claude", f"{HOME}/.claude.json"])
 
 
 # Codex: `--ignore-user-config` still loads the user's global ~/.codex/AGENTS.md (on this machine it tells
@@ -51,14 +68,11 @@ def codex_bwrap_prefix(work):
     if not os.path.exists(EMPTY):
         open(EMPTY, "w").close()
     agents_md = os.path.realpath(f"{HOME}/.codex/AGENTS.md")
-    pre = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
+    pre = sandbox(work, [f"{HOME}/.codex"], [f"{HOME}/.claude", f"{HOME}/.codex/skills", f"{HOME}/.agents/skills"])
     if os.path.exists(agents_md):
-        pre += ["--ro-bind", EMPTY, agents_md]
-    pre += ["--tmpfs", "/tmp", "--tmpfs", HERE, "--bind", f"{HOME}/.codex", f"{HOME}/.codex"]
-    for d in (f"{HOME}/.codex/skills", f"{HOME}/.agents/skills"):
-        if os.path.isdir(d):
-            pre += ["--tmpfs", d]
-    return pre + ["--bind", work, work, "--chdir", work, "--die-with-parent", "--"]
+        i = pre.index("--unshare-pid")  # mask AGENTS.md before the other mounts
+        pre[i:i] = ["--ro-bind", EMPTY, agents_md]
+    return pre
 
 
 # Patterns are matched only against the CLI's own error/result messages, never against tool output.
@@ -219,7 +233,7 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
         started = datetime.now(timezone.utc).isoformat(timespec="seconds")
         t0 = time.monotonic()
         p = subprocess.Popen(cmd, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                             text=True, env=child_env(), start_new_session=True)
+                             text=True, errors="replace", env=child_env(), start_new_session=True)
         timed_out = False
         try:
             stdout, stderr = p.communicate(timeout=task["timeout_s"])
@@ -230,7 +244,10 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
                 stdout, stderr = p.communicate(timeout=15)
             except subprocess.TimeoutExpired:
                 os.killpg(p.pid, signal.SIGKILL)
-                stdout, stderr = p.communicate()
+                try:
+                    stdout, stderr = p.communicate(timeout=15)
+                except subprocess.TimeoutExpired:
+                    stdout, stderr = "", "harness: process did not exit after SIGKILL"
         wall = round(time.monotonic() - t0, 2)
         parsed = parse_claude(stdout) if agent == "claude" else parse_codex(stdout)
         err_class = classify(timed_out, p.returncode, parsed, stderr)
@@ -260,6 +277,17 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def bench_hash():
+    """sha256 over the harness and every task file, so a run can be tied to the exact code that ran."""
+    import hashlib
+    h = hashlib.sha256()
+    paths = [os.path.join(HERE, "run.py")] + sorted(
+        os.path.join(d, f) for d, _, fs in os.walk(TASKS) for f in fs if "__pycache__" not in d)
+    for p in paths:
+        h.update(os.path.relpath(p, HERE).encode() + b"\0" + open(p, "rb").read() + b"\0")
+    return h.hexdigest()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", required=True)
@@ -283,7 +311,8 @@ def main():
     versions = {ag: cli_version(ag) for ag in agents}
     git = lambda *x: subprocess.run(["git", *x], cwd=HERE, capture_output=True, text=True).stdout.strip()
     manifest = {"run_id": a.run_id, "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "source_commit": git("rev-parse", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+                "source_commit": git("rev-parse", "HEAD"),
+                "source_dirty": git("status", "--porcelain", "--", ".") or None, "bench_sha256": bench_hash(), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
                 "command": " ".join(sys.argv), "subjects": a.subjects, "tasks": tasks, "repeats": a.repeats,
                 "concurrency": a.concurrency, "cli_versions": versions,
                 "claude_cmd": build_cmd("claude", "<model>", "<instruction>", "<work>"),
@@ -317,13 +346,18 @@ def main():
         with lock:
             if (ag, m) in stopped:
                 return None
-        rec = one_run(t, ag, m, r, out_dir, versions)
+        try:
+            rec = one_run(t, ag, m, r, out_dir, versions)
+        except Exception as e:  # one broken run must not lose the others or the manifest
+            rec = {"task": t, "agent": ag, "model": m, "repeat": r, "passed": False, "wall_seconds": None,
+                   "error_class": "harness_error", "error_text": f"{type(e).__name__}: {e}"[:500],
+                   "input_tokens": None, "output_tokens": None}
         with lock:
             if rec["error_class"] == "rate_or_usage_limit" and (ag, m) not in stopped:
                 stopped[(ag, m)] = rec["error_text"]
             with open(runs_path, "a") as f:
                 f.write(json.dumps(rec) + "\n")
-            print(f"{t:17} {ag}:{m:22} r{r} {'PASS' if rec['passed'] else 'fail'} {rec['wall_seconds']:7.1f}s "
+            print(f"{t:17} {ag}:{m:22} r{r} {'PASS' if rec['passed'] else 'fail'} {rec['wall_seconds'] or 0:7.1f}s "
                   f"{rec['error_class']} in={rec['input_tokens']} out={rec['output_tokens']}", flush=True)
         return rec
 

@@ -38,7 +38,8 @@
         "timeout": 0,
         "rate_or_usage_limit": 0,
         "tool_or_cli_error": 0,
-        "refused": 0
+        "refused": 0,
+        "harness_error": 0
       },
       "helper_models": []
     },
@@ -76,7 +77,8 @@
         "timeout": 0,
         "rate_or_usage_limit": 0,
         "tool_or_cli_error": 0,
-        "refused": 0
+        "refused": 0,
+        "harness_error": 0
       },
       "helper_models": []
     },
@@ -114,7 +116,8 @@
         "timeout": 0,
         "rate_or_usage_limit": 0,
         "tool_or_cli_error": 0,
-        "refused": 0
+        "refused": 0,
+        "harness_error": 0
       },
       "helper_models": []
     },
@@ -152,7 +155,8 @@
         "timeout": 0,
         "rate_or_usage_limit": 0,
         "tool_or_cli_error": 0,
-        "refused": 0
+        "refused": 0,
+        "harness_error": 0
       },
       "helper_models": []
     },
@@ -190,7 +194,8 @@
         "timeout": 0,
         "rate_or_usage_limit": 0,
         "tool_or_cli_error": 0,
-        "refused": 0
+        "refused": 0,
+        "harness_error": 0
       },
       "helper_models": []
     },
@@ -228,7 +233,8 @@
         "timeout": 0,
         "rate_or_usage_limit": 0,
         "tool_or_cli_error": 0,
-        "refused": 0
+        "refused": 0,
+        "harness_error": 0
       },
       "helper_models": []
     }
