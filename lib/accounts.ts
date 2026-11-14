@@ -210,26 +210,39 @@ export const userStoreAllowance = () => limit(process.env.CLAY_USER_STORE_BYTES,
 /** A write that the storage bounds refuse: nothing of it is stored (store.ts update()). */
 export class StorageRefused extends Error {}
 /**
+ * A write of a person's that grows their playgrounds by at most this many characters, without adding or revising one,
+ * passes a full deployment store: a settle (its outputs are capped at 32,000 characters, OUTPUT_LIMIT), an exploration
+ * record and a saved decision (a few hundred characters each), and a re-check result (a price read up to about 4,000, a
+ * web source up to about 6,000 in the live examples). Only the person's own allowance holds such writes.
+ */
+export const SMALL_WRITE = 40_000;
+/**
  * The storage bounds, checked inside every store update on the size it leaves (store.ts update() calls this before the
- * write and the function it returns after it). A write by a person that grows their own playgrounds (a create, a
- * revision, or pages that arrive later from a build or a re-check) is refused when their playgrounds would hold more
- * than their allowance, or the store more than CLAY_MAX_STORE_BYTES. A write that does not grow them (a delete, a
- * smaller revision) always passes, and so does the operator. Throws StorageRefused.
+ * write and the function it returns after it). A write by a person that grows their own playgrounds is refused when
+ * their playgrounds would hold more than their allowance, and, when the store would hold more than
+ * CLAY_MAX_STORE_BYTES, if it adds a playground, revises one (a new spec) or grows them by more than SMALL_WRITE. So a
+ * full store stops creates, revisions and large growth, and the people who already have playgrounds can still settle,
+ * explore, save a decision and store a re-check. A write that does not grow them (a delete, a smaller revision) always
+ * passes, and so does the operator. Throws StorageRefused.
  */
 export function boundStorage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): (after: Record<string, Owned>, storeChars: () => number) => void {
   if (a?.kind !== "user") return () => {};
-  const mine = (all: Record<string, Owned>) => Object.values(all).filter((p) => ownerOf(p) === a.userId);
+  const mine = (all: Record<string, Owned>) => Object.entries(all).filter(([, p]) => ownerOf(p) === a.userId);
   // The work bookkeeping is not counted: ending tracked work (and storing why it stopped) must always pass.
-  const chars = (ps: Owned[]) => ps.reduce((n, p) => n + JSON.stringify({ ...p, work: undefined }).length, 0);
+  const chars = (ps: [string, Owned][]) => ps.reduce((n, [, p]) => n + JSON.stringify({ ...p, work: undefined }).length, 0);
+  const specOf = (p: Owned) => JSON.stringify([p.domain, (p as { kit?: { kit?: unknown } }).kit?.kit ?? null]);
   const owned = mine(playgrounds);
+  const specs = new Map(owned.map(([id, p]) => [id, specOf(p)]));
   const before = chars(owned);
   return (after, storeChars) => {
-    const own = chars(mine(after));
+    const now = mine(after);
+    const own = chars(now);
     if (own <= before) return;
     const allowance = userStoreAllowance(), max = maxStoreChars();
     if (allowance > 0 && own > allowance) throw new StorageRefused(`Your playgrounds would hold ${own} characters, over the limit of ${allowance} characters per person. Nothing was stored. Make the playground smaller, or delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.`);
-    const total = max > 0 ? storeChars() : 0;
-    if (max > 0 && total > max) throw new StorageRefused(`This Clay deployment's storage is full (${total} of ${max} characters). Nothing was stored. ${makeRoom(owned.length > 0)}`);
+    const large = own - before > SMALL_WRITE || now.some(([id, p]) => specs.get(id) !== specOf(p)); // added (no spec before), revised, or large
+    const total = max > 0 && large ? storeChars() : 0;
+    if (max > 0 && large && total > max) throw new StorageRefused(`This Clay deployment's storage is full (${total} of ${max} characters). Nothing was stored. ${makeRoom(owned.length > 0)}`);
   };
 }
 // No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").

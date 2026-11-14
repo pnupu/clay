@@ -361,8 +361,9 @@ test("storage bounds: a person's allowance and a full store hold for every write
   run(ann, (x) => delete x.a);
   // A create that would pass the allowance is refused too.
   assert.throws(() => run(ann, (x) => (x.c = { domain: { id: "c" }, owner: "user_ann", pad: "x".repeat(800) })), StorageRefused);
-  // Over the deployment bound: growth is refused, shrinking passes; who owns nothing is sent to the operator.
-  assert.throws(() => run(ann, (x) => (x.a.pad += "y"), 5001), (e) => e instanceof Error && /storage is full \(5001 of 5000/.test(e.message) && /Delete a playground/.test(e.message));
+  // Over the deployment bound: a revision (a new spec) is refused, shrinking passes; who owns nothing is sent to the
+  // operator. A small write that only adds data (a settle, a decision) is the next test.
+  assert.throws(() => run(ann, (x) => (x.a.domain = { id: "a", question: "A longer question" } as never), 5001), (e) => e instanceof Error && /storage is full \(5001 of 5000/.test(e.message) && /Delete a playground/.test(e.message));
   run(ann, (x) => (x.a.pad = "x"), 6000);
   const carl: Actor = { kind: "user", userId: "user_carl", via: "key" };
   assert.throws(() => run(carl, (x) => (x.c = { domain: { id: "c" }, owner: "user_carl", pad: "x" }), 5001), (e) => e instanceof Error && /Ask the operator/.test(e.message));
@@ -394,4 +395,30 @@ test("review fixes: work bookkeeping is not growth; notes of discarded writes en
   s.a.discardedWrites = [{ at: "t3", by: "its owner" }];
   assert.equal(mark(s, "a", { example: true, version: viewVersion(s.a as never) }, admin, look).ok, true);
   assert.equal(s.a.discardedWrites, undefined);
+});
+
+test("storage bounds: a full store stops creates, revisions and large growth, not a person's settle, decision or re-check", async () => {
+  const { boundStorage, StorageRefused, SMALL_WRITE } = await import("./accounts.ts");
+  process.env.CLAY_MAX_STORE_BYTES = "100000";
+  // The reviewer's S2 shape: other people filled the store to its bound; Ann is far under her own allowance (600,000).
+  type P = { domain: { id: string; question?: string }; owner: string; kit?: { kit: { js: string }; settled?: unknown; web?: unknown }; decision?: unknown; exploration?: unknown };
+  const s = () => ({ a: { domain: { id: "a" }, owner: "user_ann", kit: { kit: { js: "x" } } } }) as Record<string, P>;
+  const full = 100040; // the store with the write: 40 characters over the bound
+  const run = (change: (x: Record<string, P>) => void) => {
+    const x = s();
+    const bound = boundStorage(x, ann);
+    change(x);
+    bound(x, () => full);
+  };
+  run((x) => (x.a.kit!.settled = { values: { size: 14 }, outputs: { size: "14px" }, at: "t" })); // settle
+  run((x) => (x.a.exploration = { controls: { size: { min: 10, max: 16, final: 14 } } })); // explore
+  run((x) => (x.a.decision = { usage: { emails: 1000 }, required: [], chosen: "beta", tolerance: 5 })); // a saved decision
+  run((x) => (x.a.kit!.web = { src: { read: { fields: { note: "y".repeat(6000) } } } })); // a re-check result
+  // Still refused at the bound: a create, a revision (even a small one), and growth by more than SMALL_WRITE.
+  const refused = (change: (x: Record<string, P>) => void) => assert.throws(() => run(change), (e) => e instanceof StorageRefused && /storage is full/.test(e.message));
+  refused((x) => (x.b = { domain: { id: "b" }, owner: "user_ann" }));
+  refused((x) => (x.a.kit!.kit = { js: "x".repeat(50_000) }));
+  refused((x) => (x.a.domain = { id: "a", question: "a longer title" }));
+  refused((x) => (x.a.kit!.web = { src: { read: { fields: { note: "y".repeat(SMALL_WRITE + 1) } } } }));
+  delete process.env.CLAY_MAX_STORE_BYTES;
 });
