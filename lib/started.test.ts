@@ -16,12 +16,14 @@ const domain = (id: string) => ({ id, question: "How should the button look?", p
 
 test("a start stores a started playground of the caller, and a later line changes only that", async () => {
   as("ann");
-  const r = await startPlayground({ title: "Which radius for the signup button?", workingOn: "Reading button.css" }, () => "2026-11-14T10:00:00.000Z");
+  // A minute ago by the real clock: load() drops a start that is older than a day, so a fixed date would expire.
+  const at = new Date(Date.now() - 60_000).toISOString();
+  const r = await startPlayground({ title: "Which radius for the signup button?", workingOn: "Reading button.css" }, () => at);
   assert.ok("started" in r && !r.existed);
   const id = "started" in r ? r.started.id : "";
   assert.equal(id, "which-radius-for-the-signup-button");
   const p = (await load()).playgrounds[id];
-  assert.deepEqual(p.started, { workingOn: "Reading button.css", at: "2026-11-14T10:00:00.000Z" });
+  assert.deepEqual(p.started, { workingOn: "Reading button.css", at });
   assert.equal(p.owner, "ann");
   assert.equal(p.kit, undefined);
   // The same start again (the first answer was lost) is the same playground, not a second one.

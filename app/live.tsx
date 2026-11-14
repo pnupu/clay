@@ -6,7 +6,7 @@
 // - SelfUpdate: beside a built playground. It notices a revision by the agent and shows the new version.
 // Both ask the server for the revision only (/api/p/<id>/rev), only while the tab is visible, and let Next.js render the
 // page again (router.refresh()), so the screens themselves need no code for it.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -129,6 +129,45 @@ export function Started({ id, title, workingOn, at, now, own }: { id: string; ti
       {!stopped && <p className="muted">This page becomes the playground by itself. You do not need to reload.</p>}
     </main>
   );
+}
+
+/**
+ * Around the screen of a built playground. A new version of the screen (another `stamp`: the page keys the screen by
+ * it) is not shown while a pointer is down in this document; it is shown when the pointer is released. So a drag is
+ * never cut by a remount, whichever request brought the new version and whenever its answer arrives (also one that was
+ * sent just before the press). The same version with new props passes straight through.
+ */
+export function Hold({ stamp, children }: { stamp: string; children: ReactNode }) {
+  const [down, setDown] = useState(false);
+  const [shown, setShown] = useState({ stamp, children });
+  const keep = down && shown.stamp !== stamp;
+  if (!keep && (shown.stamp !== stamp || shown.children !== children)) setShown({ stamp, children });
+  useEffect(() => {
+    let late: ReturnType<typeof setTimeout> | undefined;
+    const press = () => {
+      clearTimeout(late);
+      setDown(true);
+    };
+    // After the control has taken its last value.
+    const release = () => {
+      clearTimeout(late);
+      late = setTimeout(() => setDown(false), 50);
+    };
+    // A press that ended outside this document (outside the window, or over the preview frame) sends no pointerup here.
+    const move = (e: PointerEvent) => void (!e.buttons && setDown(false));
+    window.addEventListener("pointerdown", press, true);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    window.addEventListener("pointermove", move, true);
+    return () => {
+      clearTimeout(late);
+      window.removeEventListener("pointerdown", press, true);
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("pointermove", move, true);
+    };
+  }, []);
+  return <>{keep ? shown.children : children}</>;
 }
 
 /** After this long with no pointer or key on the page, the revision is asked for less often. */
