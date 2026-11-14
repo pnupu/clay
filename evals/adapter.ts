@@ -1,12 +1,12 @@
-// The ONE file that knows Clay's tool names, tool result shapes and page markup. Everything else in evals/ goes through it.
+// The ONE file that knows Sorvi's tool names, tool result shapes and page markup. Everything else in evals/ goes through it.
 // It reads both shapes of the create tool: the spec ({ data: { price_pages }, view, controls, outputs }, since the kit) and
 // the earlier price config ({ metrics, vendors }). When tools or markup change, change this file only.
 import type { Page } from "playwright-core";
 
 // ---- The agent's side: MCP endpoint and tools.
 export const MCP_PATH = "/api/mcp";
-/** Name of the MCP server in the agent's config. Tool names in transcripts are `mcp__clay__<tool>` (claude) or server "clay" (codex). */
-export const SERVER = "clay";
+/** Name of the MCP server in the agent's config. Tool names in transcripts are `mcp__sorvi__<tool>` (claude) or server "sorvi" (codex). */
+export const SERVER = "sorvi";
 export const TOOL = { create: "create_playground", read: "read_playground", recheck: "recheck_playground", revise: "revise_playground", start: "start_playground" } as const;
 /** Tools whose result gives the person a link: a start (the link before anything is built) and a create. */
 export const LINK_TOOLS: string[] = [TOOL.start, TOOL.create];

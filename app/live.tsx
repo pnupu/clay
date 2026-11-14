@@ -1,9 +1,9 @@
 "use client";
 
 // The open page follows the agent with no reload. Two parts:
-// - Started: the page of a playground that is started and not built (lib/started.ts). It shows what the agent is doing
-//   and becomes the playground when the create lands.
-// - SelfUpdate: beside a built playground. It notices a revision by the agent and shows the new version.
+// - Started: the page of a lab that is started and not built (lib/started.ts). It shows what the agent is doing
+//   and becomes the lab when the create lands.
+// - SelfUpdate: beside a built lab. It notices a revision by the agent and shows the new version.
 // Both ask the server for the revision only (/api/p/<id>/rev), only while the tab is visible, and let Next.js render the
 // page again (router.refresh()), so the screens themselves need no code for it.
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -17,7 +17,7 @@ type Rev = { rev: string; data: string; now: number; started: { title: string; w
 
 /**
  * Ask for the revision every `every()` milliseconds while the tab is visible, and at once when it becomes visible again.
- * `on` gets the answer, or null when the playground is gone (deleted, or a start that nobody built). A failed request
+ * `on` gets the answer, or null when the lab is gone (deleted, or a start that nobody built). A failed request
  * (offline, a server restart) is skipped: the next one tells.
  */
 function usePoll(id: string, every: () => number, on: (r: Rev | null) => void) {
@@ -75,7 +75,7 @@ function ago(ms: number): string {
 }
 
 /**
- * The page of a started playground. `title` and `workingOn` are text from an agent: React renders them as text.
+ * The page of a started lab. `title` and `workingOn` are text from an agent: React renders them as text.
  * `now` is the server's clock at render; every answer brings it again, so "ago" and the 15-minute rule do not depend on
  * the clock of this device.
  */
@@ -87,7 +87,7 @@ export function Started({ id, title, workingOn, at, now, own }: { id: string; ti
   const [tick, setTick] = useState(0);
   const [gone, setGone] = useState(false);
   const asked = useRef(0);
-  // One "not found" can be a sign-in session that is being renewed: the playground is gone after two in a row.
+  // One "not found" can be a sign-in session that is being renewed: the lab is gone after two in a row.
   const misses = useRef(0);
   usePoll(id, () => 2500, (r) => {
     if (!r) return void (++misses.current >= 2 && setGone(true));
@@ -95,7 +95,7 @@ export function Started({ id, title, workingOn, at, now, own }: { id: string; ti
     setGone(false);
     setClock({ server: r.now, local: Date.now() });
     if (r.started) return setLine(r.started);
-    // Built: the server now renders the playground in place of this screen. Asked again only when an answer got lost.
+    // Built: the server now renders the lab in place of this screen. Asked again only when an answer got lost.
     if (Date.now() - asked.current < 8000) return;
     asked.current = Date.now();
     router.refresh();
@@ -110,29 +110,29 @@ export function Started({ id, title, workingOn, at, now, own }: { id: string; ti
   return (
     <main className="shell narrow started" data-started={stopped ? "stopped" : "building"}>
       <div>
-        <p className="eyebrow"><Link href="/">Clay</Link> · started, not built yet</p>
+        <p className="eyebrow"><Link href="/">Sorvi</Link> · started, not built yet</p>
         <h1>{line.title}</h1>
       </div>
       {stopped ? (
         <section className="pane started__pane" role="status">
           <h2>The build seems to have stopped</h2>
-          <p>{gone ? "This page can no longer read the playground. It was removed (a start that nobody builds is removed after a day), or you are signed out." : <>Nothing has changed for {ago(age).replace(" ago", "")}. The last thing {whose} said: <span className="started__line">{line.workingOn}</span></>}</p>
-          <p className="muted">{gone ? `Sign in again, or ask ${whose} to build it again.` : `Ask ${whose} to build it again. This page still becomes the playground by itself if the build arrives.`}</p>
+          <p>{gone ? "This page can no longer read the lab. It was removed (a start that nobody builds is removed after a day), or you are signed out." : <>Nothing has changed for {ago(age).replace(" ago", "")}. The last thing {whose} said: <span className="started__line">{line.workingOn}</span></>}</p>
+          <p className="muted">{gone ? `Sign in again, or ask ${whose} to build it again.` : `Ask ${whose} to build it again. This page still becomes the lab by itself if the build arrives.`}</p>
         </section>
       ) : (
         <section className="pane started__pane" role="status" aria-live="polite">
-          <h2 className="live"><i aria-hidden="true" />{own ? "Your agent is building this playground" : "Its person's agent is building this playground"}</h2>
+          <h2 className="live"><i aria-hidden="true" />{own ? "Your agent is building this lab" : "Its person's agent is building this lab"}</h2>
           <p className="started__line">{line.workingOn}</p>
           <p className="small muted started__time">Updated {ago(age)}</p>
         </section>
       )}
-      {!stopped && <p className="muted">This page becomes the playground by itself. You do not need to reload.</p>}
+      {!stopped && <p className="muted">This page becomes the lab by itself. You do not need to reload.</p>}
     </main>
   );
 }
 
 /**
- * Around the screen of a built playground. A new version of the screen (another `stamp`: the page keys the screen by
+ * Around the screen of a built lab. A new version of the screen (another `stamp`: the page keys the screen by
  * it) is not shown while a pointer is down in this document; it is shown when the pointer is released. So a drag is
  * never cut by a remount, whichever request brought the new version and whenever its answer arrives (also one that was
  * sent just before the press). The same version with new props passes straight through.
@@ -178,8 +178,8 @@ export function Hold({ stamp, children }: { stamp: string; children: ReactNode }
 const IDLE_MS = 10 * 60_000;
 
 /**
- * Beside a built playground: asks for the revision every 4 seconds (every 30 after 10 minutes with no input) and, when
- * the agent has revised the playground (or web data of a preview has arrived), lets the server render the page again. The screens are keyed by their spec
+ * Beside a built lab: asks for the revision every 4 seconds (every 30 after 10 minutes with no input) and, when
+ * the agent has revised the lab (or web data of a preview has arrived), lets the server render the page again. The screens are keyed by their spec
  * (app/p/[pg]/page.tsx), so the new version mounts, and the person's control values come with it (lib/carry.ts). A drag
  * is not interrupted: Hold (above) keeps the shown screen while a pointer is down. This component also does not ask for
  * the new version during a press, so nothing is fetched that cannot be shown. `rev` is the revision that the page was
@@ -263,5 +263,5 @@ export function SelfUpdate({ id, rev, data, own }: { id: string; rev: string; /*
       window.removeEventListener("keydown", key, true);
     };
   }, [poke]);
-  return notice ? <p className="updated" role="status" key={notice}>{own ? "Updated by your agent. Your values are kept." : "This playground was updated. Your values are kept."}</p> : null;
+  return notice ? <p className="updated" role="status" key={notice}>{own ? "Updated by your agent. Your values are kept." : "This lab was updated. Your values are kept."}</p> : null;
 }

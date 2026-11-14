@@ -6,7 +6,7 @@ import { update } from "@/lib/store";
 /**
  * Clerk webhook (Svix-signed): the fast path of key revocation. A deleted user loses their record (agent key hash and
  * request count); a banned user, or one left with only Clerk test addresses on a public app, loses their key. Inactive until CLERK_WEBHOOK_SIGNING_SECRET is set; without it, agent
- * keys are still confirmed with Clerk every 10 minutes (lib/accounts.ts). Playgrounds of a deleted user stay, owned by
+ * keys are still confirmed with Clerk every 10 minutes (lib/accounts.ts). Labs of a deleted user stay, owned by
  * nobody who can sign in; the admin can delete them.
  */
 export async function POST(req: NextRequest) {

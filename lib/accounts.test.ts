@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentConnected, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { agentConnected, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, looksLikeAgentKey, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
 import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
 import { markLook, viewVersion } from "./report.ts";
@@ -15,9 +15,9 @@ const annPrivate = { domain: { id: "ann-email" }, owner: "user_ann" };
 const annExample = { ...annPrivate, example: true };
 const legacy = { domain: { id: "old-one" } }; // created before accounts: no owner, the admin's
 
-test("access: visitor, owner, another person and admin, on examples and private playgrounds", () => {
+test("access: visitor, owner, another person and admin, on examples and private labs", () => {
   const rows: [string, Actor, object, boolean, boolean][] = [
-    // who, actor, playground, may read, may write
+    // who, actor, lab, may read, may write
     ["visitor/seed", VISITOR, seed, true, false],
     ["visitor/private", VISITOR, annPrivate, false, false],
     ["visitor/marked example", VISITOR, annExample, true, false],
@@ -34,25 +34,33 @@ test("access: visitor, owner, another person and admin, on examples and private 
     ["no request/private", null as unknown as Actor, annPrivate, false, false],
   ];
   for (const [name, a, p, r, w] of rows) assert.deepEqual([canRead(a, p), canWrite(a, p)], [r, w], name);
-  // The seed is an example until the admin unmarks it; any other playground only when marked.
+  // The seed is an example until the admin unmarks it; any other lab only when marked.
   assert.equal(isExample({ ...seed, example: false }), false);
   assert.equal(isExample(legacy), false);
 });
 
+test("an agent key made before the rename (prefix clay_) is still a key and still finds its person", () => {
+  const old = "clay_" + "aB3-_x9".repeat(6) + "Q";
+  assert.equal(old.length, 48);
+  assert.equal(looksLikeAgentKey(old), true);
+  assert.equal(userOfKey(old, { user_ann: { keyHash: hashKey(old), keyCreatedAt: "x", usage: null } }), "user_ann");
+  assert.equal(userOfKey("clay_short", { user_ann: { keyHash: hashKey("clay_short"), keyCreatedAt: "x", usage: null } }), null);
+});
+
 test("agent keys: stored as a hash, found in constant time, a revoked or wrong key matches nothing", () => {
   const key = newAgentKey();
-  assert.match(key, /^clay_[A-Za-z0-9_-]{43}$/);
+  assert.match(key, /^sorvi_[A-Za-z0-9_-]{43}$/);
   const accounts = { user_ann: { keyHash: hashKey(key), keyCreatedAt: "x", usage: null }, user_bob: { keyHash: null, keyCreatedAt: null, usage: null } };
   assert.equal(userOfKey(key, accounts), "user_ann");
   assert.equal(userOfKey(newAgentKey(), accounts), null);
   assert.equal(userOfKey(hashKey(key), accounts), null); // the stored hash is not a key
-  assert.equal(userOfKey("clay_short", accounts), null);
+  assert.equal(userOfKey("sorvi_short", accounts), null);
   assert.ok(!JSON.stringify(accounts).includes(key));
 });
 
-test("caps: playgrounds per person, environment values, and the bound caller", async () => {
+test("caps: labs per person, environment values, and the bound caller", async () => {
   const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`p${i}`, { owner: "user_ann" }]));
-  assert.match(playgroundCapMessage(many, ann) ?? "", /limit of 20 playgrounds/);
+  assert.match(playgroundCapMessage(many, ann) ?? "", /limit of 20 labs/);
   assert.equal(playgroundCapMessage(many, bob), null);
   assert.equal(playgroundCapMessage(many, admin), null);
   process.env.CLAY_USER_PLAYGROUNDS = "21";
@@ -63,7 +71,7 @@ test("caps: playgrounds per person, environment values, and the bound caller", a
   assert.deepEqual([undefined, "", "x", "-1", "0", "7"].map((x) => limit(x, 40)), [40, 40, 40, 40, 0, 7]);
 
   // The guard binds a holder before its first await and fills it in later; the rest of the handler sees the caller,
-  // and a playground created there gets its owner. Another request does not see it.
+  // and a lab created there gets its owner. Another request does not see it.
   async function guard() {
     const holder = bindActor();
     await new Promise((r) => setTimeout(r, 5));
@@ -148,10 +156,10 @@ test("examples: only the admin marks and features; one example is featured at a 
     models: { domain: { id: "models" }, example: true, createdAt: "2026-11-14T05:00:00Z" },
     gpu: { domain: { id: "gpu" }, createdAt: "2026-11-14T06:00:00Z", owner: "user_ann" },
   });
-  // Nobody but the admin: not a visitor, not a signed-in person, not even the owner of the playground, not a missing caller.
+  // Nobody but the admin: not a visitor, not a signed-in person, not even the owner of the lab, not a missing caller.
   for (const who of [VISITOR, ann, bob, null]) {
     const s = store();
-    assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, who, look), { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." });
+    assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, who, look), { ok: false, status: 403, error: "Only the operator of this Sorvi deployment can mark or feature an example." });
     assert.deepEqual(s, store());
   }
   const s = store();
@@ -162,7 +170,7 @@ test("examples: only the admin marks and features; one example is featured at a 
   // Featuring another one takes the mark from the first: one at a time.
   assert.deepEqual(markExample(s, "models", { example: true, featured: true, version: viewVersion(s["models"] as never) }, admin, look), { ok: true, example: true, featured: true });
   assert.deepEqual(Object.entries(s).filter(([, p]) => (p as { featured?: boolean }).featured).map(([id]) => id), ["models"]);
-  // Only an example can be featured; marking and featuring in one call works for a playground that is not one yet.
+  // Only an example can be featured; marking and featuring in one call works for a lab that is not one yet.
   assert.equal((markExample(s, "gpu", { featured: true, version: viewVersion(s["gpu"] as never) }, admin, look) as { status: number }).status, 400);
   assert.deepEqual(markExample(s, "gpu", { example: true, featured: true, version: viewVersion(s["gpu"] as never) }, admin, look), { ok: true, example: true, featured: true });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["gpu", "models", "card"]);
@@ -199,7 +207,7 @@ test("examples: a revision by the owner clears the mark; the operator's own revi
   assert.equal(markExample({ card: p }, "card", { example: true, version: viewVersion(p as never) }, admin, look).ok, true);
   assert.equal(isEx(p, "card"), true);
   assert.equal(p.exampleCleared, undefined);
-  // A private playground, and the built-in seed, are not touched.
+  // A private lab, and the built-in seed, are not touched.
   const priv = { domain: { id: "mine" }, owner: "user_ann" };
   assert.equal(unpublishOnRevision(priv, "mine", ann, "t2"), false);
   assert.equal(unpublishOnRevision({ domain: { id: DOMAIN.id } }, DOMAIN.id, ann, "t3"), false);
@@ -232,7 +240,7 @@ test("published examples: only the operator writes; the owner may only revise, w
   assert.match(refusal(ann, ex, "card") ?? "", /published example/);
   assert.equal(refusal(admin, ex, "card"), null);
   assert.equal(refusal(bob, ex, "card"), null); // not the owner: refused anyway by canWrite, with the usual answer
-  assert.equal(refusal(ann, { ...ex, example: false }, "card"), null); // a private playground: the owner writes as before
+  assert.equal(refusal(ann, { ...ex, example: false }, "card"), null); // a private lab: the owner writes as before
   // The owner's revision is the one way through, and it unpublishes.
   assert.equal(unpublish(ex, "card", ann, "t"), true);
   assert.equal(isEx(ex, "card"), false);
@@ -242,7 +250,7 @@ test("published examples: only the operator writes; the owner may only revise, w
 test("deployment bound: people cannot fill the one store; the operator can still create", async () => {
   const { deploymentCapMessage: cap } = await import("./accounts.ts");
   assert.equal(cap(1999, 9_000_000, ann), null);
-  assert.match(cap(2000, 1000, ann) ?? "", /limit of 2000 playgrounds/);
+  assert.match(cap(2000, 1000, ann) ?? "", /limit of 2000 labs/);
   assert.match(cap(10, 10_000_000, ann) ?? "", /storage is full/);
   assert.equal(cap(5000, 50_000_000, admin), null);
   process.env.CLAY_MAX_PLAYGROUNDS = "0"; process.env.CLAY_MAX_STORE_BYTES = "5";
@@ -297,7 +305,7 @@ test("published examples: a write that lands after the mark keeps what the opera
   const { keepPublished } = await import("./accounts.ts");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose test fixtures
   const fresh = () => ({ card: { domain: { id: "card" }, owner: "user_ann", example: true, kit: { web: { note: "plain" } }, work: { finishedAt: null } }, mine: { domain: { id: "mine" }, owner: "user_ann", kit: { web: { note: "plain" } } } } as Record<string, any>);
-  // The owner's re-check stores a new web value on the published example and on a private playground.
+  // The owner's re-check stores a new web value on the published example and on a private lab.
   let s = fresh();
   let keep = keepPublished(s, ann);
   s.card.kit.web.note = "NEW";
@@ -344,7 +352,7 @@ test("published examples: a webhook write keeps a person's example; the operator
   assert.deepEqual([s.theirs.sources.alpha.price, s.theirs.discardedWrites?.[0].by, s.theirs.discardedWrites?.length], [20, "its owner", 2]);
 });
 
-test("storage bounds: a person's allowance and a full store hold for every write that grows their playgrounds", async () => {
+test("storage bounds: a person's allowance and a full store hold for every write that grows their labs", async () => {
   const { boundStorage, StorageRefused } = await import("./accounts.ts");
   process.env.CLAY_USER_STORE_BYTES = "1000";
   process.env.CLAY_MAX_STORE_BYTES = "5000";
@@ -363,7 +371,7 @@ test("storage bounds: a person's allowance and a full store hold for every write
   assert.throws(() => run(ann, (x) => (x.c = { domain: { id: "c" }, owner: "user_ann", pad: "x".repeat(800) })), StorageRefused);
   // Over the deployment bound: a revision (a new spec) is refused, shrinking passes; who owns nothing is sent to the
   // operator. A small write that only adds data (a settle, a decision) is the next test.
-  assert.throws(() => run(ann, (x) => (x.a.domain = { id: "a", question: "A longer question" } as never), 5001), (e) => e instanceof Error && /storage is full \(5001 of 5000/.test(e.message) && /Delete a playground/.test(e.message));
+  assert.throws(() => run(ann, (x) => (x.a.domain = { id: "a", question: "A longer question" } as never), 5001), (e) => e instanceof Error && /storage is full \(5001 of 5000/.test(e.message) && /Delete a lab/.test(e.message));
   run(ann, (x) => (x.a.pad = "x"), 6000);
   const carl: Actor = { kind: "user", userId: "user_carl", via: "key" };
   assert.throws(() => run(carl, (x) => (x.c = { domain: { id: "c" }, owner: "user_carl", pad: "x" }), 5001), (e) => e instanceof Error && /Ask the operator/.test(e.message));
@@ -436,17 +444,17 @@ test("storage bounds: a webhook monitor's write is bound by the owner's allowanc
     bound(x, () => store);
     return x;
   };
-  // A re-check that takes Ann over her allowance: her playground keeps the earlier read (its work bookkeeping is new).
+  // A re-check that takes Ann over her allowance: her lab keeps the earlier read (its work bookkeeping is new).
   let x = monitor((y) => Object.assign(y.ann, { sources: { alpha: { plans: "x".repeat(6000) } }, work: { finishedAt: "t" } }));
   assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.work, x.ann.storageKept?.length], [4000, { finishedAt: "t" }, 1]);
   assert.match(discardedReport(x.ann as never).storage_kept ?? "", /1 result\(s\) of a web monitor's re-check were not stored/);
   // Within her allowance it is stored, also while the deployment's store is full, and a stored write clears the note;
-  // the operator's own playground is not bound.
+  // the operator's own lab is not bound.
   x = monitor((y) => Object.assign(y.ann, { storageKept: [{ at: "t0" }], sources: { alpha: { plans: "x".repeat(4500) } } }), 200000);
   assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.storageKept], [4500, undefined]);
   x = monitor((y) => (y.ours.sources.alpha.plans = "x".repeat(SMALL_WRITE * 2)), 200000);
   assert.equal(x.ours.sources.alpha.plans.length, SMALL_WRITE * 2);
-  // A deleted playground is not brought back, and a published example is left to keepPublished.
+  // A deleted lab is not brought back, and a published example is left to keepPublished.
   x = monitor((y) => { delete (y as Record<string, unknown>).ann; });
   assert.equal(x.ann, undefined);
   x = s();
@@ -455,7 +463,7 @@ test("storage bounds: a webhook monitor's write is bound by the owner's allowanc
   x.ann.sources.alpha.plans = "x".repeat(6000);
   kb(x, () => 50);
   assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.storageKept], [6000, undefined]);
-  // Large growth (over SMALL_WRITE) of a person's playground while the store is full is not stored.
+  // Large growth (over SMALL_WRITE) of a person's lab while the store is full is not stored.
   process.env.CLAY_USER_STORE_BYTES = "0";
   x = monitor((y) => (y.ann.sources.alpha.plans = "x".repeat(SMALL_WRITE + 5000)), 200000);
   assert.equal(x.ann.sources.alpha.plans.length, 4000);

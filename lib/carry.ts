@@ -1,4 +1,4 @@
-// What the person has on the controls, carried over a revision. When the agent revises a playground, the open page
+// What the person has on the controls, carried over a revision. When the agent revises a lab, the open page
 // shows the new version with no reload (app/live.tsx): the screen is mounted again, and the person must find their
 // values where they left them, for every control that still exists and whose value is still allowed.
 // Kept in this tab's memory only. The screens write it in an effect, so nothing is written while a server renders them.
@@ -8,7 +8,7 @@ type Metric = { id: string; min: number; max: number };
 export type PriceCarry = { spec: string; usage: Record<string, number>; required: string[]; chosen: string | null; tolerance: number; ranges: Record<string, [number, number]> };
 export type KitCarry = { rev: string; values: Values };
 
-/** Per playground and view ("<id>:page", "<id>:embedded"). */
+/** Per lab and view ("<id>:page", "<id>:embedded"). */
 export const carriedKit = new Map<string, KitCarry>();
 export const carriedPrice = new Map<string, PriceCarry>();
 

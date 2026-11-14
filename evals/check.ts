@@ -3,7 +3,7 @@ import { BUILD_TOOLS, TOOL, addedNames, callTarget, createdId, isBuildError, isI
 import type { Case, Given } from "./requests.ts";
 
 export type Check = { id: string; status: "pass" | "fail" | "na"; reason: string };
-/** One tool call of the agent, in the form both subjects are normalised to. `mcp`: a tool of the Clay server. */
+/** One tool call of the agent, in the form both subjects are normalised to. `mcp`: a tool of the Sorvi server. */
 export type Call = { tool: string; mcp: boolean; input: Record<string, unknown>; result: string; isError: boolean };
 
 const pass = (id: string, reason: string): Check => ({ id, status: "pass", reason });
@@ -38,7 +38,7 @@ export function toolUse(c: Case, calls: Call[], preparedId: string | null): Chec
   // What the agent did instead, for a run with its normal tools: the other tools it used, or nothing but words.
   const other = [...new Set(calls.filter((x) => !x.mcp).map((x) => x.tool))];
   const instead = other.length ? `; instead it used ${other.join(", ")}` : clay.length ? "" : "; it answered in words, with no tool";
-  if (c.expect === "build") return created.length ? pass("tool_use", `called ${TOOL.create}`) : fail("tool_use", `the agent never called ${TOOL.create}${clay.length ? ` (it called ${[...new Set(clay.map((x) => x.tool))].join(", ")})` : " or any Clay tool"}${instead}`);
+  if (c.expect === "build") return created.length ? pass("tool_use", `called ${TOOL.create}`) : fail("tool_use", `the agent never called ${TOOL.create}${clay.length ? ` (it called ${[...new Set(clay.map((x) => x.tool))].join(", ")})` : " or any Sorvi tool"}${instead}`);
   if (c.expect === "none") {
     // A start gives the person a link to a playground that should not exist: it counts like a build.
     const built = clay.filter((x) => BUILD_TOOLS.includes(x.tool) || x.tool === TOOL.start);

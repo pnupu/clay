@@ -22,7 +22,7 @@ const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const amount = (n: number) => (Math.abs(n) < 1 && Math.round(n * 100) !== 0 ? "$" + n.toFixed(2) : money(n));
 const num = (n: number) => n.toLocaleString("en-US");
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-/** Names and colours that depend on the playground's domain. */
+/** Names and colours that depend on the lab's domain. */
 const helpers = (d: Domain) => ({
   label: (id: string) => d.metrics.find((m) => m.id === id)?.label ?? d.features.find((f) => f.id === id)?.label ?? id,
   /** Replace metric and feature ids in a computed message with their labels. */
@@ -46,12 +46,12 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
 }
 
 /**
- * `canWrite`: this viewer owns the playground (or is the admin) and may save a decision and re-read the sources. Anyone else
+ * `canWrite`: this viewer owns the lab (or is the admin) and may save a decision and re-read the sources. Anyone else
  * is looking at an example: every control, the ranking and the chart work for them in their browser, and nothing is saved.
  * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false, builtByViewer = canWrite, connected = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner). */ byTeam?: boolean; /** The viewer's own agent built it (not the operator looking at another person's playground): that agent gets the summary of what was tried. */ builtByViewer?: boolean; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
+export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false, builtByViewer = canWrite, connected = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Sorvi team made itself (a lab without an owner). */ byTeam?: boolean; /** The viewer's own agent built it (not the operator looking at another person's lab): that agent gets the summary of what was tried. */ builtByViewer?: boolean; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
   const Shell = embedded ? "div" : "main";
   const shell = embedded ? "embedded-playground" : "shell";
   const api = `/api/p/${domain.id}`;
@@ -105,7 +105,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
       setState(s);
       // After a revision the person keeps the values they had on the page, not the saved assumptions.
       if (!s.decision || was) return;
-      // A playground with a saved decision opens on the saved assumptions, with no row selected: the ranking and the
+      // A lab with a saved decision opens on the saved assumptions, with no row selected: the ranking and the
       // verdict then speak about the same values, and the saved vendor shows only as "Your saved choice".
       rebase.current = true;
       // A metric that the decision does not name counts as 0 in it (pricing.ts, savedAssumptions).
@@ -114,7 +114,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
       setChosen(null);
       setTolerance(s.decision.tolerance ?? 0);
     });
-    // The metrics of a playground do not change while this screen is mounted (a revision remounts it).
+    // The metrics of a lab do not change while this screen is mounted (a revision remounts it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
@@ -166,7 +166,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   // It is sent after the person pauses, so no network call sits between a move and its result.
   const seen = useRef<Record<string, { min: number; max: number }>>({});
   const reported = useRef<string | null>(null);
-  /** The person changed something since the last report, also when the controls are back at the reported values. Values that came along over a revision count: the stored record of the revised playground does not have them yet. */
+  /** The person changed something since the last report, also when the controls are back at the reported values. Values that came along over a revision count: the stored record of the revised lab does not have them yet. */
   const moved = useRef(was != null);
   useEffect(() => {
     if (rebase.current) {
@@ -240,7 +240,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   };
   /** What a Select means, said at the selected row: where to save it, or that an example saves nothing. */
   const selectedNext: ReactNode = !canWrite ? (
-    <p className="small select-next" data-select-try>Nothing is saved: this is an example. On your own playground you save this choice; your agent then keeps it in your repository ({recordPath(domain.id)}) and any later session re-checks it when prices change. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}</p>
+    <p className="small select-next" data-select-try>Nothing is saved: this is an example. On your own lab you save this choice; your agent then keeps it in your repository ({recordPath(domain.id)}) and any later session re-checks it when prices change. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}</p>
   ) : unsaved ? (
     <p className="small select-next" data-select-next>Not saved yet. <button className="linkbtn" onClick={toSave}>Save this choice ↓</button></p>
   ) : null;
@@ -265,7 +265,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     <Shell className={shell}>
       <header className="top">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · data read from the web by Context.dev</> : (byTeam ? "An example by the Clay team · prices read from the web by Context.dev" : "An example · prices read from the web by Context.dev")}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Sorvi</Link> · data read from the web by Context.dev</> : (byTeam ? "An example by the Sorvi team · prices read from the web by Context.dev" : "An example · prices read from the web by Context.dev")}</p>
           {embedded ? <h2 className="question">{domain.question}</h2> : <h1>{domain.question}</h1>}
         </div>
         <div className="actions">
@@ -340,7 +340,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                 {f.label}
               </label>
             ))}
-            {/* The operator looking at a person's playground is not the person whose agent gets the summary. */}
+            {/* The operator looking at a person's lab is not the person whose agent gets the summary. */}
             <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop.{!canWrite ? " Nothing you try here is saved." : builtByViewer ? " A short summary of what you tried is kept for your agent." : " A short summary of what is tried here is kept for its owner's agent."}</p>
           </section>
 
@@ -390,7 +390,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
             {/* Everything about a saved decision, in one block: whose it is, whether it holds now, the history. */}
             <section className="pane standing" ref={standingPanel} data-standing>
               <h2>A saved decision, re-checked when prices change</h2>
-              {!canWrite && decision && <p className="small" data-saved-example>{byTeam ? "The saved choice below is the Clay team’s example." : "The saved choice below belongs to this example."} What you move on this page is not saved and does not change it.</p>}
+              {!canWrite && decision && <p className="small" data-saved-example>{byTeam ? "The saved choice below is the Sorvi team’s example." : "The saved choice below belongs to this example."} What you move on this page is not saved and does not change it.</p>}
               {canWrite && decision && triedStand && (
                 <p className="small" data-trying style={{ border: "1px solid var(--warn)", borderRadius: 8, padding: "8px 12px", margin: "0 0 10px" }}>
                   <b>You are trying other values than you saved:</b> {triedWords}. At these values {standSentence(triedStand, nameOf(decision.chosen)!, nameOf(triedStand.cheapest), true, h.humanize, canWrite)} Your saved decision is unchanged.{" "}
@@ -399,7 +399,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               )}
 
               {!decision || !savedStand ? (
-                canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
+                canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Sorvi keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
               ) : (
                 <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => (x.error ? x.snapshot?.fetchedAt : (x.lastCheckedAt ?? x.snapshot?.fetchedAt)) ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}

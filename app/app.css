@@ -1,6 +1,6 @@
-/* The app pages (a playground, sign-in, the short pages): the page ground and the header, in the system of the website.
+/* The app pages (a lab, sign-in, the short pages): the page ground and the header, in the system of the website.
    The header is the website's bar in the app: the same mark, name, words and button, but it scrolls with the page, so
-   a playground has the whole screen. Components: app/clay.css. */
+   a lab has the whole screen. Components: app/clay.css. */
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; color-scheme: light; }
 html, body { margin: 0; }

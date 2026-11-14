@@ -1,6 +1,6 @@
 // The stylesheet of a data view (view.data: true): a comparison, a ranking or a table of facts, not the person's own
 // component. An agent that writes such a page by hand invents a typeface, a type scale and a set of colours every time,
-// and no two pages agree with each other or with the page around them. Here the frame brings Clay's own: the page's
+// and no two pages agree with each other or with the page around them. Here the frame brings Sorvi's own: the page's
 // colours and typeface (app/tokens.ts, app/clay.css), one type scale, and the few parts a comparison needs. The agent
 // writes markup with these class names and no styles of its own; lib/reference.ts teaches them, and checkKit()
 // (lib/kit.ts) warns about a data view that brings its own fonts, small text or colours.

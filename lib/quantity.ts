@@ -8,7 +8,7 @@ export type Measured = { label: string; unit: string };
 export type SayOptions = {
   /** For a value that was found, not set (where the cheapest vendor changes): three figures, and "about" when that rounds it. */
   approx?: boolean;
-  /** Names that keep their capital at the start of a label: the vendors of the playground ("Neon compute"). */
+  /** Names that keep their capital at the start of a label: the vendors of the lab ("Neon compute"). */
   names?: string[];
 };
 
@@ -65,7 +65,7 @@ function single(unit: string): string {
 /**
  * What is counted, from the label: without a note in brackets at the end ("(CU-hours/month)") and without "per month"
  * (the sentences around it say "a month" for the cost). The first word loses its capital when it is an ordinary word
- * ("Monthly", "Database"), and keeps it when it is a name of the playground or not a plain word ("H100", "SSO").
+ * ("Monthly", "Database"), and keeps it when it is a name of the lab or not a plain word ("H100", "SSO").
  */
 function nounOf(label: string, unit: string, names: string[]): string {
   const perMonth = /\s*(?:\/|\bper\b|\ba\b|\beach\b)\s*month\s*$/i;

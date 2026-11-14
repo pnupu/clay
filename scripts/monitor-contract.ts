@@ -3,7 +3,7 @@
 // Usage: node --env-file=.env.local scripts/monitor-contract.ts
 import { cd, createMonitor, deleteMonitor } from "../lib/contextdev.ts";
 
-const m = await createMonitor("Clay: contract test (delete me)", "https://clerk.com/pricing", "https://example.com/api/webhooks/context/contract-test", "Report changes to prices, plan names, included quantities, usage tiers and limits. Ignore navigation, testimonials, dates and marketing copy.");
+const m = await createMonitor("Sorvi: contract test (delete me)", "https://clerk.com/pricing", "https://example.com/api/webhooks/context/contract-test", "Report changes to prices, plan names, included quantities, usage tiers and limits. Ignore navigation, testimonials, dates and marketing copy.");
 const full = m as unknown as Record<string, unknown>;
 console.log("created", { id_prefix: m.id.slice(0, 4), status: m.status, change_detection: full.change_detection, schedule: full.schedule, events: m.webhook?.events, secret_returned: typeof m.webhook?.secret === "string", secret_prefix_whsec: m.webhook?.secret?.startsWith("whsec_") ?? false, initial_run_id: m.initial_run_id ? "present" : null, ms: m._ms });
 try {

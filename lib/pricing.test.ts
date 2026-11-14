@@ -122,7 +122,7 @@ test("a saved choice that cannot be priced under the tried values says why, and 
   // Both are fine at the saved 120,000.
   assert.equal(stand(gaps, at(120_000), "silent", 100).state, "cheapest");
   assert.equal(stand(gaps, at(120_000), "capped", 100).state, "within");
-  // A vendor without pricing data, or one that is not part of the playground.
+  // A vendor without pricing data, or one that is not part of the lab.
   assert.equal(stand({ ...offers, gone: null }, at(120_000), "gone", 100).state, "unread");
   assert.equal(standSentence(stand(offers, at(120_000), "nobody", 100), "Nobody", null), "Nobody has no pricing data.");
 });

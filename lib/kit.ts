@@ -1,4 +1,4 @@
-// The kit of a preview playground: controls that always mean the same thing, a preview that runs real code, and outputs
+// The kit of a preview lab: controls that always mean the same thing, a preview that runs real code, and outputs
 // rendered from the control values. A kit comes from an agent: it is untrusted data, and checkKit() is its trust boundary.
 // Pure functions only: no store, no network.
 
@@ -6,7 +6,7 @@ import { checkWeb, type WebSource, type WebState } from "./web.ts";
 
 export const KIT_LIMITS = { controls: 12, outputs: 6, options: 12, palette: 16, label: 60, meaning: 200, unit: 12, text: 2000, html: 20_000, css: 20_000, js: 40_000, template: 4_000, inline: 8_000, steps: 10_000 } as const;
 
-/** The brandError of a preview playground whose brand read has not ended yet. It is a state, not an error: the read stores its result when it ends. */
+/** The brandError of a preview lab whose brand read has not ended yet. It is a state, not an error: the read stores its result when it ends. */
 export const BRAND_PENDING = "The brand is still being read.";
 
 /** A function instance lives at most 300 s. A brand read that is older and still marked as pending was cut off. */
@@ -21,7 +21,7 @@ export type Control =
   | (Base & { type: "toggle"; initial: boolean; on: string; off: string })
   | (Base & { type: "select"; options: { value: string; label: string }[]; initial: string })
   | (Base & { type: "color"; initial: string; palette: string[] | "brand"; free: boolean });
-export type Preview = { html: string; css: string; js: string; tailwind: boolean; /** The frame loads the map library and may load map tiles (lib/frame.ts, LEAFLET and TILES). Absent on a kit from before maps. */ map?: boolean; /** A data view: the frame brings Clay's own type, colours and parts (lib/sheet.ts), and the page shows it without the artboard. Absent on every other kit. */ data?: boolean; height: number };
+export type Preview = { html: string; css: string; js: string; tailwind: boolean; /** The frame loads the map library and may load map tiles (lib/frame.ts, LEAFLET and TILES). Absent on a kit from before maps. */ map?: boolean; /** A data view: the frame brings Sorvi's own type, colours and parts (lib/sheet.ts), and the page shows it without the artboard. Absent on every other kit. */ data?: boolean; height: number };
 export type Output = { id: string; label: string; template: string };
 export type Kit = { notes?: string; controls: Control[]; preview: Preview; outputs: Output[]; brand: { domain: string } | null; inline: Record<string, unknown> | null; /** Live facts from web pages (lib/web.ts). */ web?: WebSource[] | null };
 
@@ -111,7 +111,7 @@ export function render(template: string, controls: Control[], values: Values): s
   return template.replace(PLACEHOLDER, (all, name: string) => text(name, all, true));
 }
 /**
- * The most text all outputs of a playground may hold together, in characters. A class string, a config or a CSS file is
+ * The most text all outputs of a lab may hold together, in characters. A class string, a config or a CSS file is
  * far below it. checkKit() rejects a kit whose outputs could exceed it at any values; renderOutputs() checks the exact size
  * before it builds anything, so no path can produce or store more (a nested toggle text can otherwise multiply).
  */
@@ -154,7 +154,7 @@ export const renderOutputs = (kit: Kit, values: Values): Record<string, string> 
 const names = (template: string) => [...template.matchAll(PLACEHOLDER)].map((m) => m[1]);
 const word = (id: string) => new RegExp(`(?<![\\w$])${id}(?![\\w$])`);
 
-/** What the agent sends for a preview playground, after the type check of lib/spec.ts. Every field is still untrusted. */
+/** What the agent sends for a preview lab, after the type check of lib/spec.ts. Every field is still untrusted. */
 export type RawKit = {
   notes?: string;
   controls?: Record<string, unknown>[];
@@ -170,7 +170,7 @@ const ALL_FIELDS = [...new Set(Object.values(FIELDS).flat())];
 
 /**
  * Validate a preview kit. Returns the Kit, or every problem as a sentence that says how to fix it.
- * `warnings` are not errors: the playground is built, and the create result passes them on.
+ * `warnings` are not errors: the lab is built, and the create result passes them on.
  */
 /** The common ways view.js can turn a string into markup. Not every way: code can hide a name, so this is a warning's net, not a guard. */
 // The map library's calls that take a string as markup are in the list too: a popup, a tooltip, an overlay's content, a
@@ -181,14 +181,14 @@ const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML|setHTMLUnsafe|cre
  * Text from a web page or a brand is not the agent's text: a page can change a price or a name into markup, and markup
  * that view.js writes with innerHTML, outerHTML or insertAdjacentHTML is then built in every visitor's preview. So a
  * preview that has such data and uses one of these gets a warning in problems: in the build answer for the agent, and in
- * read_playground for anyone who reads the playground before it becomes an example. A warning, not a refusal: the string may be the agent's own, which no
+ * read_playground for anyone who reads the lab before it becomes an example. A warning, not a refusal: the string may be the agent's own, which no
  * pattern can see for certain. Null: no web or brand data, or none of the three in view.js.
  */
 export function markupWarning(kit: { preview: { js: string }; web?: unknown[] | null; brand: unknown | null }): string | null {
   if (!kit.web?.length && !kit.brand) return null;
   const used = [...new Set((kit.preview.js.match(MARKUP_SINK) ?? []).map((x) => x.replace(/\s+/g, "")))];
   if (!used.length) return null;
-  return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this playground reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup (on a map: bindPopup, bindTooltip and setContent take an element or a text node, document.createTextNode(text)); revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
+  return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this lab reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup (on a map: bindPopup, bindTooltip and setContent take an element or a text node, document.createTextNode(text)); revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
 }
 
 /** The smallest text of a data view, in px (a badge of lib/sheet.ts). */
@@ -200,11 +200,11 @@ const FILLED_MOST = 200_000;
 /**
  * How a preview that shows data looks: problems for the agent that builds it, in the build and revise results. A page
  * of facts written in styles of its own (a typeface, 11 px text, a dozen colours) does not match the page around it or
- * any other playground, so:
+ * any other lab, so:
  * - a preview that reads web pages and is not a data view is told to become one. Not a map, and not a Tailwind
  *   preview: those are a place and the person's own component, and view.data is refused with view.tailwind;
  * - a data view is told about each thing it brings that the frame already has: a typeface, text under 12 px, colours.
- * Advice, not a refusal: the playground is built. Only view.css and the quoted style attributes of view.html are read;
+ * Advice, not a refusal: the lab is built. Only view.css and the quoted style attributes of view.html are read;
  * what view.js sets is not seen, and neither is a style element inside view.html, a colour by name, a colour function
  * with another function inside it (rgb(var(--r) 1 2)), the colour of a colour control (the person tunes it), a size in
  * em or % or a size inside a function (calc, clamp). The styles are read as the page opens, with the start value of
@@ -214,7 +214,7 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   const { preview } = kit;
   if (!preview.data) {
     return kit.web?.length && !preview.map && !preview.tailwind
-      ? ['view: this preview shows facts read from web pages (data.web) in styles of its own. Make it a data view: set view.data: true and write view.html with Clay\'s parts (kit_reference, "A data view": .lead, table, .cards, .badge, .note), with view.css empty or nearly so. The typeface, the sizes and the colours are then the page\'s own, on a desktop and on a phone. Revise with revise_playground. It may stay as it is only when the preview is the person\'s own component with one or two facts in it.']
+      ? ['view: this preview shows facts read from web pages (data.web) in styles of its own. Make it a data view: set view.data: true and write view.html with Sorvi\'s parts (kit_reference, "A data view": .lead, table, .cards, .badge, .note), with view.css empty or nearly so. The typeface, the sizes and the colours are then the page\'s own, on a desktop and on a phone. Revise with revise_playground. It may stay as it is only when the preview is the person\'s own component with one or two facts in it.']
       : [];
   }
   const out: string[] = [];
@@ -250,8 +250,8 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
     .map((m) => /^\s*([\w-]+)\s*:([\s\S]*)$/.exec(m[1]))
     .filter((m) => m != null)
     .map((m) => ({ prop: m[1].toLowerCase(), value: m[2] }));
-  // Not "font: inherit", which takes Clay's typeface.
-  if (decls.some((d) => (d.prop === "font" || d.prop === "font-family") && !/^\s*(?:inherit|unset|initial)\b/i.test(d.value))) out.push("view.css or a style attribute of view.html: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
+  // Not "font: inherit", which takes Sorvi's typeface.
+  if (decls.some((d) => (d.prop === "font" || d.prop === "font-family") && !/^\s*(?:inherit|unset|initial)\b/i.test(d.value))) out.push("view.css or a style attribute of view.html: a data view (view.data) has Sorvi's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
   // The size of font-size and of the font shorthand, in px or rem (16 px): the first number with such a unit. A number
   // starts only where no digit, letter, point or hyphen stands before it, so a long run of digits is read one time.
   const size = /(?<![\w.-])(\d+(?:\.\d+)?|\.\d+)(px|rem)\b/i;
@@ -280,7 +280,7 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   const warnings: string[] = [];
   const controls: Control[] = [];
   const list = raw.controls ?? [];
-  if (list.length < 1) errors.push("controls: a preview playground needs at least 1 control. Add the few dimensions this person wants to try.");
+  if (list.length < 1) errors.push("controls: a preview lab needs at least 1 control. Add the few dimensions this person wants to try.");
   if (list.length > KIT_LIMITS.controls) errors.push(`controls: at most ${KIT_LIMITS.controls} controls. Keep the dimensions that matter for this person.`);
 
   for (const [i, r] of list.entries()) {
@@ -359,7 +359,7 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
 
   // ---- Outputs: the code-ready text that goes back to the agent.
   const outputs = raw.outputs ?? [];
-  if (outputs.length < 1) errors.push('outputs: a preview playground needs at least 1 output: the text that goes back to you when the person settles, for example {"id": "classes", "label": "Button className", "template": "rounded-[{{radius}}px] bg-[{{bg}}]"}.');
+  if (outputs.length < 1) errors.push('outputs: a preview lab needs at least 1 output: the text that goes back to you when the person settles, for example {"id": "classes", "label": "Button className", "template": "rounded-[{{radius}}px] bg-[{{bg}}]"}.');
   if (outputs.length > KIT_LIMITS.outputs) errors.push(`outputs: at most ${KIT_LIMITS.outputs} outputs.`);
   for (const [i, o] of outputs.entries()) {
     const at = `outputs.${typeof o.id === "string" ? o.id : i}`;
@@ -419,9 +419,9 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   if (sink && !errors.length) warnings.push(sink);
   for (const m of js.matchAll(/clay\s*\.\s*data\s*\.\s*web\s*\.\s*([A-Za-z_$][\w$]*)/g)) if (!(web ?? []).some((s) => s.id === m[1])) errors.push(`view.js: clay.data.web.${m[1]} reads a web source that does not exist. Sources: ${(web ?? []).map((s) => s.id).join(", ") || "none (add data.web)"}.`);
   if (raw.view.map !== true && /\bclay\s*\.\s*map\s*\(/.test(js)) errors.push("view.js: clay.map() needs view.map: true. Without it the frame loads no map library and no map tiles.");
-  // ---- A data view brings Clay's own styles (lib/sheet.ts). Tailwind's reset would change them, and its utilities are
+  // ---- A data view brings Sorvi's own styles (lib/sheet.ts). Tailwind's reset would change them, and its utilities are
   // one more set of sizes and colours: the two do not go together.
-  if (raw.view.data === true && raw.view.tailwind === true) errors.push("view: view.data and view.tailwind do not go together. A data view (a comparison, a table of facts) is written with Clay's parts and needs no Tailwind: remove view.tailwind. When the preview is the person's own Tailwind component, remove view.data.");
+  if (raw.view.data === true && raw.view.tailwind === true) errors.push("view: view.data and view.tailwind do not go together. A data view (a comparison, a table of facts) is written with Sorvi's parts and needs no Tailwind: remove view.tailwind. When the preview is the person's own Tailwind component, remove view.data.");
   if (errors.length) return { ok: false, errors };
   warnings.push(...styleProblems({ preview: { html, css, data: raw.view.data === true, map: raw.view.map === true, tailwind: raw.view.tailwind === true }, web, controls }));
   return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, ...(raw.view.map === true ? { map: true } : {}), ...(raw.view.data === true ? { data: true } : {}), height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };

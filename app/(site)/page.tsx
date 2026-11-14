@@ -14,12 +14,12 @@ import Manage from "@/app/manage";
 export const dynamic = "force-dynamic";
 
 // The gallery reads the title from domain.question, which every kind has (a preview keeps its title there), so a new
-// kind shows without a change here; only its label falls back to "Playground".
+// kind shows without a change here; only its label falls back to "Lab".
 type AnyPlayground = Playground;
 const titleOf = (p: AnyPlayground, id: string) => p.domain?.question ?? id;
 /** The web sources of a preview that were read: a page that failed is not "live web data". */
 const readSources = (p: AnyPlayground) => (p.kit?.kit.web ?? []).filter((s) => p.kit!.web?.[s.id]?.read);
-/** The label of a card, from what the playground is built on (lib/card.ts): live web data, a brand, the real thing tuned by hand, or prices. */
+/** The label of a card, from what the lab is built on (lib/card.ts): live web data, a brand, the real thing tuned by hand, or prices. */
 const kindOf = (p: AnyPlayground, whose: "yours" | "theirs" = "theirs") => kindLabel({ price: !p.kit && !!p.domain?.vendors?.length, preview: !!p.kit, web: readSources(p).length, brand: !!p.kit?.kit.brand && !!p.kit.brandData, inline: !!p.kit?.kit.inline }, whose);
 
 /** A visitor's view of an example's kit: the one non-owner projection (lib/report.ts). */
@@ -67,12 +67,12 @@ export default async function Home() {
   // result share a screen, while it is an example; else the first preview example. The hero's own choice is unchanged.
   const demo = examples.find(([id, p]) => id === SNAP_BACK && p.kit) ?? hero;
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
-  // A returning person with playgrounds sees them first; everyone else meets them after the examples.
+  // A returning person with labs sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
   const yoursSection = me.kind === "visitor" ? null : (
     <section className="section" id="yours" aria-labelledby="yours-h">
       <div className="wrap">
-        <div className="section-head"><h2 id="yours-h">{me.kind === "admin" ? "All playgrounds" : "Your playgrounds"}</h2></div>
+        <div className="section-head"><h2 id="yours-h">{me.kind === "admin" ? "All labs" : "Your labs"}</h2></div>
         {yours.length ? (
           <ul className="rows mine clay">
             {yours.map(([id, p]) => (
@@ -84,7 +84,7 @@ export default async function Home() {
             ))}
           </ul>
         ) : connected ? (
-          <p className="t-lead">None yet. Ask your agent for help with a decision: say “build me a playground for …”.</p>
+          <p className="t-lead">None yet. Ask your agent for help with a decision: say “build me a lab for …”.</p>
         ) : (
           <p className="t-lead">None yet. <a className="link" href="/connect">Connect your agent</a>, then ask it for help with a decision.</p>
         )}
@@ -100,17 +100,17 @@ export default async function Home() {
         <section className="hero hero--clay" data-enter aria-labelledby="hero-h">
           <div className="wrap"><div className="hero-text grid hero__grid">
             <div className="span-5 hero__words">
-              <h1 id="hero-h">Playgrounds your own agent builds</h1>
+              <h1 id="hero-h">Labs your own agent builds</h1>
               <p className="hero__lead">Say it to Claude Code or Codex:</p>
               <Say />
               <p className="hero__lead">It builds a page where the real thing runs under a few controls: a price choice read live from the vendors’ own pages, your component, an animation. One command connects it.</p>
               <div className="btn-row">
-                {connected ? <a className="btn btn--primary" href="#yours">Your playgrounds<Arrow /></a> : <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>}
+                {connected ? <a className="btn btn--primary" href="#yours">Your labs<Arrow /></a> : <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>}
                 <a className="btn btn--secondary" href="#examples">See the examples</a>
               </div>
               {/* Three true lines, so the words end where the product beside them ends. */}
               <ul className="truths">
-                <li><b>Your agent, your model.</b> Clay needs no AI key.</li>
+                <li><b>Your agent, your model.</b> Sorvi needs no AI key.</li>
                 <li><b>{NUMBER[examples.length] ?? examples.length} {examples.length === 1 ? "example" : "examples"}</b>, open without an account.</li>
                 <li><b>Prices read live</b> from the vendors’ own pages through Context.dev.</li>
               </ul>
@@ -130,26 +130,26 @@ export default async function Home() {
         <section className="section" id="steps" aria-labelledby="steps-h">
           <div className="wrap">
             <div className="section-head">
-              <h2 id="steps-h">A playground takes three steps. <span className="muted">Your agent does two of them.</span></h2>
+              <h2 id="steps-h">A lab takes three steps. <span className="muted">Your agent does two of them.</span></h2>
             </div>
             {/* One live demonstration, not three pictures: the sentence, the real component with its real controls, and
                 the text the agent would write, which changes as the controls move. When the hero itself runs a
                 preview example (no price example is featured), the steps are words only: one live preview a page. */}
             {priceHero && demo ? (
               <div className="demo live ui">
-                <div className="demo__step demo__s1"><h3>1. Ask for a playground</h3><p>Type the sentence to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
+                <div className="demo__step demo__s1"><h3>1. Ask for a lab</h3><p>Type the sentence to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
                 <div className="demo__step demo__s2"><h3>2. Shape it by hand</h3><p>{demo[0] === SNAP_BACK ? "Drag the card and let go, then move a slider." : "Move the controls: the real thing follows at once."} No agent and no network call sits between a move and its result.</p></div>
                 <div className="demo__step demo__s3"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
-                <div className="shot shot--term demo__typed" role="img" aria-label="A terminal: the sentence a person types, the Clay tool the agent calls, and the link it returns">
-                  <p><b>&gt;</b> build me a playground for …</p>
-                  <p className="muted">clay · create_playground</p>
+                <div className="shot shot--term demo__typed" role="img" aria-label="A terminal: the sentence a person types, the Sorvi tool the agent calls, and the link it returns">
+                  <p><b>&gt;</b> build me a lab for …</p>
+                  <p className="muted">sorvi · create_playground</p>
                   <p>/p/{demo[0]}</p>
                 </div>
                 <Kit key={JSON.stringify(demo[1].kit!.kit)} id={demo[0]} title={titleOf(demo[1], demo[0])} state={forVisitor(demo[1])} canWrite={false} leftOut={demo[1].leftOut} byTeam={!demo[1].owner} embedded connected={connected} />
               </div>
             ) : (
               <div className="demo demo--words">
-                <div className="demo__step"><h3>1. Ask for a playground</h3><p>Type “build me a playground for …” to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
+                <div className="demo__step"><h3>1. Ask for a lab</h3><p>Type “build me a lab for …” to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
                 <div className="demo__step"><h3>2. Shape it by hand</h3><p>Move the controls and the real thing follows at once. No agent and no network call sits between a move and its result.</p></div>
                 <div className="demo__step"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
               </div>
@@ -161,7 +161,7 @@ export default async function Home() {
           <div className="wrap">
             <div className="section-head">
               <h2 id="examples-h">{NUMBER[examples.length] ?? examples.length} {examples.length === 1 ? "example" : "examples"}, open without an account.</h2>
-              <p>{examples.every(([, p]) => !p.owner) ? "The Clay team made them, each with our own agent from one request." : "Each was built by an agent from one request."} Open one and use it fully: nothing you do there is saved.</p>
+              <p>{examples.every(([, p]) => !p.owner) ? "The Sorvi team made them, each with our own agent from one request." : "Each was built by an agent from one request."} Open one and use it fully: nothing you do there is saved.</p>
             </div>
             {examples.length ? (
               <ul className="rows gallery">
@@ -193,16 +193,16 @@ export default async function Home() {
                   <div><dt className="t-small muted">command connects your agent</dt><dd className="t-stat">1</dd></div>
                   <div><dt className="t-small muted">examples open without an account</dt><dd className="t-stat">{examples.length}</dd></div>
                   {userDailyCap() > 0 && <div><dt className="t-small muted">web requests a day for each person</dt><dd className="t-stat">{userDailyCap()}</dd></div>}
-                  {userPlaygroundCap() > 0 && <div><dt className="t-small muted">playgrounds for each person</dt><dd className="t-stat">{userPlaygroundCap()}</dd></div>}
+                  {userPlaygroundCap() > 0 && <div><dt className="t-small muted">labs for each person</dt><dd className="t-stat">{userPlaygroundCap()}</dd></div>}
                 </dl>
               </div>
               <div className="span-6 start-7 shot shot--file" role="img" aria-label="A decision file in a repository, and the question a later agent session asks about it">
                 <p className="shot__path">{recordPath(priced)}</p>
                 <p># Decision: {titleOf(playgrounds[priced] ?? ({ domain: DOMAIN } as AnyPlayground), priced)}</p>
-                <p className="muted">- Playground: /p/{priced}<br />- Playground id: `{priced}`</p>
+                <p className="muted">- Lab: /p/{priced}<br />- Lab id: `{priced}`</p>
                 <p className="muted">## For an agent that reads this file</p>
                 <p className="shot__ask"><b>&gt;</b> is my saved decision still right?</p>
-                <p className="muted">clay · recheck_playground</p>
+                <p className="muted">sorvi · recheck_playground</p>
                 <p className="shot__answer">STILL HOLDS: every page was read again and no fact changed since the person settled.</p>
               </div>
             </div>
@@ -215,9 +215,9 @@ export default async function Home() {
           <div className="closing__cta close--word">
             <div className="section-head--split">
               {connected ? (
-                <div><h2 id="close-h">Ask your agent for a playground</h2><p className="t-lead">Say “build me a playground for …” to Claude Code or Codex. Your agent runs on your own model subscription. Clay needs no AI key.</p></div>
+                <div><h2 id="close-h">Ask your agent for a lab</h2><p className="t-lead">Say “build me a lab for …” to Claude Code or Codex. Your agent runs on your own model subscription. Sorvi needs no AI key.</p></div>
               ) : (
-                <div><h2 id="close-h">Connect your agent with one command</h2><p className="t-lead">Your agent runs on your own model subscription. Clay needs no AI key. {me.kind === "visitor" ? "Sign up, get your agent key, and add Clay." : "Get your agent key and add Clay."}</p></div>
+                <div><h2 id="close-h">Connect your agent with one command</h2><p className="t-lead">Your agent runs on your own model subscription. Sorvi needs no AI key. {me.kind === "visitor" ? "Sign up, get your agent key, and add Sorvi." : "Get your agent key and add Sorvi."}</p></div>
               )}
               {connected ? <a className="btn btn--secondary" href="/connect">Agent setup</a> : <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>}
             </div>
@@ -225,15 +225,15 @@ export default async function Home() {
           <div className="closing__links">
             <div className="grid">
               <div className="span-4 stack-4">
-                <a className="nav__logo" href="#top"><span className="mark" data-mark="stack" aria-hidden="true" />Clay</a>
-                <p className="footer__lede">Playgrounds that your own coding agent builds, and that you shape by hand.</p>
+                <a className="nav__logo" href="#top"><span className="mark" data-mark="stack" aria-hidden="true" />Sorvi</a>
+                <p className="footer__lede">Labs that your own coding agent builds, and that you shape by hand. Sorvi is the Finnish word for a lathe.</p>
               </div>
-              <div className="span-2 start-7 footer__col"><h3>Clay</h3><ul><li><a href="#examples">Examples</a></li><li><a href="#steps">Steps</a></li><li><a href="#decisions">Decisions</a></li></ul></div>
-              <div className="span-2 footer__col"><h3>Agents</h3><ul><li><a href="/connect">Connect</a></li><li><a href="/clay-recheck.yml">Re-check workflow</a></li></ul></div>
+              <div className="span-2 start-7 footer__col"><h3>Sorvi</h3><ul><li><a href="#examples">Examples</a></li><li><a href="#steps">Steps</a></li><li><a href="#decisions">Decisions</a></li></ul></div>
+              <div className="span-2 footer__col"><h3>Agents</h3><ul><li><a href="/connect">Connect</a></li><li><a href="/sorvi-recheck.yml">Re-check workflow</a></li></ul></div>
               <div className="span-2 footer__col"><h3>Web data</h3><ul><li><a href="https://context.dev">Context.dev</a></li></ul></div>
             </div>
             <div className="footer__legal">
-              <span>&copy; 2026 Clay &nbsp; <a href="/privacy">Privacy and security</a> &nbsp; Built at Junction 2026 for the Context.dev challenge. Web data is read through Context.dev.</span>
+              <span>&copy; 2026 Sorvi &nbsp; <a href="/privacy">Privacy and security</a> &nbsp; Built at Junction 2026 for the Context.dev challenge. Web data is read through Context.dev.</span>
               <div className="socials" />
               <a className="credits" href="/credits.txt">Typefaces: Gabarito, Figtree and DM Mono, SIL Open Font Licence</a>
             </div>

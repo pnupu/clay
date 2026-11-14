@@ -1,4 +1,4 @@
-// A started playground (start_playground): the state in the store, the create that fills it, who may touch it, and the
+// A started lab (start_playground): the state in the store, the create that fills it, who may touch it, and the
 // rule that keeps abandoned ones from piling up.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ process.chdir(mkdtempSync(join(tmpdir(), "clay-started-")));
 const as = (userId: string) => (bindActor().actor = { kind: "user", userId, via: "key" });
 const domain = (id: string) => ({ id, question: "How should the button look?", product: "", metrics: [], features: [], vendors: [] });
 
-test("a start stores a started playground of the caller, and a later line changes only that", async () => {
+test("a start stores a started lab of the caller, and a later line changes only that", async () => {
   as("ann");
   // A minute ago by the real clock: load() drops a start that is older than a day, so a fixed date would expire.
   const at = new Date(Date.now() - 60_000).toISOString();
@@ -26,7 +26,7 @@ test("a start stores a started playground of the caller, and a later line change
   assert.deepEqual(p.started, { workingOn: "Reading button.css", at });
   assert.equal(p.owner, "ann");
   assert.equal(p.kit, undefined);
-  // The same start again (the first answer was lost) is the same playground, not a second one.
+  // The same start again (the first answer was lost) is the same lab, not a second one.
   const again = await startPlayground({ title: "Which radius for the signup button?", workingOn: "Reading button.css" });
   assert.ok("started" in again && again.existed && again.started.id === id);
   // A new line, by id.
@@ -36,16 +36,16 @@ test("a start stores a started playground of the caller, and a later line change
   as("bob");
   assert.deepEqual(await startPlayground({ id, workingOn: "mine now" }), { missing: id });
   assert.equal((await load()).playgrounds[id].started?.workingOn, "Reading the brand colours");
-  // The operator may write everything, but is not handed a person's started playground either.
+  // The operator may write everything, but is not handed a person's started lab either.
   bindActor().actor = { kind: "admin" };
   assert.deepEqual(await startPlayground({ id, workingOn: "operator" }), { missing: id });
 });
 
-test("a create by its owner fills the started playground in place; anyone else gets the id with a suffix", async () => {
+test("a create by its owner fills the started lab in place; anyone else gets the id with a suffix", async () => {
   as("cat");
   const r = await startPlayground({ title: "Fill me in place", workingOn: "Working" });
   const id = "started" in r ? r.started.id : "";
-  // Someone else asks for the same id: the started playground stays, and their playground gets a suffix.
+  // Someone else asks for the same id: the started lab stays, and their lab gets a suffix.
   as("dan");
   const other = await insertPlayground(domain(id), (d) => newPlayground(d));
   assert.ok("id" in other && other.id !== id && other.id.startsWith(`${id}-`) && !other.filled);
@@ -58,12 +58,12 @@ test("a create by its owner fills the started playground in place; anyone else g
   assert.equal(p.started, undefined);
   assert.equal(p.owner, "cat");
   assert.equal(p.domain.question, "How should the button look?");
-  // A late line never puts a built playground back to "started".
+  // A late line never puts a built lab back to "started".
   assert.deepEqual(await startPlayground({ id, workingOn: "too late" }), { built: id });
   assert.equal((await load()).playgrounds[id].started, undefined);
 });
 
-test("a started playground counts toward the person's cap, and one that nobody built is dropped after 24 hours", async () => {
+test("a started lab counts toward the person's cap, and one that nobody built is dropped after 24 hours", async () => {
   process.env.CLAY_USER_PLAYGROUNDS = "2";
   try {
     as("eve");
@@ -78,12 +78,12 @@ test("a started playground counts toward the person's cap, and one that nobody b
     assert.ok("started" in b && all[b.started.id]);
     const c = await startPlayground({ title: "Second of two", workingOn: "x" });
     assert.ok("started" in c);
-    // Two started playgrounds are two playgrounds: the third start and a create are refused, and nothing is stored.
+    // Two started labs are two labs: the third start and a create are refused, and nothing is stored.
     const d = await startPlayground({ title: "Third", workingOn: "x" });
-    assert.match("refused" in d ? d.refused : "", /limit of 2 playgrounds per person\. Nothing was started\./);
+    assert.match("refused" in d ? d.refused : "", /limit of 2 labs per person\. Nothing was started\./);
     const e = await insertPlayground(domain("over-the-cap"), (x) => newPlayground(x));
-    assert.match("refused" in e ? e.refused : "", /limit of 2 playgrounds/);
-    // A create that fills a started one is not one more playground: it passes at the cap.
+    assert.match("refused" in e ? e.refused : "", /limit of 2 labs/);
+    // A create that fills a started one is not one more lab: it passes at the cap.
     const f = await insertPlayground(domain("started" in c ? c.started.id : ""), (x) => newPlayground(x));
     assert.ok("id" in f && f.filled);
     // The drop is stored by the next write: the file no longer holds the abandoned one.
@@ -93,12 +93,12 @@ test("a started playground counts toward the person's cap, and one that nobody b
   }
 });
 
-test("a started playground can never be an example, and a stored one with a broken time is dropped", async () => {
+test("a started lab can never be an example, and a stored one with a broken time is dropped", async () => {
   as("fay");
   const r = await startPlayground({ title: "Never an example", workingOn: "x" });
   const id = "started" in r ? r.started.id : "";
   const marked = await update((s) => markExample(s.playgrounds, id, { example: true, version: "any" }, { kind: "admin" }, () => ({ version: "any", busy: false })));
-  assert.deepEqual(marked, { ok: false, status: 409, error: "This playground is started and not built yet: there is nothing to publish." });
+  assert.deepEqual(marked, { ok: false, status: 409, error: "This lab is started and not built yet: there is nothing to publish." });
   const raw = JSON.parse(readFileSync(".data/store.json", "utf8"));
   raw.playgrounds[id].started.at = "not a time";
   writeFileSync(".data/store.json", JSON.stringify(raw));
@@ -108,10 +108,10 @@ test("a started playground can never be an example, and a stored one with a brok
 test("the texts of a start are one plain line, the id comes from the title, and the page revision follows the spec", () => {
   assert.equal(oneLine("  Reading\n the  pricing\tpages\u0000 now "), "Reading the pricing pages now");
   assert.equal(idOf("Where to buy gas in Tampere? I live at Hervanta"), "where-to-buy-gas-in-tampere-i-live");
-  assert.equal(idOf("3 GPUs"), "playground-3-gpus");
+  assert.equal(idOf("3 GPUs"), "lab-3-gpus");
   // An accent is dropped; it does not break the word.
   assert.equal(idOf("Päivän paras hinta Tampereella: Ärrä vai Öljy?"), "paivan-paras-hinta-tampereella");
-  assert.equal(idOf("日本語"), "playground");
+  assert.equal(idOf("日本語"), "lab");
   for (const t of ["Which radius?", "a".repeat(200), "x y", "<script>alert(1)</script>"]) assert.match(idOf(t), /^[a-z][a-z0-9-]{2,39}$/, t);
   assert.match(notBuilt("gas"), /started and not built yet.*create_playground, with "gas" as the id of the spec/);
   const d = domain("rev");

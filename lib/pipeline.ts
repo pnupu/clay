@@ -126,11 +126,11 @@ async function readModel(d: Domain, src: Source, origin: string): Promise<Snapsh
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Thrown when a playground or vendor id is not known. */
+/** Thrown when a lab or vendor id is not known. */
 export class NotFound extends Error {}
 const playground = async (pg: string): Promise<Playground> => {
   const p = (await load()).playgrounds[pg];
-  if (!p) throw new NotFound(`Playground "${pg}" does not exist.`);
+  if (!p) throw new NotFound(`Lab "${pg}" does not exist.`);
   return p;
 };
 
@@ -150,7 +150,7 @@ async function searchPricing(name: string, domain: string): Promise<{ url: strin
 }
 
 /**
- * Collect one vendor of one playground: find its pricing page, then extract it.
+ * Collect one vendor of one lab: find its pricing page, then extract it.
  * The first page is the one the config names, else the one found before. When it cannot be read, or gives nothing to
  * compute with, the next ones are tried (domain.ts, pricingCandidates): the search results that look like a pricing page,
  * then the site's own /pricing page; at most three pages per vendor. When none gives a price, the best read is kept and the
@@ -159,7 +159,7 @@ async function searchPricing(name: string, domain: string): Promise<{ url: strin
 export async function collect(pg: string, id: string, origin: string): Promise<void> {
   const p = await playground(pg);
   const v = p.domain.vendors.find((x) => x.id === id);
-  if (!v) throw new NotFound(`Playground "${pg}" has no vendor "${id}".`);
+  if (!v) throw new NotFound(`Lab "${pg}" has no vendor "${id}".`);
   const asked = readSig(p.domain, id);
   const prev = p.sources[id];
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
@@ -228,7 +228,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
     src.lastCheckedAt = new Date().toISOString();
     await update((s) => {
       const now = s.playgrounds[pg];
-      // The playground may have been revised while the page was read (a build answers the agent before it ends, so a
+      // The lab may have been revised while the page was read (a build answers the agent before it ends, so a
       // revision can overlap it). A read that was made for other metrics, features or another page is dropped: the
       // revision reads the vendor itself, and its pending mark is its own.
       if (!now || readSig(now.domain, id) !== asked) return;
@@ -251,9 +251,9 @@ const readSig = (d: Domain, id: string): string | null => {
 const arrived = (p: Playground | undefined, id: string) => sourceArrived(p, id);
 
 /**
- * Run web reads for some vendors of a playground as tracked work (store.ts, Work): the playground says which sources are
+ * Run web reads for some vendors of a lab as tracked work (store.ts, Work): the lab says which sources are
  * still pending while `run` runs, and how it ended. The mark is set before this returns its promise's first await ends, so
- * a caller that answers early leaves a playground that says "running". Never rejects: an error becomes the stop text.
+ * a caller that answers early leaves a lab that says "running". Never rejects: an error becomes the stop text.
  */
 export async function tracked(pg: string, kind: Work["kind"], ids: string[], run: () => Promise<string | null>): Promise<string | null> {
   const id = randomUUID();
@@ -273,7 +273,7 @@ export async function tracked(pg: string, kind: Work["kind"], ids: string[], run
   return stop;
 }
 
-/** Wait until the web reads of a playground have ended (the tracked work of a price playground, the brand read of a preview), at most `ms`. Returns the playground as stored now. */
+/** Wait until the web reads of a lab have ended (the tracked work of a price lab, the brand read of a preview), at most `ms`. Returns the lab as stored now. */
 export async function settled(pg: string, ms: number, every = 1500): Promise<Playground | undefined> {
   const until = Date.now() + ms;
   for (;;) {
@@ -284,7 +284,7 @@ export async function settled(pg: string, ms: number, every = 1500): Promise<Pla
   }
 }
 
-/** Collect every vendor of a playground in parallel, as tracked work. Returns the stop error (rate limit or quota) when one occurred. */
+/** Collect every vendor of a lab in parallel, as tracked work. Returns the stop error (rate limit or quota) when one occurred. */
 export async function collectAll(pg: string, origin: string, ids?: string[]): Promise<string | null> {
   const all = ids ?? (await playground(pg)).domain.vendors.map((v) => v.id);
   return tracked(pg, "build", all, async () => {
@@ -295,24 +295,24 @@ export async function collectAll(pg: string, origin: string, ids?: string[]): Pr
 }
 
 /**
- * Create a playground from a validated Domain and start collecting its sources. `work` is the running collection: it
+ * Create a lab from a validated Domain and start collecting its sources. `work` is the running collection: it
  * resolves to the stop error or null. A caller with a short deadline (the MCP tools) answers before it ends and must
  * keep the function alive for it (after() in the route); a caller without one awaits it.
  */
-export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> | null; existed?: boolean; /** The build replaced the caller's started playground with this id (lib/started.ts). */ filled?: boolean } | { refused: string }> {
+export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> | null; existed?: boolean; /** The build replaced the caller's started lab with this id (lib/started.ts). */ filled?: boolean } | { refused: string }> {
   const r = await insertPlayground(domain, (d) => newPlayground(d));
   if ("refused" in r) return r;
   if (!r.existed) return { id: r.id, work: collectAll(r.id, origin), filled: r.filled };
-  // The caller already has exactly this playground (a repeated call after a lost answer or a failed build). Pages that
+  // The caller already has exactly this lab (a repeated call after a lost answer or a failed build). Pages that
   // were read stay; pages that are missing and that nothing reads now (a build that failed, stopped or was cut off) are
-  // read again, so a retry repairs instead of returning a broken playground.
+  // read again, so a retry repairs instead of returning a broken lab.
   const p = await playground(r.id);
   const reading = new Set(workStatus(p)?.status === "running" ? p.work!.pending : []);
   const missing = p.domain.vendors.filter((v) => !p.sources[v.id]?.snapshot && !reading.has(v.id)).map((v) => v.id);
   return { id: r.id, work: missing.length ? collectAll(r.id, origin, missing) : null, existed: true };
 }
 
-// ---- Preview playgrounds (lib/kit.ts). The only web read is the brand of data.brand, once, at creation or when its domain changes.
+// ---- Preview labs (lib/kit.ts). The only web read is the brand of data.brand, once, at creation or when its domain changes.
 
 async function readBrand(kit: Kit): Promise<Pick<KitState, "brandData" | "brandError">> {
   if (!kit.brand) return { brandData: null, brandError: null };
@@ -324,7 +324,7 @@ async function readBrand(kit: Kit): Promise<Pick<KitState, "brandData" | "brandE
 }
 
 /**
- * Read the brand of a stored preview playground and store the result. The playground was stored with the brand marked
+ * Read the brand of a stored preview lab and store the result. The lab was stored with the brand marked
  * as pending since `since`; the result fills in only a kit that still waits for exactly this read (a later revision that
  * asked for another brand, or started its own read, keeps its own). Never rejects: a read that cannot store its result
  * leaves the mark, which counts as failed once it is older than a function can live (brandPending()).
@@ -341,10 +341,10 @@ function readBrandLater(id: string, kit: Kit, since: string): Promise<void> {
 }
 
 /**
- * Create a preview playground from a validated kit. The preview stays "unverified" until the page has run it once.
- * The playground is stored (and the owner's allowance reserved) before the brand is read; `brand` is that read, and it
- * stores its result when it ends. A playground without data.brand is complete at once. `existed`: the caller already has
- * exactly this playground (a repeated call): nothing was created or read.
+ * Create a preview lab from a validated kit. The preview stays "unverified" until the page has run it once.
+ * The lab is stored (and the owner's allowance reserved) before the brand is read; `brand` is that read, and it
+ * stores its result when it ends. A lab without data.brand is complete at once. `existed`: the caller already has
+ * exactly this lab (a repeated call): nothing was created or read.
  */
 export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null; web: Promise<string | null> | null; existed?: boolean; filled?: boolean } | { refused: string }> {
   const since = new Date().toISOString();
@@ -357,9 +357,9 @@ export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: str
   return { id: r.id, brand: kit.brand && !r.existed ? readBrandLater(r.id, kit, since) : null, web: missing.length ? collectWeb(r.id, missing) : null, existed: r.existed, filled: r.filled };
 }
 
-// ---- data.web: live facts from web pages for a preview playground (lib/web.ts has the validation and the guard).
+// ---- data.web: live facts from web pages for a preview lab (lib/web.ts has the validation and the guard).
 
-/** The id of a web source in the tracked work of its playground. */
+/** The id of a web source in the tracked work of its lab. */
 const webWorkId = (id: string) => `web:${id}`;
 
 /** One structured read of a page: the facts the source asks for, guarded against the page text of the same capture. */
@@ -405,7 +405,7 @@ const storeWeb = (pg: string, src: WebSource, state: WebState) =>
     sourceArrived(p, webWorkId(src.id));
   });
 
-/** Read some web sources of a preview playground in parallel, as tracked work. Resolves to the stop error or null. */
+/** Read some web sources of a preview lab in parallel, as tracked work. Resolves to the stop error or null. */
 export async function collectWeb(pg: string, ids: string[]): Promise<string | null> {
   return tracked(pg, "build", ids.map(webWorkId), async () => {
     const k = (await playground(pg)).kit;
@@ -421,12 +421,12 @@ export async function collectWeb(pg: string, ids: string[]): Promise<string | nu
 }
 
 /**
- * Re-check the web sources of a preview playground. Per source: read the page text and compare its fingerprint; only
+ * Re-check the web sources of a preview lab. Per source: read the page text and compare its fingerprint; only
  * when the text changed, extract again; a fact changes only when a second fresh extraction states the same thing
  * (confirmChanges). The changes are stored on the source and returned.
  */
 export function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
-  // One re-check of a playground at a time in this instance. A call that comes while one runs joins it: a repeated
+  // One re-check of a lab at a time in this instance. A call that comes while one runs joins it: a repeated
   // recheck_playground (the first answered "running") must not start another pass of reads behind it.
   // An older run may have read its pages before the person settled or the agent revised, so a later call runs after it.
   const running = webRechecks.get(pg);
@@ -514,7 +514,7 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
 }
 
 /**
- * Replace the kit of a preview playground. When the preview code, the data or a control's values change, the preview is
+ * Replace the kit of a preview lab. When the preview code, the data or a control's values change, the preview is
  * unverified again, the settled result is cleared, and the exploration is kept for the controls whose definition did not
  * change. A new brand is read after the kit is stored: `brand` is that read (the tool answers within its deadline).
  */
@@ -522,7 +522,7 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ unpubli
   const since = new Date().toISOString();
   const r = await update((s) => {
     const p = s.playgrounds[domain.id];
-    if (!p?.kit) throw new NotFound(`Playground "${domain.id}" does not exist.`);
+    if (!p?.kit) throw new NotFound(`Lab "${domain.id}" does not exist.`);
     const same = (id: string) => JSON.stringify(p.kit!.kit.controls.find((c) => c.id === id)) === JSON.stringify(kit.controls.find((c) => c.id === id));
     const kept = Object.fromEntries(Object.entries(p.kit.exploration?.controls ?? {}).filter(([id]) => same(id)));
     // The brand that is stored is reused, and a read of the same brand that still runs is left to end. Another brand, or
@@ -556,7 +556,7 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ unpubli
 }
 
 /**
- * Replace the domain of a playground. Vendors that are gone lose their source. When the metrics, features or extraction
+ * Replace the domain of a lab. Vendors that are gone lose their source. When the metrics, features or extraction
  * guidance changed, every page is extracted again; else only new vendors and vendors with a new page are collected.
  * The saved decision is kept only while its vendor and every control it names still exist.
  */
@@ -564,13 +564,13 @@ export async function revisePlayground(domain: Domain, origin: string): Promise<
   const sig = extractionSig;
   const plan = await update((s) => {
     const p = s.playgrounds[domain.id];
-    if (!p) throw new NotFound(`Playground "${domain.id}" does not exist.`);
+    if (!p) throw new NotFound(`Lab "${domain.id}" does not exist.`);
     const schemaChanged = sig(p.domain) !== sig(domain);
     const was = new Map(p.domain.vendors.map((v) => [v.id, v]));
     const moved = domain.vendors.filter((v) => !was.has(v.id) || was.get(v.id)!.url !== v.url || was.get(v.id)!.domain !== v.domain).map((v) => v.id);
     const dropped = Object.keys(p.sources).filter((id) => !domain.vendors.some((v) => v.id === id) || moved.includes(id));
     // A dropped source would leave its Context.dev monitor running with nothing that can stop it.
-    if (dropped.some((id) => p.sources[id].monitor)) throw new Error("A webhook monitor watches a vendor that this change removes or moves. Stop the webhook monitors on the playground page first.");
+    if (dropped.some((id) => p.sources[id].monitor)) throw new Error("A webhook monitor watches a vendor that this change removes or moves. Stop the webhook monitors on the lab page first.");
     for (const id of dropped) delete p.sources[id];
     for (const v of domain.vendors) if (p.sources[v.id]) p.sources[v.id].name = v.name;
     const controls = new Set([...domain.metrics, ...domain.features].map((x) => x.id));
@@ -602,7 +602,7 @@ export function recheck(pg: string, id: string, trigger: ChangeEvent["trigger"],
   inFlight.set(key, run.catch(() => {}));
   return run;
 }
-// Per playground and source: the tail of its re-check chain, so re-checks of one source in this instance run in turn.
+// Per lab and source: the tail of its re-check chain, so re-checks of one source in this instance run in turn.
 // lean: there is no lock across function instances. Two instances that re-check the same source at the same time both read
 // the page (double spend of requests), and the conditional write in recheckOnce keeps only one of the two results, so a
 // change gives one event. Add a lease in the store if concurrent triggers become common.
@@ -720,7 +720,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   return event;
 }
 
-/** Re-check every source of a playground as tracked work. Resolves to the per-source results, in the order of `ids`. */
+/** Re-check every source of a lab as tracked work. Resolves to the per-source results, in the order of `ids`. */
 export async function recheckAll(pg: string, ids: string[], trigger: ChangeEvent["trigger"], origin: string): Promise<PromiseSettledResult<ChangeEvent | null>[]> {
   let results: PromiseSettledResult<ChangeEvent | null>[] = [];
   await tracked(pg, "recheck", ids, async () => {

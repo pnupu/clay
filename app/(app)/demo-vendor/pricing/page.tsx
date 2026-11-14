@@ -9,7 +9,7 @@ export default async function DemoPricing() {
   const model = (await load()).demoPage ?? DEMO_DEFAULT;
   return (
     <main className="demo-page">
-      <p className="demo-banner">Demo page. Northwind Auth is not a real vendor. This page is served by the Clay app.</p>
+      <p className="demo-banner">Demo page. Northwind Auth is not a real vendor. This page is served by the Sorvi app.</p>
       <h1>Northwind Auth pricing</h1>
       {model.plans?.map((p) => (
         <section key={p.name}>

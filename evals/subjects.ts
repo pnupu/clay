@@ -1,4 +1,4 @@
-// The subjects: a real headless agent connected to Clay's MCP endpoint and nothing else, with file access to one scratch
+// The subjects: a real headless agent connected to Sorvi's MCP endpoint and nothing else, with file access to one scratch
 // directory. Two CLIs behind one interface: `claude` and `codex exec`. Flags were read from each CLI's --help
 // (claude 2.1.321, codex-cli 0.167.0). No global or user-level configuration is edited: everything is passed per run.
 import { spawn } from "node:child_process";
@@ -26,8 +26,8 @@ export type RunOptions = {
   /** File name stem for the transcript, for example "leg1". */
   name: string;
   /**
-   * "files" (the default): the agent has Clay and file tools only, so the checks measure Clay, not the agent's other ways out.
-   * "normal": the agent keeps the CLI's own tool set (web search and fetch, shell, files) plus Clay, as a person's agent has.
+   * "files" (the default): the agent has Sorvi and file tools only, so the checks measure Sorvi, not the agent's other ways out.
+   * "normal": the agent keeps the CLI's own tool set (web search and fetch, shell, files) plus Sorvi, as a person's agent has.
    */
   tools?: "files" | "normal";
   /** For tools "normal": a clean home directory for the CLI, prepared by the operator (see run.ts). */
@@ -49,7 +49,7 @@ export type AgentRun = {
   error: string | null;
 };
 
-// The tool-call timeout of each CLI stays at its default on purpose (about 60 s in both): a person who adds Clay with
+// The tool-call timeout of each CLI stays at its default on purpose (about 60 s in both): a person who adds Sorvi with
 // `claude mcp add` or `codex mcp add` gets that default, and a build that outlasts it is a failure they would see.
 export const DEFAULT_MODEL: Record<SubjectName, string | undefined> = { claude: "claude-opus-5-5", codex: undefined };
 const FILE_TOOLS = "Read,Edit,Write,Glob,Grep";
@@ -68,7 +68,7 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
       bin: "claude",
       args: [
         "-p", // the prompt comes on stdin
-        "--mcp-config", `${o.dir}/mcp.json`, "--strict-mcp-config", // only Clay's MCP server
+        "--mcp-config", `${o.dir}/mcp.json`, "--strict-mcp-config", // only Sorvi's MCP server
         // Files only: no user, project or local settings, so no plugins, hooks or CLAUDE.md. Normal tools: the default
         // sources, as a person has them; the clean home and the scratch directory hold only what the operator put there
         // (a CLAUDE.md in the scratch directory, a personal skill in the home), so the levers a person has can be measured.
@@ -97,7 +97,7 @@ function command(o: RunOptions, session: string): { bin: string; args: string[] 
       ...(normal ? [] : [...c("project_doc_max_bytes=0"), ...c('web_search="disabled"')]), // no AGENTS.md of the surrounding repository, no web
       ...c(`mcp_servers.${SERVER}.url="${url}"`),
       ...(o.key ? c(`mcp_servers.${SERVER}.bearer_token_env_var="CLAY_ACCESS_KEY"`) : []),
-      ...c(`mcp_servers.${SERVER}.default_tools_approval_mode="approve"`), // exec cannot ask; without this every Clay call is refused
+      ...c(`mcp_servers.${SERVER}.default_tools_approval_mode="approve"`), // exec cannot ask; without this every Sorvi call is refused
       "-", // the prompt comes on stdin
     ],
   };

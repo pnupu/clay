@@ -1,8 +1,8 @@
-/* Clay's own components (the playground, its controls, results and outputs, the key page's blocks), on the system that
+/* Sorvi's own components (the lab, its controls, results and outputs, the key page's blocks), on the system that
    Taste Skill dealt for the website (app/tokens.ts): the stone ground, one blue for the action, Gabarito for headings,
    Figtree for text, DM Mono for values and code, sharp corners, tonal buttons, one hairline.
    Loaded on every page. Everything is under `.clay`, and the class names here are not the kit's (one exception, `.row.wrap`, is reset below):
-   an app page's <body> is `.clay`; a website page marks the block that holds Clay's own UI. Clerk's own elements
+   an app page's <body> is `.clay`; a website page marks the block that holds Sorvi's own UI. Clerk's own elements
    (class names that start with cl-) are left to Clerk. */
 :root {
   --c-pane: #ecebe8;                                                   /* a pane: one step lighter than the ground */
@@ -98,7 +98,7 @@
 .clay .tag.saved { color: var(--ok); background: var(--ok-bg); }
 .clay .dot, .clay .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
-/* The price playground: the person's situation, the ranking, the standing decision. */
+/* The price lab: the person's situation, the ranking, the standing decision. */
 .clay .pgrid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start; }
 .clay .results { display: grid; gap: 24px; min-width: 0; }
 .clay .controls { position: sticky; top: 16px; }
@@ -210,7 +210,7 @@
   .clay .top { margin-bottom: 16px; }
   .clay .top .actions { flex-wrap: wrap; }
 }
-/* A playground shown inside another page brings no page frame of its own. */
+/* A lab shown inside another page brings no page frame of its own. */
 .clay .embedded-playground .top { margin-bottom: 12px; }
 @media (min-width: 701px) {
   .clay .embedded-playground .pgrid { grid-template-columns: 280px minmax(0, 1fr); }
@@ -252,7 +252,7 @@
 @media (max-width: 519px) { header.bar .who { display: none; } }
 .nav.is-open .nav__actions .who { align-self: flex-start; }
 
-/* A started playground (app/live.tsx): the title, one pane that says what the agent is doing, and nothing to press. */
+/* A started lab (app/live.tsx): the title, one pane that says what the agent is doing, and nothing to press. */
 .clay .started { padding-top: 48px; }
 .clay .started > * { max-width: 100%; }
 .clay .started h1 { overflow-wrap: anywhere; }
@@ -262,7 +262,7 @@
 .clay .started__pane h2.live i { flex: none; margin-top: 8px; }
 .clay .started__line { font-size: 18px; line-height: 1.4; overflow-wrap: anywhere; }
 .clay .started__time { font-variant-numeric: tabular-nums; }
-/* The notice that the agent revised the open playground: short, quiet, out of the way of the controls. */
+/* The notice that the agent revised the open lab: short, quiet, out of the way of the controls. */
 .clay .updated { position: fixed; z-index: 30; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 10px 16px; border-radius: var(--c-r-md); background: var(--p-inv-bg); color: var(--p-inv-ink); font-size: 14px; line-height: 1.4; text-align: center; animation: clay-updated 8s ease-in-out both; pointer-events: none; }
 @keyframes clay-updated { 0%, 100% { opacity: 0; } 4%, 92% { opacity: 1; } }
 /* On a narrow screen the controls fill the lower half: the notice sits at the top, over the bar, not over a control. */

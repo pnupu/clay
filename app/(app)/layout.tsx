@@ -9,10 +9,10 @@ import { ROOT_CSS } from "@/app/tokens";
 import "@/app/clay.css";
 import "@/app/app.css";
 
-// The app pages: a playground, sign-in and the short pages. The website pages (the landing page, /connect) have a root
+// The app pages: a lab, sign-in and the short pages. The website pages (the landing page, /connect) have a root
 // layout of their own (app/(site)/layout.tsx); a move between the two is a full page load. Both read the same tokens.
 export const metadata: Metadata = {
-  title: "Clay",
+  title: "Sorvi",
   description: "Your agent builds a page of controls for a decision; you try values by hand until you know what you want; the agent reads back what you settled on.",
   icons: { icon: [{ url: "/favicon.svg", type: "image/svg+xml" }] },
 };
@@ -24,7 +24,7 @@ async function Header() {
   return (
     <header className="bar">
       <div className="bar__in">
-        <Link href="/" className="bar__logo"><span className="bar__mark" aria-hidden="true" />Clay</Link>
+        <Link href="/" className="bar__logo"><span className="bar__mark" aria-hidden="true" />Sorvi</Link>
         <nav className="bar__links" aria-label="Main">
           {/* The same list as the website's Examples panel: the fastest way from one example to the next. */}
           {groups.length > 0 ? (
@@ -42,7 +42,7 @@ async function Header() {
           ) : (
             <Link href="/#examples">Examples</Link>
           )}
-          {me.kind !== "visitor" && <Link href="/#yours"><span className="wide-only">Your playgrounds</span><span className="narrow-only">Yours</span></Link>}
+          {me.kind !== "visitor" && <Link href="/#yours"><span className="wide-only">Your labs</span><span className="narrow-only">Yours</span></Link>}
         </nav>
         <div className="bar__actions">
           {me.kind === "user" ? <Account /> : me.kind === "admin" ? <span className="who" aria-label="Operator session">Operator</span> : me.kind === "visitor" && clerkOn() ? <Link href="/sign-in" className="bar__word">Sign in</Link> : null}

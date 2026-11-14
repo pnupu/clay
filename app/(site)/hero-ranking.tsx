@@ -14,7 +14,7 @@ const num = (n: number) => n.toLocaleString("en-US");
  * The landing page's hero when the featured example is a price decision: its real ranking, small. One slider (the metric
  * the page chose: the first along which the cheapest vendor changes, app/(site)/page.tsx) moves the monthly cost of every vendor; the bars grow and shrink, and the rows
  * change places where the order flips. The prices are the example's stored ones, as read from the vendors' own pages,
- * and the costs come from the same functions as the playground's own page (lib/pricing.ts). The server renders it at
+ * and the costs come from the same functions as the lab's own page (lib/pricing.ts). The server renders it at
  * the start value, so it shows before any script.
  */
 export default function HeroRanking({ id, question, metric, usage, models, names, readAt, byTeam }: { id: string; question: string; metric: MetricDef; usage: Record<string, number>; models: Record<string, PricingModel | null>; names: Record<string, string>; readAt: string | null; byTeam: boolean }) {
@@ -70,7 +70,7 @@ export default function HeroRanking({ id, question, metric, usage, models, names
   const here = sayMetric(metric, value, { names: vendors });
   return (
     <div className="rank2" data-price-hero={id}>
-      <p className="rank2__label">{byTeam ? "An example by the Clay team" : "An example"} · prices read from the web by Context.dev</p>
+      <p className="rank2__label">{byTeam ? "An example by the Sorvi team" : "An example"} · prices read from the web by Context.dev</p>
       <p className="rank2__question">{question}</p>
       <p className="rank2__answer" aria-live="polite">
         {first ? <>At {here} the cheapest is <b>{names[first.id] ?? first.id}</b>, {money(first.best!.cost)} a month.</> : <>At {here} no vendor can be ranked.</>}
@@ -97,7 +97,7 @@ export default function HeroRanking({ id, question, metric, usage, models, names
       </ol>
       {ranking.unranked.length > 0 && <p className="rank2__note">Not ranked at these numbers: {ranking.unranked.map((v) => names[v.id] ?? v.id).join(", ")}. A price on the page is not stated, or no plan fits.</p>}
       <p className="rank2__note">
-        Read from the vendors’ own pricing pages through Context.dev{readAt ? `, ${new Date(readAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })} ${readAt.slice(11, 16)} UTC` : ""}. <a href={`/p/${id}`}>Open this playground</a>
+        Read from the vendors’ own pricing pages through Context.dev{readAt ? `, ${new Date(readAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })} ${readAt.slice(11, 16)} UTC` : ""}. <a href={`/p/${id}`}>Open this lab</a>
       </p>
     </div>
   );

@@ -1,5 +1,5 @@
-// Acts as the person in a headless browser: opens a playground, moves controls, selects a vendor, saves a decision, takes screenshots.
-// Usage: [OWNER_KEY_FILE=<file>] node scripts/person.ts <playground url> <steps json> [screenshot prefix]
+// Acts as the person in a headless browser: opens a lab, moves controls, selects a vendor, saves a decision, takes screenshots.
+// Usage: [OWNER_KEY_FILE=<file>] node scripts/person.ts <lab url> <steps json> [screenshot prefix]
 // Steps: {"set": {"<metric id>": [values...]}, "require": ["<feature id>"], "select": "<vendor name>", "tolerance": 25, "save": true}
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";

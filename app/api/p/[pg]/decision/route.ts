@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!b || typeof b.usage !== "object" || b.usage === null || !Array.isArray(b.required) || typeof b.chosen !== "string") return bad("usage (object), required (array) and chosen (vendor id) are needed");
   if (!p.domain.vendors.some((v) => v.id === b.chosen)) return bad(`chosen must be one of: ${p.domain.vendors.map((v) => v.id).join(", ")}`);
   if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return bad("tolerance must be a number of dollars per month, 0 or more");
-  // Only controls of this playground are stored.
+  // Only controls of this lab are stored.
   const usage: Record<string, number> = {};
   for (const m of p.domain.metrics) {
     const n = (b.usage as Record<string, unknown>)[m.id];

@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: Ctx) {
     for (const src of Object.values((await load()).playgrounds[pg]?.sources ?? {})) {
       if (src.monitor || !src.url) continue;
       const webhookUrl = `${base}/api/webhooks/context/${pg}/${src.id}`;
-      const m = await createMonitor(`Clay ${pg}: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS, src.watch ?? {});
+      const m = await createMonitor(`Sorvi ${pg}: ${src.name} pricing`, src.url, webhookUrl, INSTRUCTIONS, src.watch ?? {});
       unstored = m.id;
       if (!m.webhook?.secret) throw new Error("Monitor created without a webhook secret; the API key needs monitors:write.");
       // Another request may have stored a monitor for this source meanwhile: its record stays, and this monitor is deleted.

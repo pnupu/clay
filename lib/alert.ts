@@ -1,7 +1,7 @@
 // Tell a person when a saved price decision stops holding, and when it holds again: one message per change, to one
-// Slack-compatible incoming webhook that the owner sets per playground. Node builtins and pure imports only.
+// Slack-compatible incoming webhook that the owner sets per lab. Node builtins and pure imports only.
 //
-// The address is a secret (anyone who has it can post to the channel): it is stored on the playground and never sent to
+// The address is a secret (anyone who has it can post to the channel): it is stored on the lab and never sent to
 // a browser, an agent, a visitor or a log; the owner sees it masked (maskAlert). The server calls it, so only two hosts
 // are accepted (alertAddress), the address is checked again before each send, no redirect is followed, and the body is a
 // small fixed JSON object.
@@ -127,7 +127,7 @@ const sending = new Map<string, Promise<unknown>>();
 /**
  * Send what alertOnChange returned, after its store update: only when the store still holds that address and that verdict
  * (a guard may have discarded the write, or the owner removed or replaced the address meanwhile), one message of a
- * playground after the other (so they arrive in order), and the result is kept for the owner. A failed send gives the
+ * lab after the other (so they arrive in order), and the result is kept for the owner. A failed send gives the
  * verdict back as not told, so the next re-check tries again. Never throws.
  */
 export function deliverAlert(pg: string, tell: Tell, store: { load: () => Promise<{ playgrounds: Record<string, Playground> }>; update: (fn: (s: { playgrounds: Record<string, Playground> }) => void) => Promise<unknown> }, sender?: Sender): Promise<void> {
