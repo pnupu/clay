@@ -137,12 +137,24 @@ export async function missingControls(page: Page, dims: Dimension[]): Promise<st
 
 /** The person settles: move the sliders, then press Settle (preview) or pick the second-ranked vendor and save (price). */
 export async function settle(page: Page, dims: Dimension[]): Promise<{ chosen: string | null; outputs: Record<string, unknown> | null; error: string | null }> {
-  // Move every slider through the exact-value field: a price slider to 1.5 times its start, a kit slider halfway to its top.
+  // A price playground: move every slider to 1.5 times its start, through the exact-value field.
   for (const d of dims) {
     const price = page.locator(`.control:has([id="${d.id}"]) input.value`);
-    const kit = page.locator(`[data-control="${d.id}"] input[type="number"]`);
     if (await price.count()) await price.fill(String(Math.min(d.max, Math.round(d.initial * 1.5))));
-    else if (await kit.count()) await kit.fill(String(Math.round((d.initial + d.max) / 2)));
+    await page.waitForTimeout(150);
+  }
+  // A preview playground: move EVERY control off its start value, so the settled outputs differ from the code as it is.
+  for (const c of await page.locator("[data-control]").all()) {
+    const range = c.locator('input[type="range"]');
+    const option = c.locator('[role="group"] button[aria-pressed="false"]');
+    if (await range.count()) {
+      // Halfway from the value now to the top, on the slider's step grid; from the top, one step down.
+      const [min, max, step, now] = await range.evaluate((el) => { const r = el as HTMLInputElement; return [Number(r.min), Number(r.max), Number(r.step) || 1, Number(r.value)]; });
+      const snap = (n: number) => Number((min + Math.round((n - min) / step) * step).toFixed(6));
+      const to = snap((now + max) / 2) !== now ? snap((now + max) / 2) : now + step <= max ? snap(now + step) : snap(now - step);
+      await range.fill(String(to));
+    } else if (await option.count()) await option.first().click();
+    else if (await c.locator('input[type="checkbox"]').count()) await c.locator('input[type="checkbox"]').click();
     await page.waitForTimeout(150);
   }
   // A preview playground: press Settle and read the named outputs as the page shows them.

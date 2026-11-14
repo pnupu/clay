@@ -102,12 +102,13 @@ export async function runAgent(o: RunOptions): Promise<AgentRun> {
     const child = spawn(bin, args, { cwd: o.cwd, env, stdio: ["pipe", fdOut, fdErr], detached: true });
     const timer = setTimeout(() => {
       error = `timed out after ${Math.round(o.timeoutMs / 1000)} s`;
-      try {
-        process.kill(-child.pid!, "SIGTERM"); // the whole process group of this run, nothing else
-      } catch {}
+      const stop = (signal: NodeJS.Signals) => { try { process.kill(-child.pid!, signal); } catch {} }; // the process group of this run, nothing else
+      stop("SIGTERM");
+      setTimeout(() => stop("SIGKILL"), 5000).unref(); // a CLI that ignores SIGTERM must not hold the run for ever
     }, o.timeoutMs);
     child.on("error", (e) => { error = `could not start ${bin}: ${e.message}`; clearTimeout(timer); resolve(); });
     child.on("close", (code) => { if (code !== 0 && !error) error = `${bin} exited with code ${code}`; clearTimeout(timer); resolve(); });
+    child.stdin!.on("error", () => {}); // a CLI that exits before it reads the prompt: its exit code is the error, not EPIPE
     child.stdin!.end(o.prompt);
   });
   closeSync(fdOut);

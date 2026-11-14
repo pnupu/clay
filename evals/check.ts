@@ -41,8 +41,9 @@ export function toolUse(c: Case, calls: Call[], preparedId: string | null): Chec
   // Return visit: work on the prepared playground, do not build another.
   if (created.length) return fail("tool_use", `the agent built a new playground instead of using ${preparedId}`);
   for (const need of c.mustCall ?? []) {
-    const hit = clay.filter((x) => x.tool === TOOL[need] && callTarget(x.input) === preparedId);
-    if (!hit.length) return fail("tool_use", `the agent never called ${TOOL[need]} on ${preparedId}`);
+    // A call that the server refused did nothing: only calls that succeeded count.
+    const hit = clay.filter((x) => x.tool === TOOL[need] && callTarget(x.input) === preparedId && !x.isError);
+    if (!hit.length) return fail("tool_use", `the agent never called ${TOOL[need]} on ${preparedId} with success`);
     if (need === "revise" && c.mustAdd && !hit.some((x) => addedNames(x.input).some((n) => c.mustAdd!.test(n)))) return fail("tool_use", `${TOOL.revise} did not add what the person asked for (${c.mustAdd})`);
   }
   return pass("tool_use", `called ${(c.mustCall ?? []).map((n) => TOOL[n]).join(" and ")} on the prepared playground`);
@@ -108,8 +109,8 @@ export function ranges(given: Given[] | undefined, dims: Dimension[] | null): Ch
 
 // ---- Hand-back.
 export function readBack(calls: Call[], id: string): Check {
-  const hit = calls.some((x) => x.mcp && x.tool === TOOL.read && callTarget(x.input) === id);
-  return hit ? pass("handback_read", `called ${TOOL.read} on ${id}`) : fail("handback_read", `the agent did not call ${TOOL.read} on ${id} after the person settled`);
+  const hit = calls.some((x) => x.mcp && x.tool === TOOL.read && callTarget(x.input) === id && !x.isError);
+  return hit ? pass("handback_read", `called ${TOOL.read} on ${id}`) : fail("handback_read", `the agent did not read ${id} back with ${TOOL.read} after the person settled`);
 }
 
 /** Price cases: the agent's answer must name what the person saved. */
@@ -124,11 +125,14 @@ export function leaves(v: unknown, path = ""): { path: string; value: string | n
       return leaves(JSON.parse(v), path);
     } catch {}
   }
+  // A text that is only a number is compared as a number, so "12" is not found inside "120".
+  if (typeof v === "string" && /^\s*-?\d*\.?\d+\s*$/.test(v)) return [{ path, value: Number(v) }];
   if (typeof v === "string" || typeof v === "number") return [{ path, value: v }];
   if (v && typeof v === "object") return Object.entries(v).flatMap(([k, x]) => leaves(x, path ? `${path}.${k}` : k));
   return [];
 }
-const numbersIn = (text: string) => (text.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) ?? []).map(Number);
+/** Every number in a text. A hyphen before a digit may be a minus or a separator (px-4), so both readings are kept. */
+const numbersIn = (text: string) => (text.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) ?? []).flatMap((n) => (n.startsWith("-") ? [Number(n), Number(n.slice(1))] : [Number(n)]));
 
 /** Code cases: the file on disk must have changed and must hold every settled output exactly. */
 export function fileMatches(before: string, after: string | null, outputs: unknown): Check {

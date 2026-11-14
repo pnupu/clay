@@ -182,8 +182,8 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   const url = built.id ? pageUrl(built.id) : null;
   if (!built.id || !url) return finish();
   r.playground = url;
-  // A build call that timed out at the client was still applied by the server, so its config counts.
-  const dims = dimensions(build.last ? first.calls : first.calls.map((x) => (/timed out|timeout/i.test(x.result) ? { ...x, isError: false } : x)), built.id);
+  // A build call that timed out at the client was still applied by the server, so its config counts, also when a later call succeeded.
+  const dims = dimensions(first.calls.map((x) => (x.isError && /timed out|timeout/i.test(x.result) ? { ...x, isError: false } : x)), built.id);
   const page = await checkPage(browser, { baseUrl, url, key, dims, shotPath: join(dir, "page.png") });
   add(...page.checks);
   r.shot = page.shot ? relative(runDir, page.shot) : null;
@@ -198,8 +198,16 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
     add({ id: "handback_read", status: "na", reason: "the second leg was not run: the page is not usable" });
     return finish();
   }
+  if (first.error || !first.sessionId) {
+    // A first leg that failed or timed out has no conversation to continue: no second agent run is spent on it.
+    add({ id: "handback_read", status: "na", reason: `the second leg was not run: ${first.error ? "the first leg failed" : "the first leg has no session to resume"}` });
+    if (!first.error) add({ id: "agent_run", status: "fail", reason: "leg1: the CLI reported no session id, so the conversation cannot continue" });
+    return finish();
+  }
   if (from && !existsSync(join(dir, "leg2.jsonl"))) {
-    add({ id: "handback_read", status: "na", reason: "the second leg was not run: no saved transcript, and --from starts no agent" });
+    // The earlier run may have stopped here because the person could not settle: that failure stays a failure.
+    const failedSettle = earlier?.checks.find((x) => x.id === "settle" && x.status === "fail");
+    add(failedSettle ?? { id: "handback_read", status: "na", reason: "the second leg was not run: no saved transcript, and --from starts no agent" });
     return finish();
   }
   // With --from, the person's choice is the one saved in the earlier run: the second-leg transcript answers to it.
@@ -285,6 +293,9 @@ function scrub(dir: string, secret: string | undefined): number {
   return n;
 }
 
+/** A copy of a value with every occurrence of the agent key replaced. */
+const redact = <T,>(value: T): T => (key ? (JSON.parse(JSON.stringify(value).replaceAll(JSON.stringify(key).slice(1, -1), "[REDACTED]")) as T) : value);
+
 // ---- Main
 const tools = ((await mcp("tools/list")).tools as { name: string }[]) ?? [];
 const kit = kitAvailable(tools);
@@ -303,13 +314,15 @@ await Promise.all(Array.from({ length: Math.max(1, concurrency) }, async () => {
       const check: Check = { id: "agent_run", status: "fail", reason: `harness error: ${String(e instanceof Error ? e.message : e).slice(0, 200)}` };
       results[i] = { id: c.id, kind: c.kind, request: c.request, result: "fail", firstFail: check, checks: [check], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
     }
+    results[i] = redact(results[i]); // an error text (a browser error with the owner link, say) may hold the key
     console.error(`${c.id}: ${results[i].result}${results[i].firstFail ? ` (${results[i].firstFail!.id}: ${results[i].firstFail!.reason})` : ""}`);
   }
 }));
 await browser.close();
-writeReport(runDir, meta, results);
+// The key is removed from the saved transcripts first; the results were redacted in memory, so the report is written clean.
 meta.keyOccurrencesScrubbed = scrub(runDir, key);
 writeReport(runDir, meta, results);
+if (scrub(runDir, key) > 0) throw new Error("The agent key was still in a saved file after the report was written. It has been removed; check the run directory.");
 console.log(readFileSync(join(runDir, "report.md"), "utf8"));
 console.error(`report: ${join(runDir, "report.md")}`);
 process.exit(results.some((r) => r.result === "fail") ? 1 : 0);

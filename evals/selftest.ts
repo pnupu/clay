@@ -21,7 +21,7 @@ await new Promise((r) => server.once("listening", r));
 const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 const shots = mkdtempSync(join(tmpdir(), "clay-evals-selftest-"));
 const browser = await chromium.launch({ executablePath: CHROME });
-const dims = [{ id: "emails_per_month", label: "Emails per month", unit: "emails", min: 0, max: 1000, initial: 100 }, { id: "seats", label: "Seats", unit: "seats", min: 0, max: 1000, initial: 100 }];
+const dims = [{ id: "emails_per_month", label: "Emails per month", unit: "emails", min: 0, max: 1000, initial: 100 }, { id: "seats", label: "Seats", unit: "seats", min: 0, max: 1000, initial: 100 }, { id: "scale", label: "Scale", unit: "", min: 0, max: 1, initial: 0.3 }];
 
 /** [fixture page, check that must fail, what its reason must say, checks that must still pass] */
 const expectations: [string, string, RegExp, string[]][] = [

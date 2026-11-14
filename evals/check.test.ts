@@ -86,6 +86,10 @@ test("tool use: return visits work on the prepared playground", () => {
   assert.match(toolUse(holds, [call("read_playground", { playground_id: "p1" })], "p1").reason, /never called recheck_playground/);
   assert.match(toolUse(holds, [call("read_playground", { playground_id: "other" }), call("recheck_playground", { playground_id: "other" })], "p1").reason, /never called read_playground on p1/);
   assert.match(toolUse(holds, [call("create_playground")], "p1").reason, /built a new playground/);
+  // A call that the server refused does not count, for the tool check and for the read-back.
+  assert.equal(toolUse(holds, [call("read_playground", { playground_id: "p1" }), call("recheck_playground", { playground_id: "p1" }, "refused", true)], "p1").status, "fail");
+  assert.equal(toolUse(byId("return-compare"), [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "ses", name: "Amazon SES" }] }, "not valid", true)], "p1").status, "fail");
+  assert.equal(readBack([call("read_playground", { playground_id: "p1" }, "does not exist", true)], "p1").status, "fail");
   const compare = byId("return-compare");
   assert.equal(toolUse(compare, [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "ses", name: "Amazon SES" }] })], "p1").status, "pass");
   assert.match(toolUse(compare, [call("revise_playground", { playground_id: "p1", add_vendors: [{ id: "sendgrid", name: "SendGrid" }] })], "p1").reason, /did not add/);
@@ -141,6 +145,10 @@ test("hand-back comparison: the file must change and hold every settled output e
   const shown = { className: "bg-blue-600 px-4 py-2\n  rounded-lg shadow-sm", spring: '{"stiffness": 260, "damping": 22.5, "mass": 1}' };
   assert.equal(fileMatches(before, good, shown).status, "pass");
   assert.match(fileMatches(before, good.replace("260", "250"), shown).reason, /lacks the settled spring.stiffness/);
+  // A number written into hyphenated code (Tailwind classes) is that number, and a numeric text is not a substring match.
+  assert.equal(fileMatches("px-2 duration-100", "px-4 duration-150", { paddingX: 4, duration: "150" }).status, "pass");
+  assert.match(fileMatches("gap: 8px", "gap: 120px", { gap: "12" }).reason, /lacks the settled gap/);
+  assert.equal(fileMatches("y: 0", "y: -4", { y: -4 }).status, "pass");
 });
 
 test("no-playground cases: the direct answer or the direct edit", () => {

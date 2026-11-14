@@ -43,7 +43,12 @@ async function settled(page: Page): Promise<string> {
   return last; // lean: a preview that animates for ever never settles; every control then looks alive. Revisit with a paused-animation probe.
 }
 
-/** Move one control through other values and say whether anything visible changed. The control is put back afterwards. */
+/**
+ * Move one control through other values and say whether anything visible changed. The control is put back afterwards.
+ * lean: the probe runs signed in as the owner (a private playground cannot be opened otherwise), so the page stores these
+ * moves as the person's exploration, and a button group with no pressed option cannot be put back. Probe as a visitor
+ * once playgrounds of an eval account can be opened without sign-in.
+ */
 async function reacts(page: Page, control: Locator, kind: string): Promise<boolean> {
   const before = await settled(page);
   const changed = async () => { await page.waitForTimeout(250); return (await observe(page)) !== before; };
@@ -71,8 +76,11 @@ async function reacts(page: Page, control: Locator, kind: string): Promise<boole
     return yes;
   }
   const start = await control.inputValue();
-  const [min, max] = [Number((await control.getAttribute("min")) ?? 0), Number((await control.getAttribute("max")) ?? 100)];
-  const tries = kind === "color" ? ["#ff0000", "#00aa55"] : [String(max), String(min), String(Math.round((min + max) / 2))];
+  const [min, max, step] = [Number((await control.getAttribute("min")) ?? 0), Number((await control.getAttribute("max")) ?? 100), Number((await control.getAttribute("step")) || 1) || 1];
+  // Only values on the control's step grid: the browser refuses others. Top of the grid, bottom, middle.
+  const grid = (n: number) => String(Number((min + Math.round((n - min) / step) * step).toFixed(6)));
+  const steps = Math.floor((max - min) / step + 1e-9);
+  const tries = kind === "color" ? ["#ff0000", "#00aa55"] : [grid(min + steps * step), grid(min), grid(min + Math.floor(steps / 2) * step)];
   let yes = false;
   for (const v of tries.filter((x) => x !== start)) { await control.fill(v); if (await changed()) { yes = true; break; } }
   await control.fill(start);
@@ -118,7 +126,8 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     for (const c of controls) {
       const kind = (await c.evaluate((el) => (el as HTMLInputElement).type ?? "buttons")) as string;
       const name = (await c.getAttribute("id")) || (await c.getAttribute("aria-label")) || cut(await c.locator("xpath=..").innerText().catch(() => kind), 40);
-      if (!(await reacts(page, c, kind))) dead.push(name);
+      // A control that cannot be moved at all is as dead as one that changes nothing.
+      if (!(await reacts(page, c, kind).catch(() => false))) dead.push(name);
     }
     checks.push(
       !controls.length ? { id: "controls", status: "fail", reason: "the page has no controls" } :

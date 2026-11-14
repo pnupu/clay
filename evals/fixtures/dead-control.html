@@ -7,6 +7,8 @@
   <section class="card controls">
     <div class="control"><label for="emails_per_month">Emails per month</label><input id="emails_per_month" type="range" min="0" max="1000" value="100"></div>
     <div class="control"><label for="seats">Seats</label><input id="seats" type="range" min="0" max="1000" value="100"></div>
+    <!-- A live slider whose top (1) is off its step grid (0.15): the checker must stay on the grid and must not throw. -->
+    <div class="control"><label for="scale">Scale</label><input id="scale" type="range" min="0" max="1" step="0.15" value="0.3"></div>
   </section>
   <section class="results">
     <ol class="rank">
@@ -17,7 +19,9 @@
 </main>
 <script>
   const emails = document.getElementById("emails_per_month");
-  const draw = () => { a.textContent = "$" + (10 + Number(emails.value)); b.textContent = "$" + (40 + Number(emails.value) / 2); };
+  const scale = document.getElementById("scale");
+  const draw = () => { a.textContent = "$" + (10 + Number(emails.value)); b.textContent = "$" + Math.round((40 + Number(emails.value) / 2) * (1 + Number(scale.value))); };
   emails.addEventListener("input", draw);
+  scale.addEventListener("input", draw);
   draw();
 </script>
