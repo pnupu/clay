@@ -63,3 +63,7 @@ pre.code { background: var(--page); border: 1px solid var(--line); border-radius
 .command-head { display: flex; justify-content: space-between; align-items: center; }
 h2.step { margin-top: 22px; }
 ul.plain { display: grid; gap: 6px; }
+.command.copyable { position: relative; margin: 6px 0 8px; }
+.command.copyable pre.code { padding-right: 72px; margin: 0; }
+.command.copyable button { position: absolute; top: 6px; right: 6px; }
+.narrow h3 { margin-top: 18px; }

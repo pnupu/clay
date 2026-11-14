@@ -16,11 +16,11 @@ export default async function Connect() {
     <main className="shell narrow">
       <p className="eyebrow">Connect your agent</p>
       <h1>Let your own agent build playgrounds for you</h1>
-      <p className="lede">Clay is an MCP server. Add it to Claude Code or Codex once. Then ask your agent for help with a decision, and it gives you a link to a playground that only you can open.</p>
+      <p className="lede">Clay is an MCP server. Add it to Claude Code or Codex once. Then ask your agent for help, and it gives you a link to a playground that only you can open.</p>
       {me.kind === "visitor" ? (
         <section className="card">
           <h2>Sign up to get your agent key</h2>
-          <p>The key ties the playgrounds your agent builds to your account. An account is free and needs only an email address.</p>
+          <p>The key ties the playgrounds your agent builds to your account. An account is free. Sign up with GitHub, Google, or an email address and a password.</p>
           <p className="row wrap">
             <Link className="button primary" href="/sign-up?redirect_url=/connect">Sign up</Link>
             <Link className="button" href="/sign-in?redirect_url=/connect">Sign in</Link>

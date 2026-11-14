@@ -29,20 +29,28 @@ Open http://127.0.0.1:43117/ for the list of playgrounds. The built-in example i
 ## Accounts
 
 - Visitor (not signed in): opens the home page and the example playgrounds, and uses them fully: every control, every result. Nothing is saved, re-checked, created or spent.
-- Person (signed in through Clerk; open sign-up with an email address): owns the playgrounds their agent creates. Only they and the admin can open, save, re-check, revise and delete them. A playground that is not an example is private: another person or a visitor sees "This playground is private" and nothing of its content.
+- Person (signed in through Clerk; open sign-up with GitHub, Google, or an email address and a password): owns the playgrounds their agent creates. Only they and the admin can open, save, re-check, revise and delete them. A playground that is not an example is private: another person or a visitor sees "This playground is private" and nothing of its content.
 - Admin (the owner key, `CLAY_ACCESS_KEY`): everything, as before. Marks a playground as an example (`POST /api/p/<id>/example` with `{"example": true}` or `false`, or the button under "All playgrounds" on the home page), starts webhook monitors and edits the demo page. Playgrounds without an owner (all created before accounts) are the admin's. The seed `auth-providers` is an example unless the admin unmarks it.
 - Clay stores only the Clerk user id per person, the SHA-256 hash of their agent key and their request count of the day (`users` in the store). No email address or name.
 
 Connect your agent: after sign-in, `/connect` creates a personal agent key (`clay_` and 32 random bytes). It is shown once and stored as a hash; a new key replaces the old one, and "Revoke key" removes it. The MCP endpoint takes it as `Authorization: Bearer <agent key>` and acts as that person: `create_playground` makes the playground theirs, and `read_playground` lists only theirs (examples can be read by id).
 
 ```bash
-# Claude Code
-claude mcp add --transport http clay https://<host>/api/mcp --header "Authorization: Bearer <agent key>"
+# Claude Code: --scope user makes Clay available in every folder (the default scope is only the current folder)
+claude mcp add --scope user --transport http clay https://<host>/api/mcp --header "Authorization: Bearer <agent key>"
 
 # Codex (reads the key from an environment variable; put the export in your shell profile)
 export CLAY_AGENT_KEY=<agent key>
 codex mcp add clay --url https://<host>/api/mcp --bearer-token-env-var CLAY_AGENT_KEY
 ```
+
+- Claude Code asks once per Clay tool whether to allow it; the person allows it.
+- `codex exec` cannot ask, so Clay's tools are refused until `default_tools_approval_mode = "approve"` is under `[mcp_servers.clay]` in `~/.codex/config.toml`. It can only read files unless run with `-s workspace-write`; for a later turn the flag goes before `resume`: `codex exec -s workspace-write resume --last "I'm done."`.
+- Another MCP client: Streamable HTTP at `https://<host>/api/mcp` with the header `Authorization: Bearer <agent key>`.
+- The first request should name Clay ("Use Clay to …"): Codex's default model does not pick it on its own yet.
+- A lost key: create a new one on `/connect` (the old one stops working); in Claude Code remove Clay and add it again, in Codex change the export. Remove Clay with `claude mcp remove --scope user clay` or `codex mcp remove clay`.
+
+`/connect` shows these commands with the person's key filled in, each with a Copy button, and three example requests (look, feel, price).
 
 Limits per person: `CLAY_USER_DAILY_REQUESTS` (default 40) Context.dev requests per UTC day, caused by their agent or their page, and `CLAY_USER_PLAYGROUNDS` (default 20) playgrounds. 0 turns a limit off. The deployment-wide `CONTEXT_DEV_DAILY_CAP` stays. At a limit the person and the agent get a message that says which limit and what to do. After 20 requests with a wrong bearer token in 10 minutes, an address gets 429 for the rest of the window (per function instance; the keys have 256 bits).
 
@@ -70,8 +78,8 @@ A browser gets the key once through the owner link `https://clay-steel-nu.vercel
 The local MCP endpoint is `http://127.0.0.1:43117/api/mcp` (Streamable HTTP). The app must be running. Without `CLAY_ACCESS_KEY` and without Clerk keys the development server (`pnpm dev`) needs no key; with Clerk keys, use an agent key from `/connect` or set `CLAY_ACCESS_KEY`. A production build (`pnpm start`) and an app with `PUBLIC_BASE_URL` always need one.
 
 ```bash
-# Claude Code
-claude mcp add --transport http clay http://127.0.0.1:43117/api/mcp
+# Claude Code (--scope user: in every folder)
+claude mcp add --scope user --transport http clay http://127.0.0.1:43117/api/mcp
 
 # Codex
 codex mcp add clay --url http://127.0.0.1:43117/api/mcp
@@ -258,6 +266,11 @@ The price engine answers "which vendor or plan of one usage-priced product". It 
 `evals/` has four cases of kind `data` for it. Their checks: the page lists web sources with a link and values read; with every web number missing the preview says "unknown" and shows no broken number (the checker alters the frame document on its way to the browser; nothing is stored); the choice the person settled is written into the file.
 
 ## Tested with
+
+From a clean home (no operator configuration), a real signed-up test person, a personal key and the exact command from `/connect`:
+
+- Claude Code 2.1.321, default model (Claude Opus 5.5): 8 of 8 first requests from a clean home with a personal key, including the person settling in their own browser session and the agent reading the result back.
+- Codex CLI 0.167.0, default model (gpt-6.1-sol): Clay works when the request names it (3 of 3: build, settle, read-back). Unprompted, the default model built a playground in 0 of 7 requests that should have had one; it edited the code or answered from its own web search. With `codex exec`, add `default_tools_approval_mode = "approve"` and pass `-s workspace-write`.
 
 Measured with `evals/` on 2026-11-14 against a local server of `master`:
 
