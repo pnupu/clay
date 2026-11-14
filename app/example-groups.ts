@@ -2,8 +2,14 @@ import { orderExamples } from "@/lib/accounts";
 import { load } from "@/lib/store";
 
 /** The examples in the nav's panel, by what each is built on. */
+/** A header must not take a page down: when the store cannot be read, the list is empty and the header shows a plain link. */
 export async function exampleGroups() {
-  const examples = orderExamples((await load()).playgrounds);
+  let examples: ReturnType<typeof orderExamples<Awaited<ReturnType<typeof load>>["playgrounds"][string]>>;
+  try {
+    examples = orderExamples((await load()).playgrounds);
+  } catch {
+    return [];
+  }
   const groups: { label: string; items: { id: string; title: string; line: string }[] }[] = [
     { label: "Tuned by hand", items: [] },
     { label: "On live web data", items: [] },

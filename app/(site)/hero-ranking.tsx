@@ -18,7 +18,11 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
  * the start value, so it shows before any script.
  */
 export default function HeroRanking({ id, question, metric, usage, models, names, readAt, byTeam }: { id: string; question: string; metric: MetricDef; usage: Record<string, number>; models: Record<string, PricingModel | null>; names: Record<string, string>; readAt: string | null; byTeam: boolean }) {
-  const [value, setValue] = useState(usage[metric.id] ?? metric.initial);
+  // The slider's own position (0 to 1000) is the state: the value is read from it. A value rounded to two digits does
+  // not always map back to the position it came from, and a slider tied to the value could then not be moved by a key.
+  const [pos, setPos] = useState(() => Math.round(toPos(metric, usage[metric.id] ?? metric.initial)));
+  const [touched, setTouched] = useState(false);
+  const value = touched ? toValue(metric, pos) : (usage[metric.id] ?? metric.initial);
   const ranking = useMemo(() => rank(models, { usage: { ...usage, [metric.id]: value }, required: [] }), [models, usage, metric.id, value]);
   // Where the order of the ranking changes along the slider (the same slider steps a person can reach), and where the
   // cheapest vendor changes (the price page's own function).
@@ -31,8 +35,9 @@ export default function HeroRanking({ id, question, metric, usage, models, names
       const at = toValue(metric, pos);
       const now = orderAt(at);
       const i = now.findIndex((id, k) => id !== before[k]);
-      // The first place that differs: the vendor now there passed the one that was there.
-      if (i >= 0 && before[i]) out.push({ at, up: now[i], down: before[i] });
+      // The first place that differs: the vendor now there passed the one that was there. Only when the same vendors
+      // are ranked on both sides: a vendor that left or entered the ranking (no plan fits, a price unknown) passed nobody.
+      if (i >= 0 && before[i] && now.length === before.length && now.every((id) => before.includes(id))) out.push({ at, up: now[i], down: before[i] });
       before = now;
     }
     return out;
@@ -54,7 +59,7 @@ export default function HeroRanking({ id, question, metric, usage, models, names
         <label htmlFor={`hero-${metric.id}`}>{metric.label}</label>
         <output htmlFor={`hero-${metric.id}`}>{num(value)}</output>
         <div className="rank2__track">
-          <input id={`hero-${metric.id}`} type="range" min={0} max={1000} value={toPos(metric, value)} aria-valuetext={`${num(value)} ${metric.unit}`} onChange={(e) => setValue(toValue(metric, Number(e.target.value)))} />
+          <input id={`hero-${metric.id}`} type="range" min={0} max={1000} value={pos} aria-valuetext={`${num(value)} ${metric.unit}`} onChange={(e) => { setPos(Number(e.target.value)); setTouched(true); }} />
           {/* A mark on the track at each value where the order changes. */}
           {flips.map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at about ${num(c.at)} ${metric.unit}`} />)}
         </div>

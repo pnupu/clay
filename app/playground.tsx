@@ -48,7 +48,7 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
  * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner). */ byTeam?: boolean }) {
+export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false, builtByViewer = canWrite }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner). */ byTeam?: boolean; /** The viewer's own agent built it (not the operator looking at another person's playground): that agent gets the summary of what was tried. */ builtByViewer?: boolean }) {
   const Shell = embedded ? "div" : "main";
   const shell = embedded ? "embedded-playground" : "shell";
   const api = `/api/p/${domain.id}`;
@@ -316,8 +316,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                 {f.label}
               </label>
             ))}
-            {/* The operator looking at a playground (admin) is not the person whose agent gets the summary: no such line. */}
-            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop.{admin ? "" : canWrite ? " A short summary of what you tried is kept for your agent." : " Nothing you try here is saved."}</p>
+            {/* The operator looking at a person's playground is not the person whose agent gets the summary. */}
+            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop.{!canWrite ? " Nothing you try here is saved." : builtByViewer ? " A short summary of what you tried is kept for your agent." : " A short summary of what is tried here is kept for its owner's agent."}</p>
           </section>
 
           <section className="results">

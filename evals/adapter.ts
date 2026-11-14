@@ -119,11 +119,11 @@ export const PAGE = {
   /** Present when the playground has rendered. */
   ready: "h1",
   /** Error states that a person sees: a page or source error, "preview failed" (also p.alert), and a playground with no data. */
-  errors: ["p.alert", "section.card.empty"],
+  errors: ["p.alert", "section.pane.empty"],
   /** The area that holds the controls, on both kinds of playground. */
   controls: "section.controls",
-  /** Areas that must react when a control moves: the ranking and the decision panel (price), the output texts (preview). */
-  reacts: ["section.results", "aside.side", "[data-output]"],
+  /** Areas that must react when a control moves: the ranking with the decision panel under it (price), the output texts (preview). */
+  reacts: ["section.results", "[data-output]"],
   /** The sandboxed preview of a preview playground. Compared by screenshot, and checked for content. */
   preview: 'iframe[src$="/frame"]',
   /** Rows of the ranking of a price playground, best first. */

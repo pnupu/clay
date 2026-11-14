@@ -198,7 +198,9 @@
   .clay .pane { padding: 16px; }
   /* On a phone the answer stays in view while the numbers under it are moved: one line of feedback, the full width. */
   .clay p.answer { position: sticky; top: 0; z-index: 5; margin: 0 calc(-1 * var(--c-gut)) 16px; padding: 10px var(--c-gut); max-width: none; background: var(--p-bg); border-bottom: 1px solid var(--c-line); font-size: 18px; }
-  .clay .answer .muted, .clay .answer .warn { font-size: 14px; }
+  /* Only the answer and a warning stay in view; where the cheapest changes next is in the chart's own block. */
+  .clay .answer .muted { display: none; }
+  .clay .answer .warn { display: inline; font-size: 14px; }
   .clay .vendor-head { flex-wrap: wrap; }
   .clay .vendor-head .plan { flex-basis: 100%; margin-left: 20px; }
   .clay .vendor-head .buy { flex-basis: 100%; margin-left: 20px; justify-content: space-between; }

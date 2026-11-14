@@ -57,7 +57,6 @@ export default async function Home() {
   // the hero is that preview example, as before.
   const priceHero = priceHeroOf(examples[0]);
   const hero = examples.find(([, p]) => p.kit) ?? null;
-  const first = hero?.[0];
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
   // A returning person with playgrounds sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
@@ -128,7 +127,7 @@ export default async function Home() {
             {priceHero && hero ? (
               <div className="demo live ui">
                 <div className="demo__step demo__s1"><h3>1. Ask for a playground</h3><p>Type the sentence to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
-                <div className="demo__step demo__s2"><h3>2. Shape it by hand</h3><p>Drag the card and let go, then move a slider. No agent and no network call sits between a move and its result.</p></div>
+                <div className="demo__step demo__s2"><h3>2. Shape it by hand</h3><p>{hero[0] === "card-snap-back" ? "Drag the card and let go, then move a slider." : "Move the controls: the real thing follows at once."} No agent and no network call sits between a move and its result.</p></div>
                 <div className="demo__step demo__s3"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
                 <div className="shot shot--term demo__typed" role="img" aria-label="A terminal: the sentence a person types, the Clay tool the agent calls, and the link it returns">
                   <p><b>&gt;</b> build me a playground for …</p>
@@ -151,7 +150,7 @@ export default async function Home() {
           <div className="wrap">
             <div className="section-head">
               <h2 id="examples-h">{NUMBER[examples.length] ?? examples.length} {examples.length === 1 ? "example" : "examples"}, open without an account.</h2>
-              <p>The Clay team made them, each with our own agent from one request. Open one and use it fully: nothing you do there is saved.</p>
+              <p>{examples.every(([, p]) => !p.owner) ? "The Clay team made them, each with our own agent from one request." : "Each was built by an agent from one request."} Open one and use it fully: nothing you do there is saved.</p>
             </div>
             {examples.length ? (
               <ul className="rows gallery">

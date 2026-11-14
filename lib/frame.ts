@@ -261,10 +261,10 @@ window.addEventListener("message", function (e) {
   draw();
   for (var i = 0; i < listeners.length; i++) call(listeners[i]);
   // New values can change the height of the content. A browser pauses resize observation in a frame that is outside the
-  // screen (the preview under a long list of controls on a phone), so the height is also measured here, at once and
-  // once more after code that draws a moment later. reportHeight keeps its limit of one message per second.
-  reportHeight();
-  setTimeout(reportHeight, 150);
+  // screen (the preview under a long list of controls on a phone), so the height is also measured here: once, shortly
+  // after the values (one pending timer, however many messages a drag sends). reportHeight keeps its limit of one
+  // message per second.
+  if (!measure) measure = setTimeout(function () { measure = null; reportHeight(); }, 80);
 });
 window.clay = Object.freeze({
   get values() { return view(); },
@@ -275,7 +275,7 @@ draw();
 window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
 // The height of the content, so the page can size the frame to it. At most one report per second, and only on a change:
 // an animation that resizes on every frame cannot flood the page (it counts the messages and stops a preview at 30 in 10 s).
-var lastH = 0, lastT = 0, later = null;
+var lastH = 0, lastT = 0, later = null, measure = null;
 function contentHeight() {
   var h = 0, kids = root.children;
   for (var i = 0; i < kids.length; i++) { var r = kids[i].getBoundingClientRect(); h = Math.max(h, r.bottom + window.scrollY + (parseFloat(getComputedStyle(kids[i]).marginBottom) || 0)); }
