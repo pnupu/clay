@@ -2,7 +2,6 @@ import { viewer } from "@/app/api/respond";
 import { canWrite, isExample, orderExamples, userDailyCap, userPlaygroundCap } from "@/lib/accounts";
 import { kindLabel, recordPath } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
-import { initialValues, renderOutputs } from "@/lib/kit";
 import { nonOwnerView } from "@/lib/report";
 import type { PricingModel } from "@/lib/domain";
 import { load, type Playground } from "@/lib/store";
@@ -60,10 +59,6 @@ export default async function Home() {
   const hero = examples.find(([, p]) => p.kit) ?? null;
   const first = hero?.[0];
   const firstKit = hero?.[1].kit;
-  // The text the agent would write for the hero's example at its start values: step 3 shows it.
-  const written = firstKit ? Object.values(renderOutputs(firstKit.kit, initialValues(firstKit.kit.controls)))[0] : null;
-  // Step 2 shows the hero example's own controls at their start values: its sliders, else whatever controls it has.
-  const shown = (firstKit?.kit.controls ?? []).slice().sort((x, y) => Number(y.type === "slider") - Number(x.type === "slider")).slice(0, 3);
   // The marquee's words: the first two controls of each preview example, short ones only, each once.
   const moved = [...new Set(examples.flatMap(([, p]) => (p.kit?.kit.controls ?? []).map((c) => c.label).filter((l) => l.length <= 22).slice(0, 2)))].slice(0, 14);
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
@@ -106,6 +101,12 @@ export default async function Home() {
                 <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>
                 <a className="btn btn--secondary" href="#examples">See the examples</a>
               </div>
+              {/* Three true lines, so the words end where the product beside them ends. */}
+              <ul className="truths">
+                <li><b>Your agent, your model.</b> Clay needs no AI key.</li>
+                <li><b>{NUMBER[examples.length] ?? examples.length} {examples.length === 1 ? "example" : "examples"}</b>, open without an account.</li>
+                <li><b>Prices read live</b> from the vendors’ own pages through Context.dev.</li>
+              </ul>
             </div>
             {priceHero ? (
               <div className="span-7 start-6 ui"><HeroRanking {...priceHero} /></div>
@@ -117,23 +118,6 @@ export default async function Home() {
           </div></div>
         </section>
 
-        {priceHero && hero && (
-          <section className="section feel" id="feel" aria-labelledby="feel-h">
-            <div className="wrap">
-              <div className="grid grid--top">
-                <div className="span-4 feel__words">
-                  <h2 id="feel-h">Or shape how a component feels</h2>
-                  <p className="t-lead">The same works for a look or a motion. Your agent builds the real component with a few controls. Drag the card, let go, then move a slider.</p>
-                  <a className="link" href={`/p/${hero[0]}`}>Open this example</a>
-                </div>
-                <div className="span-8 start-5 live ui">
-                  <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
         {yoursFirst && yoursSection}
 
         <section className="section" id="steps" aria-labelledby="steps-h">
@@ -141,34 +125,28 @@ export default async function Home() {
             <div className="section-head">
               <h2 id="steps-h">A playground takes three steps. <span className="muted">Your agent does two of them.</span></h2>
             </div>
-            <div className="grid">
-              <article className="card card--row card--open span-4">
-                <h3>1. Ask for a playground</h3>
-                <p>Type “build me a playground for …” to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p>
-                <div className="panel"><div className="shot shot--term" role="img" aria-label="A terminal: the sentence a person types, the Clay tool the agent calls, and the link it returns">
+            {/* One live demonstration, not three pictures: the sentence, the real component with its real controls, and
+                the text the agent would write, which changes as the controls move. When the hero already runs this
+                example (no price example is featured), the steps are words only: nothing is shown twice. */}
+            {priceHero && hero ? (
+              <div className="demo live ui">
+                <div className="demo__step demo__s1"><h3>1. Ask for a playground</h3><p>Type the sentence to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
+                <div className="demo__step demo__s2"><h3>2. Shape it by hand</h3><p>Drag the card and let go, then move a slider. No agent and no network call sits between a move and its result.</p></div>
+                <div className="demo__step demo__s3"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
+                <div className="shot shot--term demo__typed" role="img" aria-label="A terminal: the sentence a person types, the Clay tool the agent calls, and the link it returns">
                   <p><b>&gt;</b> build me a playground for …</p>
                   <p className="muted">clay · create_playground</p>
-                  <p>/p/{first ?? "card-snap-back"}</p>
-                </div></div>
-              </article>
-              <article className="card card--row card--open span-4">
-                <h3>2. Shape it by hand</h3>
-                <p>Move the controls and the real thing follows at once. No agent and no network call sits between a move and its result.</p>
-                <div className="panel"><div className="shot shot--sliders" role="img" aria-label="The controls of the example in the hero, at their start values">
-                  {shown.map((c) => (
-                    <div key={c.id}><span>{c.label}</span><b>{String(c.initial)}</b>{c.type === "slider" && c.max > c.min && <i style={{ ["--at" as string]: `${Math.round(((c.initial - c.min) / (c.max - c.min)) * 100)}%` }} />}</div>
-                  ))}
-                  {shown.length === 0 && <div><span>Stiffness</span><b>60</b><i style={{ ["--at" as string]: "7%" }} /></div>}
-                </div></div>
-              </article>
-              <article className="card card--row card--open span-4">
-                <h3>3. Settle the values</h3>
-                <p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p>
-                <div className="panel"><div className="shot shot--code" role="img" aria-label="The text the agent would write into the code for the example in the hero">
-                  <pre>{written ?? "const SPRING = { … };"}</pre>
-                </div></div>
-              </article>
-            </div>
+                  <p>/p/{hero[0]}</p>
+                </div>
+                <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />
+              </div>
+            ) : (
+              <div className="demo demo--words">
+                <div className="demo__step"><h3>1. Ask for a playground</h3><p>Type “build me a playground for …” to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
+                <div className="demo__step"><h3>2. Shape it by hand</h3><p>Move the controls and the real thing follows at once. No agent and no network call sits between a move and its result.</p></div>
+                <div className="demo__step"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
+              </div>
+            )}
             {moved.length > 5 && (
               <div className="asked">
                 <p className="t-label">What people move in these examples</p>

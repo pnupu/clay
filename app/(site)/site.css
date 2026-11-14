@@ -70,13 +70,6 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
 .shot { height: 100%; padding: var(--s-5); display: flex; flex-direction: column; justify-content: center; gap: var(--s-3); font: 14px/1.5 var(--font-mono); color: var(--p-ink); background: var(--c-pane); }
 .shot p { margin: 0; overflow-wrap: anywhere; } .shot .muted { color: var(--p-muted); } .shot b { font-weight: 500; color: var(--p-action); }
 .shot pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100%; overflow: hidden; }
-.shot--sliders { font-family: var(--font-text); gap: var(--s-4); }
-.shot--sliders > div { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: baseline; }
-.shot--sliders b { font: 500 14px/1 var(--font-mono); color: var(--p-ink); }
-.shot--sliders i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--p-action) var(--at), var(--c-line-2) var(--at)); position: relative; }
-.shot--sliders i::after { content: ""; position: absolute; left: var(--at); top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--p-bg); border: 2px solid var(--p-action); }
-#steps .panel { --p-h: 232px; }
-@media (max-width: 639px) { #steps .panel { --p-h: 176px; } }
 .asked { margin-top: var(--s-8); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); min-width: 0; }
 .asked > * { min-width: 0; }
 .asked .mo-mq .mo-mq__track { color: var(--ink); }
@@ -153,6 +146,30 @@ html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8))
 }
 @media (prefers-reduced-motion: reduce) { .rank2__bar i { transition: none; } }
 
-/* ---- The second thing a visitor meets: a preview playground, beside its words. */
-.feel__words { display: grid; gap: var(--s-5); align-content: start; justify-items: start; }
-@media (max-width: 1023px) { .feel .live { margin-top: var(--s-7); } }
+
+/* ---- The hero's three true lines. */
+.truths { list-style: none; margin: var(--s-6) 0 0; padding: var(--s-5) 0 0; border-top: 1px solid var(--c-line); display: grid; gap: var(--s-2); font-size: var(--t-body); max-width: 44ch; }
+.truths b { font-weight: 500; }
+
+/* ---- The three steps as one live demonstration: the sentence, the real component and its controls, the text that
+   changes as they move. The playground's own parts take their places in the steps' grid. */
+.demo { display: grid; gap: var(--s-4) var(--gutter, 24px); grid-template-columns: minmax(0, 3fr) minmax(0, 5fr) minmax(0, 4fr);
+  grid-template-areas: "s1 s2 s3" "typed stage out" "typed controls out" "note note note"; align-items: start; }
+.demo--words { grid-template-areas: none; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.demo__step { display: grid; gap: var(--s-2); align-content: start; }
+.demo__step h3 { font: 500 var(--t-card)/1.3 var(--font-text); letter-spacing: -0.01em; }
+.demo__s1 { grid-area: s1; } .demo__s2 { grid-area: s2; } .demo__s3 { grid-area: s3; }
+.demo__typed { grid-area: typed; height: auto; border: 1px solid var(--c-line); border-radius: var(--r-md); }
+.demo.live .k-root { display: contents; }
+.demo.live .k-head { grid-area: note; }
+.demo.live .k-stage { grid-area: stage; }
+.demo.live .k-controls { grid-area: controls; }
+.demo.live .k-out { grid-area: out; }
+.demo.live .k-out > div:nth-of-type(n + 2) { display: block; }
+.demo.live .k-out pre { max-height: none; }
+@media (max-width: 1023px) {
+  .demo, .demo--words { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; }
+  .demo > *, .demo.live :is(.k-head, .k-stage, .k-controls, .k-out) { grid-area: auto; }
+  .demo__s1 { order: 1; } .demo__typed { order: 2; } .demo__s2 { order: 3; margin-top: var(--s-5); } .demo.live .k-stage { order: 4; } .demo.live .k-controls { order: 5; }
+  .demo__s3 { order: 6; margin-top: var(--s-5); } .demo.live .k-out { order: 7; display: block; } .demo.live .k-head { order: 8; }
+}
