@@ -4,8 +4,9 @@
 //
 //   node experiments/real-codebase/run.ts --repo <checkout> --base-url <clay> --home <clean home> --out <dir>
 //        --id <case id> --say "<the request>" [--memory <file>] [--typecheck "<command>"] [--timeout 900] [--no-reset]
-//        [--in-app "<dev command with PORT>" --app-dir <dir>]   prototype B: the person settles on the dev-only route
+//        [--in-app "<dev command with HOST and PORT>" --app-dir <dir>]   prototype B: the person settles on the dev-only route
 //        that the agent built in the app; the dev command is started when the agent's own server is gone
+//        [--level instance|variant|token[,…]]   the level the person chooses in the in-app playground (the first of the list that is offered)
 // The Clay key comes from CLAY_ACCESS_KEY. The checkout is reset (git checkout, git clean) before the run, so use a
 // scratch clone. Nothing of the checkout is copied into <out> except the diff of the hand-back; keep <out> private
 // when the checkout is.
@@ -76,7 +77,9 @@ if (created?.playground_id) {
 // controls of the in-app kit and settles; the settled file is then in the checkout, and the second leg follows.
 const local = /https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)(\/[^\s)`*"'>]*)?/.exec(first.allText.split("\n").filter((l) => /clay/i.test(l)).join("\n") || first.allText);
 if (!created && flag("in-app") && local) {
-  const url = `http://127.0.0.1:${local[1]}${local[2] ?? "/"}`;
+  // The host as the agent gave it: Next.js dev blocks its own resources for a host other than the one it was started on.
+  const host = /localhost/.test(local[0]) ? "localhost" : "127.0.0.1";
+  const url = `http://${host}:${local[1]}${local[2] ?? "/"}`;
   const up = async () => (await fetch(url, { signal: AbortSignal.timeout(60_000) }).then((r) => r.status, () => 0)) === 200;
   let started = false;
   // Where the agent built the route: the main checkout, or a git worktree of it (agents often work in one). The app
@@ -87,7 +90,7 @@ if (!created && flag("in-app") && local) {
   if (spawnSync("test", ["-e", join(appDir, "node_modules")]).status !== 0) spawnSync("ln", ["-s", join(flag("app-dir") ?? repo, "node_modules"), join(appDir, "node_modules")]);
   if (!(await up())) {
     // The agent's dev server ended with its session: start the app's own dev command on the same port for the person.
-    const dev = spawnSync("bash", ["-c", `cd ${JSON.stringify(appDir)} && (nohup ${flag("in-app")!.replace("PORT", local[1])} > ${JSON.stringify(join(out, "dev-server.log"))} 2>&1 &)`]);
+    const dev = spawnSync("bash", ["-c", `cd ${JSON.stringify(appDir)} && (nohup ${flag("in-app")!.replace("PORT", local[1]).replace("HOST", host)} > ${JSON.stringify(join(out, "dev-server.log"))} 2>&1 &)`]);
     started = dev.status === 0;
     for (let i = 0; i < 40 && !(await up()); i++) await new Promise((r) => setTimeout(r, 1500));
   }
@@ -103,12 +106,18 @@ if (!created && flag("in-app") && local) {
     await page.screenshot({ path: join(out, "in-app-page.png"), fullPage: true }).catch(() => {});
     if (kit) await page.locator("[data-clay-stage]").first().screenshot({ path: join(out, "in-app-stage.png") }).catch(() => {});
     inApp.kit = kit;
+    // The person first chooses the level of the change (--level instance | variant | token; a list means the first that is offered).
+    inApp.levels = await page.locator("[data-clay-level]").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-clay-level"), blocked: e.hasAttribute("data-clay-level-blocked"), text: (e.textContent ?? "").slice(0, 400) })));
+    const want = (flag("level") ?? "").split(",").filter(Boolean).find((l) => (inApp.levels as { id: string; blocked: boolean }[]).some((x) => x.id === l && !x.blocked));
+    if (flag("level")) { inApp.level = want ?? null; if (want) await page.locator(`[data-clay-level="${want}"] input`).check().catch(() => {}); await page.waitForTimeout(300); }
+    inApp.uses = await page.locator("[data-clay-use]").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-clay-use"), changes: e.getAttribute("data-clay-changes") })));
     inApp.controls = await page.locator("[data-clay-control]").evaluateAll((els) => els.map((e) => e.getAttribute("data-clay-control")));
-    // The person: every slider halfway to its top, every select to its next option, then Settle.
+    // The person: every slider halfway to its top, every select to its next option, every colour to another grey, then Settle.
     for (const c of await page.locator("[data-clay-control]").all()) {
       const range = c.locator('input[type="range"]'), select = c.locator("select");
       if (await range.count()) await range.evaluate((el) => { const r = el as HTMLInputElement; const step = Number(r.step) || 1; const to = Math.round((Number(r.value) + Number(r.max)) / 2 / step) * step; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(r, String(to === Number(r.value) ? Math.max(Number(r.min), to - step) : to)); r.dispatchEvent(new Event("input", { bubbles: true })); });
       else if (await select.count()) await select.evaluate((el) => { const s = el as HTMLSelectElement; const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!; set.call(s, s.options[(s.selectedIndex + 1) % s.options.length].value); s.dispatchEvent(new Event("change", { bubbles: true })); });
+      else if (await c.locator('input[type="color"]').count()) await c.locator('input[type="color"]').evaluate((el) => { const i = el as HTMLInputElement; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(i, i.value.toLowerCase() === "#a1a1aa" ? "#71717a" : "#a1a1aa"); i.dispatchEvent(new Event("input", { bubbles: true })); });
       await page.waitForTimeout(150);
     }
     await page.screenshot({ path: join(out, "in-app-moved.png"), fullPage: true }).catch(() => {});
@@ -117,7 +126,13 @@ if (!created && flag("in-app") && local) {
   } finally { await browser.close(); }
   const files = (spawnSync("bash", ["-c", `find ${JSON.stringify(repo)} -path '*/node_modules' -prune -o -path '*/.clay/settled/*.json' -print`], { encoding: "utf8" }).stdout ?? "").split("\n").filter(Boolean);
   inApp.settledFile = files[0]?.slice(repo.length + 1) ?? null;
-  if (files[0]) inApp.settledText = (spawnSync("cat", [files[0]], { encoding: "utf8" }).stdout ?? "").slice(0, 3000);
+  if (files[0]) { inApp.settledText = (spawnSync("cat", [files[0]], { encoding: "utf8" }).stdout ?? "").slice(0, 3000); spawnSync("cp", [files[0], join(out, "settled.json")]); }
+  // What the agent built, before the hand-back removes it: the playground as a diff that `git apply` can restore.
+  // A copy of the index is used (it stays in <out>), so that the agent's own git status does not change between the legs.
+  const env = { ...process.env, GIT_INDEX_FILE: join(out, "built.index") };
+  spawnSync("bash", ["-c", `cp "$(git -C ${JSON.stringify(appDir)} rev-parse --absolute-git-dir)/index" ${JSON.stringify(env.GIT_INDEX_FILE)}`]);
+  spawnSync("git", ["-C", appDir, "add", "-A", "-N", "."], { env });
+  writeFileSync(join(out, "built.diff"), spawnSync("git", ["-C", appDir, "diff"], { encoding: "utf8", maxBuffer: 64 << 20, env }).stdout ?? "");
   result.inApp = inApp;
   if (inApp.settled) { second = await leg("leg2", "ok I'm done, go ahead", first.sessionId); result.leg2 = summary(second); }
 }

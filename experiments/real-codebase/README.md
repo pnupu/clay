@@ -11,7 +11,7 @@ The question: a person works in a real repository and says "build me a playgroun
 | `run.ts` | Driver for one request in a real checkout: Claude Code with normal tools and a clean home, Clay connected, two legs (build, then "ok I'm done, go ahead"). It plays the person between the legs: in Clay's page, or in the app's own route for prototype B. |
 | `compare.mjs` | Fidelity check. It finds the same element on the real page and in the playground and compares 25 computed-style properties (colours as painted pixels), and takes both screenshots at one size. |
 | `hosted-snapshot/` | Prototype A: `snapshot.mjs` takes a rendered element out of the running app with only the compiled CSS it needs; `GUIDE.md` is the agent guidance. |
-| `in-app/` | Prototype B: `clay-playground.tsx` (control panel, Settle), `clay-settle-route.ts` (dev-only route that writes `.clay/settled/<id>.json`), `GUIDE.md` (agent guidance). |
+| `in-app/` | Prototype B: `clay-playground.tsx` (the component in its real uses, the level switch, the project's scale, Settle), `clay-settle-route.ts` (dev-only route that writes `.clay/settled/<id>.json`), `GUIDE.md` (agent guidance). |
 
 ## The two codebases
 
@@ -68,6 +68,34 @@ Cost: 0.88 to 1.04 USD per public request, 1.51 USD for the private one.
 
 Two first-pass runs were lost to the driver, not to the prototype: see "Limits".
 
+## B, extended: other uses, the level of the change, the project's scale
+
+Added on 2026-11-14 (evening), after the tables above. Two failures above are the reason: a motion settled for one dialog was written into the shared dialog component, and 3 of 6 hand-backs wrote raw values into a project that has a scale.
+
+- **Other uses.** `uses` lists at least three real call sites. The stage renders the real component in each one, with the props and the markup of that call site, labelled with `file:line` and with "changes" or "stays as it is".
+- **Level.** `levels` offers "this instance" (a class or prop at one call site), "this variant" (the variant definition in the component file) and "the token" (a CSS variable of the theme). Each level shows its target, a count and the paths of the uses it changes. Only those uses get the new values. A token is set on the page root, so the browser itself decides what moves. A level that a repository rule forbids is shown with the rule and cannot be chosen.
+- **Scale.** A control of type `scale` offers the project's own classes and tokens. A typed raw value is applied as an inline style and marked off-scale in the panel and in the settled file.
+- **Settle.** `.clay/settled/<id>.json` also holds `level`, `target`, `files` (what the hand-back may edit), `uses` (`changed`, `unchanged`, `changedNotShown`), `changed` (the controls that were moved) and `onScale`. The guide tells the agent to edit only `files`, in the project's form, to run the typecheck, to delete the playground and to report which uses changed and which did not.
+
+Runs in the public codebase, one run per cell, request "build me a playground for the Cloud provider button: its states, padding and colours" (R) or "… its padding, radius and colours" (T). The driver's person chose the level (`--level`), moved every control one step and settled. No Clay server was connected in these runs.
+
+| Run | Request | Level settled | Build | Hand-back | Real uses shown | Hand-back wrote | Typecheck | Playground removed |
+|---|---|---|---|---|---|---|---|---|
+| 1 | R | none: lost to the driver | 186 s | not reached | 4 | nothing | not reached | not reached |
+| 2 | R | token, nothing moved: lost to the driver | 181 s | 57 s | 6 | nothing, and it said why | clean | yes |
+| 3 | T | token | 167 s | 74 s | 5 | `--radius: 0.625rem` to `1.125rem` in `:root` of `src/app/globals.css`, nothing else | clean | yes |
+| 4 | R | instance | 236 s | 64 s | 5 | `className="px-3 has-data-[icon=inline-start]:pl-2.5 bg-card border-input hover:bg-accent aria-expanded:bg-accent"` on the Cloud provider `Button` only; its neighbours in the same file and the component are untouched | clean | yes |
+| 5 | R | token | 210 s | 57 s | 5 | `--muted` and `--border` in `:root` of `src/app/globals.css`, in the file's own `oklch()` notation, nothing else | clean | yes |
+
+Cost as the CLI reports it: 0.92 to 1.27 USD for the build leg and 1.16 to 1.54 USD for the hand-back leg.
+
+What the runs showed:
+
+- Every agent found the repository rule "do not modify files inside `src/components/ui/`" and showed "this variant" as not offered, with the rule. So the second level that was tested is the token.
+- Every hand-back first failed the typecheck on route types that `next dev` had generated for the deleted playground (`.next/dev/types`). Each agent deleted that generated folder and ran the typecheck again. The guide does not say this yet.
+- The list of other uses of a token is long (about 200 files) and the agents said that it over-counts: preset files set their own value.
+- Two runs were lost to the driver, not to the prototype. It opened the agent's `localhost` server as `127.0.0.1`, which Next.js dev blocks, so the page did not react (fixed: the host is kept). Its person did not move colour inputs, so a token level with colours only settled without a change, and the agent correctly wrote nothing (fixed: colours are moved).
+
 ## A, B and today side by side
 
 | | Today's kit | A: snapshot in the hosted kit | B: in the person's app |
@@ -92,8 +120,8 @@ Two first-pass runs were lost to the driver, not to the prototype: see "Limits".
 ```sh
 node experiments/real-codebase/run.ts --repo <checkout> --base-url http://127.0.0.1:<clay port> \
   --home <clean home> --out <fresh run dir> --id page --say "build me a playground to work on the … page" \
-  [--memory <file with the guide and the path of the kit files>] [--in-app "npx next dev --webpack -H 127.0.0.1 -p PORT"] \
-  [--typecheck "npx tsc --noEmit -p ."]
+  [--memory <file with the guide and the path of the kit files>] [--in-app "npx next dev --webpack -H HOST -p PORT"] \
+  [--level instance|variant|token[,…]] [--typecheck "npx tsc --noEmit -p ."]
 CLAY_ACCESS_KEY=<key> node experiments/real-codebase/compare.mjs --real <real page url> --play <playground url> \
   --text "Cloud provider" --tag button --out <dir> --name button
 ```
