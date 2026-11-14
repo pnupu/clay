@@ -24,7 +24,7 @@ export type ClayControl = {
   | { type: "scale"; options: Option[]; initial: string; css: string }
 );
 export type ClayValues = Record<string, number | boolean | string>;
-/** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props: only the controls the person moved, and nothing for a use that does not change, so each use keeps its own props (`size={a.values.size ?? "sm"}`). */
+/** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props: only the controls the person moved, and nothing for a use that does not change, so each use keeps its own props (`size={(a.values.size as "sm" | "lg" | undefined) ?? "sm"}`). */
 export type ClayApplied = { className: string; style: CSSProperties; values: Partial<ClayValues>; changes: boolean };
 /** One real place where the component is used, with the props and the markup around it copied from that call site. */
 export type ClayUse = { id: string; /** Path from the repository root with the line: "src/app/x/page.tsx:42". */ file: string; label?: string; /** The style properties that this call site always sets itself with its own class (not under `hover:` or `md:`), named as the `css` of the scale controls ("borderRadius" for a call site with `rounded-none`). At the level "variant" the call site keeps its own value in the real code, so the kit leaves those controls out for this use, and shows the use as unchanged when it sets every property that changes. */ sets?: string[]; render: (a: ClayApplied) => ReactNode };
@@ -77,8 +77,10 @@ export function ClayPlayground(props: {
   const [typed, setTyped] = useState<Record<string, string>>({});
   const level = levels.find((l) => l.id === levelId);
   // The controls of the chosen level: token controls on the level "token", the others on the other levels.
-  const active = controls.filter((c) => !level || (level.id === "token") === !!c.token);
-  const moved = active.filter((c) => values[c.id] !== initial[c.id]);
+  const controlsOf = (l: ClayLevel | undefined) => controls.filter((c) => !l || (l.id === "token") === !!c.token);
+  const movedOf = (l: ClayLevel | undefined) => controlsOf(l).filter((c) => values[c.id] !== initial[c.id]);
+  const active = controlsOf(level);
+  const moved = movedOf(level);
   const onScale = (c: ClayControl) => c.type !== "scale" || c.options.some((o) => o.value === values[c.id]);
   const now = { ...initial, ...Object.fromEntries(active.map((c) => [c.id, values[c.id]])) } as ClayValues;
 
@@ -88,8 +90,8 @@ export function ClayPlayground(props: {
   // and a use that sets every property the controls change does not change at all.
   const own = (l: ClayLevel | undefined, u: ClayUse) => (l?.id === "variant" ? (u.sets ?? []) : []);
   const keeps = (l: ClayLevel | undefined, u: ClayUse, of: ClayControl[]) => of.length > 0 && of.every((c) => c.type === "scale" && own(l, u).includes(c.css));
-  // The controls that decide it: the ones the person moved at the chosen level; before the first move, and for another level, all controls of that level.
-  const decide = (l: ClayLevel | undefined) => (l === level && moved.length ? moved : controls.filter((c) => !l || (l.id === "token") === !!c.token));
+  // The controls that decide it: the ones of the level that the person moved; before the first move, all controls of the level.
+  const decide = (l: ClayLevel | undefined) => (movedOf(l).length ? movedOf(l) : controlsOf(l));
   const changesAt = (l: ClayLevel | undefined, u: ClayUse) => (!l || l.uses.includes(u.id)) && !keeps(l, u, decide(l));
   const changes = (u: ClayUse) => changesAt(level, u);
   const applied = (u: ClayUse): ClayApplied => {
