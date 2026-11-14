@@ -26,7 +26,7 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string }) {
+export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version, connected = false }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
@@ -272,7 +272,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               </div>
             ) : (
               embedded ? (
-                <p className="small" data-example>This is an example, so there is nothing to settle here. <Link href="/connect" prefetch={false}>Connect your own agent</Link> to build and settle your own.</p>
+                <p className="small" data-example>This is an example, so there is nothing to settle here. {connected ? "Ask your agent to build and settle your own." : <><Link href="/connect" prefetch={false}>Connect your own agent</Link> to build and settle your own.</>}</p>
               ) : (
                 // A visitor can finish the loop: Settle on an example saves nothing and sends nothing; it shows, on this
                 // page only, what their own agent would receive (the values and the texts above, as they stand).
@@ -283,7 +283,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                   </div>
                   {triedNow && (
                     <p className="small" data-settle-try role="status">
-                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. <Link href="/connect" prefetch={false}>Connect your own agent</Link>
+                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}
                     </p>
                   )}
                 </div>

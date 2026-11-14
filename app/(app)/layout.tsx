@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ClerkProvider } from "@clerk/nextjs";
 import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
-import { exampleGroups } from "@/app/example-groups";
+import { headerState } from "@/app/example-groups";
 import { CLERK_TEXT } from "@/app/clerk-text";
 import { ROOT_CSS } from "@/app/tokens";
 import "@/app/clay.css";
@@ -20,7 +20,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 async function Header() {
   const me = await viewer();
-  const groups = await exampleGroups();
+  const { groups, connected } = await headerState(me);
   return (
     <header className="bar">
       <div className="bar__in">
@@ -46,7 +46,7 @@ async function Header() {
         </nav>
         <div className="bar__actions">
           {me.kind === "user" ? <Account /> : me.kind === "admin" ? <span className="who" aria-label="Operator session">Operator</span> : me.kind === "visitor" && clerkOn() ? <Link href="/sign-in" className="bar__word">Sign in</Link> : null}
-          <Link href="/connect" className="button primary"><span className="wide-only">Connect your agent</span><span className="narrow-only">Connect</span></Link>
+          {connected ? <Link href="/connect" className="bar__word"><span className="wide-only">Agent setup</span><span className="narrow-only">Setup</span></Link> : <Link href="/connect" className="button primary"><span className="wide-only">Connect your agent</span><span className="narrow-only">Connect</span></Link>}
         </div>
       </div>
     </header>

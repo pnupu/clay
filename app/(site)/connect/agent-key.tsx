@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { STANDING_INSTRUCTION } from "@/connect/standing-instruction";
 import { KEY_PLACEHOLDER, maskKey } from "@/lib/mask";
@@ -20,6 +21,7 @@ const OWNER_PLACEHOLDER = "<owner key>";
  * development server, where no owner key is set and an agent needs none.
  */
 export default function AgentKey({ endpoint, createdAt, operator = false, keyless = false }: { endpoint: string; createdAt: string | null; operator?: boolean; keyless?: boolean }) {
+  const router = useRouter();
   const [key, setKey] = useState<string | null>(null);
   const [since, setSince] = useState(createdAt);
   const [busy, setBusy] = useState(false);
@@ -45,6 +47,8 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
       setSince(body?.createdAt ?? null);
       // A new key starts hidden, also when the one before it was shown.
       setVisible(false);
+      // The header's "Connect your agent" button depends on the key (lib/accounts.ts, agentConnected): render it again.
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

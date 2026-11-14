@@ -2,7 +2,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
 import { viewVersion } from "@/lib/report";
-import { bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal, StorageRefused } from "@/lib/accounts";
+import { agentConnected, bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal, StorageRefused } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
 import { load, publicBase, publicState, update } from "@/lib/store";
 
@@ -229,9 +229,10 @@ export async function refused(req: Request): Promise<Response | null> {
   try {
     pg = /^\/api\/p\/([^/]+)/.exec(path)?.[1] || null;
   } catch {}
-  const p = pg ? (await load()).playgrounds[pg] : undefined;
+  const s = pg ? await load() : null;
+  const p = pg ? s?.playgrounds[pg] : undefined;
   const published = p ? publishedRefusal(actor, p, pg!) : null;
   if (published) return Response.json({ error: published }, { status: 403 });
-  if (p && !canWrite(actor, p)) return canRead(actor, p, pg!) ? Response.json({ error: "This is an example playground: move the controls as you like, but only the operator can save or re-check it. Connect your agent to build your own." }, { status: 403 }) : noAccess();
+  if (p && !canWrite(actor, p)) return canRead(actor, p, pg!) ? Response.json({ error: `This is an example playground: move the controls as you like, but only the operator can save or re-check it. ${agentConnected(actor, s?.users ?? {}) ? "Ask" : "Connect"} your agent to build your own.` }, { status: 403 }) : noAccess();
   return null;
 }

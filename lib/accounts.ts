@@ -304,6 +304,12 @@ export function userOfKey(key: string, accounts: Record<string, Account>): strin
   }
   return found;
 }
+/**
+ * Is this viewer past connecting an agent? A person with an agent key, and the operator, whose agent uses the owner key.
+ * The pages then stop asking them to connect one (the headers, the landing page, the example notes, the example refusal).
+ * A key only shows that one was created, and nothing is stored for the operator: no text may say that an agent is connected.
+ */
+export const agentConnected = (a: Actor | null, accounts: Record<string, Account>): boolean => a?.kind === "admin" || (a?.kind === "user" && !!accounts[a.userId]?.keyHash);
 
 /**
  * Failed key guesses per client address, per process. After `max` failures in `windowMs` the address is refused until the

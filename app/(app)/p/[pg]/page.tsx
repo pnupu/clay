@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Kit from "@/app/kit";
 import Playground from "@/app/playground";
 import { viewer } from "@/app/api/respond";
-import { canRead, canWrite, EXAMPLE_CLEARED, isExample } from "@/lib/accounts";
+import { agentConnected, canRead, canWrite, EXAMPLE_CLEARED, isExample } from "@/lib/accounts";
 import { brandPending } from "@/lib/kit";
 import { MarkExample } from "@/app/manage";
 import { nonOwnerView, viewVersion } from "@/lib/report";
@@ -14,9 +14,10 @@ export const dynamic = "force-dynamic";
 
 /** The playground if this viewer may open it: an example, their own, or any for the admin. */
 async function find(pg: string) {
-  const p = (await load()).playgrounds[pg];
+  const s = await load();
+  const p = s.playgrounds[pg];
   const me = await viewer();
-  return { p: p && canRead(me, p, pg) ? p : null, exists: !!p, me };
+  return { p: p && canRead(me, p, pg) ? p : null, exists: !!p, me, connected: agentConnected(me, s.users) };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ pg: string }> }) {
@@ -25,7 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ pg: strin
 
 export default async function Page({ params }: { params: Promise<{ pg: string }> }) {
   const { pg } = await params;
-  const { p, exists, me } = await find(pg);
+  const { p, exists, me, connected } = await find(pg);
   if (!exists) notFound();
   // A private playground: the same answer whoever owns it, and nothing of its content.
   if (!p)
@@ -47,7 +48,7 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
       {version && <MarkExample id={pg} version={version} example={isExample(p, pg)} featured={p.featured === true} />}
       {canWrite(me, p) && p.exampleCleared && !isExample(p, pg) && <p className="alert" role="status" style={{ maxWidth: 1440, margin: "12px auto 0" }}>{EXAMPLE_CLEARED}</p>}
       {/* A preview playground has its own screen. Someone who does not own it starts on the start values (an example) and is not sent what the owner tried or settled. The key remounts the screen when the agent revises the playground. */}
-      {p.kit ? <Kit byTeam={!p.owner} key={`${JSON.stringify(p.kit.kit)}|${p.kit.brandData?.fetchedAt ?? ""}|${webStamp(p.kit.web)}|${pinned ?? ""}`} id={p.domain.id} version={pinned} title={p.domain.question} state={(canWrite(me, p) && !pinned ? p : nonOwnerView(p)).kit!} canWrite={canWrite(me, p)} builtByViewer={me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner} leftOut={p.leftOut} reading={workStatus(p)?.status === "running" || brandPending(p.kit)} /> : <Playground byTeam={!p.owner} builtByViewer={me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner} key={JSON.stringify(p.domain)} domain={p.domain} explored={(canWrite(me, p) ? p : nonOwnerView(p)).exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
+      {p.kit ? <Kit connected={connected} byTeam={!p.owner} key={`${JSON.stringify(p.kit.kit)}|${p.kit.brandData?.fetchedAt ?? ""}|${webStamp(p.kit.web)}|${pinned ?? ""}`} id={p.domain.id} version={pinned} title={p.domain.question} state={(canWrite(me, p) && !pinned ? p : nonOwnerView(p)).kit!} canWrite={canWrite(me, p)} builtByViewer={me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner} leftOut={p.leftOut} reading={workStatus(p)?.status === "running" || brandPending(p.kit)} /> : <Playground connected={connected} byTeam={!p.owner} builtByViewer={me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner} key={JSON.stringify(p.domain)} domain={p.domain} explored={(canWrite(me, p) ? p : nonOwnerView(p)).exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
     </>
   );
 }

@@ -49,7 +49,7 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
  * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false, builtByViewer = canWrite }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner). */ byTeam?: boolean; /** The viewer's own agent built it (not the operator looking at another person's playground): that agent gets the summary of what was tried. */ builtByViewer?: boolean }) {
+export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false, builtByViewer = canWrite, connected = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner). */ byTeam?: boolean; /** The viewer's own agent built it (not the operator looking at another person's playground): that agent gets the summary of what was tried. */ builtByViewer?: boolean; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
   const Shell = embedded ? "div" : "main";
   const shell = embedded ? "embedded-playground" : "shell";
   const api = `/api/p/${domain.id}`;
@@ -227,7 +227,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   };
   /** What a Select means, said at the selected row: where to save it, or that an example saves nothing. */
   const selectedNext: ReactNode = !canWrite ? (
-    <p className="small select-next" data-select-try>Nothing is saved: this is an example. On your own playground you save this choice; your agent then keeps it in your repository ({recordPath(domain.id)}) and any later session re-checks it when prices change. <Link href="/connect" prefetch={false}>Connect your own agent</Link></p>
+    <p className="small select-next" data-select-try>Nothing is saved: this is an example. On your own playground you save this choice; your agent then keeps it in your repository ({recordPath(domain.id)}) and any later session re-checks it when prices change. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}</p>
   ) : unsaved ? (
     <p className="small select-next" data-select-next>Not saved yet. <button className="linkbtn" onClick={toSave}>Save this choice ↓</button></p>
   ) : null;
@@ -390,7 +390,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               ) : (
                 <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => (x.error ? x.snapshot?.fetchedAt : (x.lastCheckedAt ?? x.snapshot?.fetchedAt)) ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
-              {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect" prefetch={false}>Connect your own agent</Link> to build one and save your own.</p>}
+              {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. {connected ? "Ask your agent to build one and save your own." : <><Link href="/connect" prefetch={false}>Connect your own agent</Link> to build one and save your own.</>}</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
               {pick && unsaved && canWrite && (
                 <div className="save" ref={saveBox}>

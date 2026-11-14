@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
-import { exampleGroups } from "@/app/example-groups";
+import { headerState } from "@/app/example-groups";
 import { CLERK_TEXT } from "@/app/clerk-text";
 import { ROOT_CSS } from "@/app/tokens";
 import KitScripts from "./kit-scripts";
@@ -32,7 +32,7 @@ const KIT_CSS = ["system.css", "ui/cards.css", "motion/motion.css", "backgrounds
 
 async function Header() {
   const me = await viewer();
-  const groups = await exampleGroups();
+  const { groups, connected } = await headerState(me);
   return (
     <header className="nav">
       <div className="wrap nav__bar">
@@ -60,7 +60,7 @@ async function Header() {
         </nav>
         <div className="nav__actions">
           {me.kind === "user" ? <Account /> : me.kind === "admin" ? <span className="who" aria-label="Operator session">Operator</span> : me.kind === "visitor" && clerkOn() ? <a className="nav__link" href="/sign-in">Sign in</a> : null}
-          <a className="btn btn--primary" href="/connect">Connect your agent</a>
+          {connected ? <a className="nav__link" href="/connect">Agent setup</a> : <a className="btn btn--primary" href="/connect">Connect your agent</a>}
         </div>
         <button className="nav__toggle" type="button" aria-expanded="false" aria-label="Menu">
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 5h14M2 13h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>

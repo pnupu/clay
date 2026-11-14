@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { agentConnected, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
 import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
 import { markLook, viewVersion } from "./report.ts";
@@ -461,4 +461,16 @@ test("storage bounds: a webhook monitor's write is bound by the owner's allowanc
   assert.equal(x.ann.sources.alpha.plans.length, 4000);
   delete process.env.CLAY_USER_STORE_BYTES;
   delete process.env.CLAY_MAX_STORE_BYTES;
+});
+
+test("connected: a person with an agent key and the operator are not asked to connect an agent; a visitor and a person without a key are", () => {
+  const key = { keyHash: hashKey(newAgentKey()), keyCreatedAt: "2026-11-14T10:00:00.000Z", usage: null };
+  const none = { keyHash: null, keyCreatedAt: null, usage: null };
+  const accounts = { user_ann: key, user_bob: none };
+  assert.equal(agentConnected(ann, accounts), true, "a person with a key");
+  assert.equal(agentConnected(bob, accounts), false, "a person whose key was revoked, or who never made one");
+  assert.equal(agentConnected({ kind: "user", userId: "user_new", via: "session" }, accounts), false, "a person with no record");
+  assert.equal(agentConnected(admin, {}), true, "the operator: the owner key, no record needed");
+  assert.equal(agentConnected(VISITOR, accounts), false, "a visitor");
+  assert.equal(agentConnected(null, accounts), false, "no caller");
 });

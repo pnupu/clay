@@ -1,5 +1,5 @@
 import { viewer } from "@/app/api/respond";
-import { canWrite, isExample, orderExamples, userDailyCap, userPlaygroundCap } from "@/lib/accounts";
+import { agentConnected, canWrite, isExample, orderExamples, userDailyCap, userPlaygroundCap } from "@/lib/accounts";
 import { kindLabel, recordPath } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
 import { nonOwnerView } from "@/lib/report";
@@ -47,7 +47,10 @@ function priceHeroOf(example: [string, AnyPlayground] | undefined) {
 
 export default async function Home() {
   const me = await viewer();
-  const playgrounds = (await load()).playgrounds as Record<string, AnyPlayground>;
+  const store = await load();
+  const playgrounds = store.playgrounds as Record<string, AnyPlayground>;
+  // A viewer who is past connecting an agent (lib/accounts.ts) is not asked to connect one: they are told what to do next.
+  const connected = agentConnected(me, store.users);
   const all = Object.entries(playgrounds).sort(([, a], [, b]) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   // The featured example first (the admin chooses it), then the newest first. The first one runs in the hero.
   const examples = orderExamples(playgrounds);
@@ -74,6 +77,8 @@ export default async function Home() {
               </li>
             ))}
           </ul>
+        ) : connected ? (
+          <p className="t-lead">None yet. Ask your agent for help with a decision: say “build me a playground for …”.</p>
         ) : (
           <p className="t-lead">None yet. <a className="link" href="/connect">Connect your agent</a>, then ask it for help with a decision.</p>
         )}
@@ -94,7 +99,7 @@ export default async function Home() {
               <p className="say">build me a playground for …</p>
               <p className="hero__lead">It builds a page where the real thing runs under a few controls: a price choice read live from the vendors’ own pages, your component, an animation. One command connects it.</p>
               <div className="btn-row">
-                <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>
+                {connected ? <a className="btn btn--primary" href="#yours">Your playgrounds<Arrow /></a> : <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>}
                 <a className="btn btn--secondary" href="#examples">See the examples</a>
               </div>
               {/* Three true lines, so the words end where the product beside them ends. */}
@@ -108,7 +113,7 @@ export default async function Home() {
               <div className="span-7 start-6 ui"><HeroRanking {...priceHero} /></div>
             ) : (
               <div className="span-7 start-6 live ui">
-                {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />}
+                {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded connected={connected} />}
               </div>
             )}
           </div></div>
@@ -134,7 +139,7 @@ export default async function Home() {
                   <p className="muted">clay · create_playground</p>
                   <p>/p/{hero[0]}</p>
                 </div>
-                <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />
+                <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded connected={connected} />
               </div>
             ) : (
               <div className="demo demo--words">
@@ -203,8 +208,12 @@ export default async function Home() {
         <div className="wrap">
           <div className="closing__cta close--word">
             <div className="section-head--split">
-              <div><h2 id="close-h">Connect your agent with one command</h2><p className="t-lead">Your agent runs on your own model subscription. Clay needs no AI key. {me.kind === "visitor" ? "Sign up, get your agent key, and add Clay." : "Get your agent key and add Clay."}</p></div>
-              <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>
+              {connected ? (
+                <div><h2 id="close-h">Ask your agent for a playground</h2><p className="t-lead">Say “build me a playground for …” to Claude Code or Codex. Your agent runs on your own model subscription. Clay needs no AI key.</p></div>
+              ) : (
+                <div><h2 id="close-h">Connect your agent with one command</h2><p className="t-lead">Your agent runs on your own model subscription. Clay needs no AI key. {me.kind === "visitor" ? "Sign up, get your agent key, and add Clay." : "Get your agent key and add Clay."}</p></div>
+              )}
+              {connected ? <a className="btn btn--secondary" href="/connect">Agent setup</a> : <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>}
             </div>
           </div>
           <div className="closing__links">

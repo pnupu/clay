@@ -1,15 +1,9 @@
-import { orderExamples } from "@/lib/accounts";
-import { load } from "@/lib/store";
+import { agentConnected, orderExamples, type Actor } from "@/lib/accounts";
+import { load, type Store } from "@/lib/store";
 
 /** The examples in the nav's panel, by what each is built on. */
-/** A header must not take a page down: when the store cannot be read, the list is empty and the header shows a plain link. */
-export async function exampleGroups() {
-  let examples: ReturnType<typeof orderExamples<Awaited<ReturnType<typeof load>>["playgrounds"][string]>>;
-  try {
-    examples = orderExamples((await load()).playgrounds);
-  } catch {
-    return [];
-  }
+function exampleGroups(playgrounds: Store["playgrounds"]) {
+  const examples = orderExamples(playgrounds);
   const groups: { label: string; items: { id: string; title: string; line: string }[] }[] = [
     { label: "Tuned by hand", items: [] },
     { label: "On live web data", items: [] },
@@ -22,4 +16,17 @@ export async function exampleGroups() {
     else groups[0].items.push({ id, title, line: p.kit.kit.controls.slice(0, 3).map((c) => c.label).join(", ") });
   }
   return groups.filter((g) => g.items.length);
+}
+
+/**
+ * What both headers read from the store, in one read: the example groups, and whether the viewer is past connecting an
+ * agent (lib/accounts.ts, agentConnected).
+ * A header must not take a page down: when the store cannot be read, the list is empty and the header shows a plain link.
+ */
+export async function headerState(me: Actor) {
+  let s: Store | null = null;
+  try {
+    s = await load();
+  } catch {}
+  return { groups: s ? exampleGroups(s.playgrounds) : [], connected: agentConnected(me, s?.users ?? {}) };
 }
