@@ -12,6 +12,7 @@ import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } fr
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
 import { EXAMPLE_CLEARED, canRead, canWrite, currentActor } from "./accounts";
+import { decisionRecord, recheckFile, recheckVerdict } from "./record";
 
 /**
  * How long a tool call waits for web reads before it answers. An agent's client cuts a tool call at about 60 seconds
@@ -157,7 +158,9 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       // Someone else's example: the non-owner projection (lib/report.ts), and a note that it is not this person's.
       const own = canWrite(currentActor(), p);
       const view = own ? p : nonOwnerView(p);
-      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...(view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t)), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
+      // A standing decision of the caller's own person: the record to write into their repository (lib/record.ts).
+      const record = own ? decisionRecord(p, url(playground_id)) : null;
+      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...(view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t)), ...(record ? { decision_record: record } : {}), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
     },
   );
 
@@ -180,6 +183,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           ...(w.value?.stop ? { stopped: `The re-check stopped early: ${w.value.stop}. Do not retry now; tell the person.` } : {}),
           changed_now: w.value?.changes.length ?? 0,
           web_changes: webChanges(now.kit!),
+          // A settled result is a standing decision: what to do with its file in the repository (lib/record.ts).
+          ...recheckFile(now, url(playground_id), new Date().toISOString(), webChanges(now.kit!).changes.length, !!w.value?.stop),
           data: dataReport(now.kit!, webReading(now)),
           problems: webProblems(now.kit!, webReading(now)),
           // One statement, taken from web_changes, so the two cannot disagree. After a stop (rate limit, cap) it is the stop.
@@ -208,6 +213,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         url: url(playground_id),
         checked_at: new Date().toISOString(),
         ...(stop ? { stopped: `The re-check stopped early: ${message(stop.reason)}. Do not retry now; tell the person.` } : {}),
+        // First the verdict, what changed, what the saved rule now picks and what to do (lib/record.ts); the detail follows.
+        ...recheckVerdict(p, url(playground_id), new Date().toISOString(), !!stop),
         sources: ids.map((id, i) => ({ vendor: id, result: results[i].status === "rejected" ? "not checked" : p.sources[id]?.error ? `error: ${p.sources[id].error!.slice(0, 200)}` : (results[i] as PromiseFulfilledResult<unknown>).value ? "changed" : "no confirmed change" })),
         changes: changed,
         saved_decision: decisionReport(p) ?? "none: the person has not saved a decision yet",
