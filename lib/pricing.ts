@@ -59,7 +59,8 @@ export function planCost(plan: Plan, a: Assumptions): PlanCost {
   if (base == null) r.unknowns.push(gap ?? (plan.custom_pricing ? "custom pricing (contact sales)" : "base price not stated"));
   else r.cost += base;
   // A read that was trimmed is never complete: a left-out plan or step could change the price or the winner.
-  if (plan.price_gap === "trimmed" && !r.unknowns.includes(GAP_WORDS.trimmed)) r.unknowns.push(GAP_WORDS.trimmed);
+  // Whatever other gap a plan has ("configuration", "interactive"): a trimmed one is never complete.
+  if ((plan.trimmed || plan.price_gap === "trimmed") && !r.unknowns.includes(GAP_WORDS.trimmed)) r.unknowns.push(GAP_WORDS.trimmed);
   r.lines.push({ label: "Base price", amount: base, key: "base" });
 
   for (const [metric, units] of Object.entries(a.usage)) {

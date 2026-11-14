@@ -89,6 +89,8 @@ export type Plan = {
   base_price: number | null;
   custom_pricing: boolean | null;
   price_gap?: PriceGap | null;
+  /** Clay kept only part of what the page lists (more plans or price steps than PRICE_LIMITS): never complete. */
+  trimmed?: boolean;
   price_quote: string | null;
   meters: Meter[] | null;
   features: FeatureFact[] | null;
@@ -220,12 +222,12 @@ const list = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
 export function normalise(raw: RawModel): PricingModel {
   const { model: bounded, trimmed } = boundRaw(raw);
   let model = normaliseUnbounded(bounded);
-  if (trimmed) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_gap: p.price_gap ?? ("trimmed" as const) })) };
+  if (trimmed) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, trimmed: true })) };
   // Still too large: the quotes go first, then plans from the end (the read is then trimmed), until it fits; at the end
   // even a single plan is dropped. No throw: a refused read made the collection try more pages, each a paid request.
   const size = () => JSON.stringify(model).length;
   if (size() > PRICE_LIMITS.bytes) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_quote: null, meters: (p.meters ?? []).map((m) => ({ ...m, quote: null })), features: (p.features ?? []).map((f) => ({ ...f, quote: null })) })) };
-  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 0) model = { ...model, plans: model.plans!.slice(0, -1).map((p) => ({ ...p, price_gap: p.price_gap ?? ("trimmed" as const) })) };
+  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 0) model = { ...model, plans: model.plans!.slice(0, -1).map((p) => ({ ...p, trimmed: true })) };
   return model;
 }
 

@@ -93,10 +93,12 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   type Reservation = { global: string | null; personal: string | null } | null;
   const today = () => new Date().toISOString().slice(0, 10);
   const reserve = async (): Promise<Reservation> => {
-  const day = today();
   if (!((daily > 0 || personal > 0) && method !== "DELETE")) return null;
+  // The day is read inside the update: an update can wait in the store's queue across midnight.
+  let day = today();
   let charged: Reservation = null;
   const refusal = await update((s) => {
+    day = today();
     const b = daily > 0 ? spend(s.budget, day, daily, units) : s.budget;
     if (!b && daily > 0) return "global";
     const u = user && personal > 0 ? spend(s.users[user]?.usage ?? null, day, personal, units) : null;
@@ -130,16 +132,18 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
     else await slot();
     // The first reservation was made before the wait. When the day changed meanwhile, it is given back and made again on
     // the new day, right before the send (nothing has been sent on it).
-    if (attempt === 0 && reserved && [reserved.global, reserved.personal].some((d) => d != null && d < today())) {
-      await release(reserved);
-      reserved = await reserve();
-    }
     // A retry is a new request sent: it is reserved too. Reached here, the earlier attempts were sent, and no more are.
     if (attempt > 0)
       reserved = await reserve().catch((e) => {
         if (e instanceof ContextDevError) throw new ContextDevError(e.status, e.code, `${e.message} (${attempt} earlier ${attempt === 1 ? "attempt was" : "attempts were"} sent and rate-limited; no more are sent.)`);
         throw e;
       });
+    // Every reservation, the first (made before the pacing wait) and each retry's, must be for the day of this send: one
+    // made on an earlier day is given back and made again, until it is for today (a refusal ends the call).
+    while (reserved && [reserved.global, reserved.personal].some((d) => d != null && d < today())) {
+      await release(reserved);
+      reserved = await reserve();
+    }
     // Nothing is awaited between this check and pending++, so parallel requests cannot pass the request cap together.
     // Refused here, this attempt was not sent: its reservation is given back.
     try {

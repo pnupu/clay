@@ -99,18 +99,31 @@ test("price reads: trimming is never silent, and only permitted fields are store
   // 13 graduated steps: never bridged; the plan is trimmed and the vendor cannot be ranked.
   const steps = Array.from({ length: 13 }, (_, i) => ({ up_to: i < 12 ? (i + 1) * 1000 : null, price: i === 11 ? 1120 : 130, per_units: 1000 }));
   const m = normalise({ vendor: "V", currency: "USD", plans: [{ name: "Pro", base_price: 10, custom_pricing: false, price_quote: null, meters: { emails: { included: 0, overage_allowed: true, tiers: steps, quote: null } }, features: {} }] } as never);
-  assert.equal(m.plans![0].price_gap, "trimmed");
+  assert.equal(m.plans![0].trimmed, true);
   assert.deepEqual(m.plans![0].meters![0].tiers, []);
   const r = rank({ v: m, w: normalise({ vendor: "W", currency: "USD", plans: [{ name: "Pro", base_price: 50, custom_pricing: false, price_quote: null, meters: {}, features: {} }] } as never) }, { usage: { emails: 20000 }, required: [] });
   assert.deepEqual(r.ranked.map((x) => x.id), ["w"]);
   assert.equal(r.unranked[0].id, "v");
   // 21 plans: the left-out one could be the cheapest, so every kept plan is trimmed.
   const many = normalise({ vendor: "V", currency: "USD", plans: Array.from({ length: 21 }, (_, i) => ({ name: `P${i}`, base_price: 100 - i, custom_pricing: false, price_quote: null, meters: {}, features: {} })) } as never);
-  assert.ok(many.plans!.every((p) => p.price_gap === "trimmed"));
+  assert.ok(many.plans!.every((p) => p.trimmed === true));
   const r2 = rank({ many, w: normalise({ vendor: "W", currency: "USD", plans: [{ name: "Pro", base_price: 50, custom_pricing: false, price_quote: null, meters: {}, features: {} }] } as never) }, { usage: {}, required: [] });
   assert.equal(r2.unranked[0].id, "many");
   assert.match(r2.unranked[0].effect, /left out could be cheaper/);
   // An extra property with a huge value is not stored.
   const junk = normalise({ vendor: "V", currency: "USD", plans: [{ name: "Pro", base_price: 10, custom_pricing: false, price_quote: null, meters: { emails: { included: 0, overage_allowed: true, tiers: [{ up_to: null, price: 1, per_units: 1, extra: "x".repeat(500_000) }], quote: null } }, features: {}, junk: "y".repeat(500_000) }], more: "z".repeat(500_000) } as never);
   assert.ok(JSON.stringify(junk).length < 2000);
+});
+
+test("price reads: a trimmed vendor is never ranked, whatever its other price gaps", async () => {
+  const { normalise } = await import("./domain.ts");
+  const { rank } = await import("./pricing.ts");
+  // 21 plans with a specific gap ("configuration"); the left-out 21st costs $1.
+  const plans = Array.from({ length: 21 }, (_, i) => ({ name: `P${i}`, base_price: i === 20 ? 1 : 100, custom_pricing: false, price_gap: "configuration", price_quote: null, meters: {}, features: {} }));
+  const v = normalise({ vendor: "V", currency: "USD", plans } as never);
+  const w = normalise({ vendor: "W", currency: "USD", plans: [{ name: "Pro", base_price: 50, custom_pricing: false, price_quote: null, meters: {}, features: {} }] } as never);
+  const r = rank({ v, w }, { usage: {}, required: [] });
+  assert.deepEqual(r.ranked.map((x) => x.id), ["w"]);
+  assert.equal(r.unranked[0].id, "v");
+  assert.ok(v.plans!.every((p) => p.trimmed === true && p.price_gap === "configuration"));
 });
