@@ -1,4 +1,4 @@
-// One playground = one spec that the agent writes. This is the trust boundary for it: a spec is untrusted data.
+// One lab = one spec that the agent writes. This is the trust boundary for it: a spec is untrusted data.
 // A spec names its data sources, its view and, for a preview, its controls and outputs. Two kinds exist today:
 // - view.type "price_ranking": the price engine (lib/config.ts, lib/pipeline.ts). Its metrics and features are its controls.
 // - view.type "preview": the kit (lib/kit.ts): controls, a sandboxed preview that runs real code, and outputs.
@@ -60,6 +60,7 @@ const view = z.strictObject({
   js: z.string().optional().describe("preview: JavaScript for what markup cannot show, such as motion. It runs once. clay.values.<id> is the value now; clay.onChange((values) => { ... }) runs at once and on every move; clay.data.brand and clay.data.inline are the declared data. Rule for you: do not use the network or imports; the sandbox blocks most requests, not all, and the preview must work without any."),
   tailwind: z.boolean().optional().describe("preview: true loads the in-browser Tailwind v4 build, so Tailwind classes in html work, arbitrary values such as rounded-[7px] and bg-[#123456] included."),
   map: z.boolean().optional().describe("preview: true loads the map library (Leaflet) and lets the preview load map tiles of OpenStreetMap, for a \"where\" question. In view.js, clay.map(element, {center: [lat, lng], zoom}) makes the map; coordinates come from data.inline or data.web."),
+  data: z.boolean().optional().describe("preview: true makes it a data view: a comparison, a ranking or a table of facts, not the person's own component. The frame then brings Sorvi's typeface, colours and parts (table, cards, badge, stat, note: see kit_reference), so view.html uses those class names and view.css stays empty or nearly so. Set it whenever the preview shows data.web or compares options from data.inline."),
   height: z.number().optional().describe("preview: height of the preview in px, 120 to 900, default 360."),
 });
 
@@ -70,27 +71,27 @@ const output = z.strictObject({
 });
 
 export const specShape = {
-  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the playground and the last part of its URL, for example signup-button. When it is taken, the playground gets it with a short suffix: use the playground_id of the result."),
-  title: text(3, 200).describe("What the person is deciding, in their words. For a price playground, the decision as a question."),
-  notes: text(0, 600).optional().describe("Optional short note shown under the title: what was asked, what the page is built from, and what to try. The playground may be shared or become a public example, so write it for any reader: no 'your file' or 'you asked', and no 'press Settle' (the page has that button and says what it does)."),
+  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the lab and the last part of its URL, for example signup-button. When it is taken, the lab gets it with a short suffix: use the playground_id of the result."),
+  title: text(3, 200).describe("What the person is deciding, in their words. For a price lab, the decision as a question."),
+  notes: text(0, 600).optional().describe("Optional short note shown under the title: what was asked, what the page is built from, and what to try. The lab may be shared or become a public example, so write it for any reader: no 'your file' or 'you asked', and no 'press Settle' (the page has that button and says what it does)."),
   data: z
     .strictObject({
       price_pages: pricePages.optional().describe("For view price_ranking: what to read from the vendors' public pricing pages. Never put prices here; they are read from the pages."),
       brand: z.strictObject({ domain: hostname.describe("The brand's own site, for example linear.app.") }).nullish().describe("For view preview: brand facts of one site, read live by Context.dev: its colours and logos. Use it when the person names a brand. A color control with palette 'brand' offers these colours."),
       inline: z.record(z.string().max(40), z.unknown()).nullish().describe("For view preview: values you supply yourself, read in view.js as clay.data.inline. The page marks them as provided by the agent, not checked."),
-      web: z.array(webSource).max(WEB_LIMITS.sources).nullish().describe("For view preview: live facts from web pages, read by Context.dev when the playground is built and again on recheck_playground. Up to 6 sources. view.js reads clay.data.web.<id>: an object of the fields, or a list of the rows; a value the page does not state, or a number that is not in the page text, is null. Use it when the comparison needs facts that change (prices, limits, versions) and a dimension the price engine lacks. null removes it."),
+      web: z.array(webSource).max(WEB_LIMITS.sources).nullish().describe("For view preview: live facts from web pages, read by Context.dev when the lab is built and again on recheck_playground. Up to 6 sources. view.js reads clay.data.web.<id>: an object of the fields, or a list of the rows; a value the page does not state, or a number that is not in the page text, is null. Use it when the comparison needs facts that change (prices, limits, versions) and a dimension the price engine lacks. null removes it."),
     })
     .optional()
     .describe("Where the facts come from. Each source keeps its origin on the page."),
   controls: z.array(control).max(KIT_LIMITS.controls).optional().describe("For view preview: the controls, 1 to 12, only from the kit. Choose the few dimensions that matter for this person."),
   view,
   outputs: z.array(output).max(KIT_LIMITS.outputs).optional().describe("For view preview: what goes back to you when the person settles, as code-ready text. At least 1."),
-  left_out: z.array(z.strictObject({ name: text(1, 60).describe("What was left out, as the person knows it: a vendor, a model, a source."), reason: text(1, 200).describe("Why, in a sentence the person can read: 'its pricing page states no price per seat'.") })).max(6).optional().describe("What you left out of the playground and why: a vendor whose page could not be priced after a repair, an option the person named that does not fit. It is stored, read_playground returns it, and the page can show it, so a later session can still say why something is missing. Give the whole list; an empty list clears it."),
+  left_out: z.array(z.strictObject({ name: text(1, 60).describe("What was left out, as the person knows it: a vendor, a model, a source."), reason: text(1, 200).describe("Why, in a sentence the person can read: 'its pricing page states no price per seat'.") })).max(6).optional().describe("What you left out of the lab and why: a vendor whose page could not be priced after a repair, an option the person named that does not fit. It is stored, read_playground returns it, and the page can show it, so a later session can still say why something is missing. Give the whole list; an empty list clears it."),
 };
 const spec = z.strictObject(specShape);
 export type Spec = z.input<typeof spec>;
 
-/** `leftOut`: what the agent left out of the playground and why (a vendor whose page could not be priced), when the spec says so. */
+/** `leftOut`: what the agent left out of the lab and why (a vendor whose page could not be priced), when the spec says so. */
 export type LeftOut = { name: string; reason: string };
 export type ParsedSpec = { ok: true; kind: "price"; domain: Domain; leftOut?: LeftOut[] } | { ok: true; kind: "preview"; domain: Domain; kit: Kit; warnings: string[]; leftOut?: LeftOut[] } | { ok: false; errors: string[] };
 
@@ -177,21 +178,21 @@ function validate(input: unknown): ParsedSpec {
   if (s.view.type === "price_ranking") {
     if (!s.data?.price_pages) errors.push('data.price_pages: the price_ranking view needs it: {"product", "metrics", "features", "vendors"}.');
     for (const k of ["controls", "outputs"] as const) if (s[k]) errors.push(`${k}: the price_ranking view brings its own controls (one slider per metric, one checkbox per feature) and its own hand-back (the saved decision). Remove ${k}.`);
-    for (const k of ["brand", "inline", "web"] as const) if (s.data?.[k]) errors.push(`data.${k}: only a preview view can use it. Remove it, or build a second playground with view.type "preview".`);
-    for (const k of ["html", "css", "js", "tailwind", "map", "height"] as const) if (s.view[k] !== undefined) errors.push(`view.${k}: only a preview view has ${k}. Remove it.`);
+    for (const k of ["brand", "inline", "web"] as const) if (s.data?.[k]) errors.push(`data.${k}: only a preview view can use it. Remove it, or build a second lab with view.type "preview".`);
+    for (const k of ["html", "css", "js", "tailwind", "map", "data", "height"] as const) if (s.view[k] !== undefined) errors.push(`view.${k}: only a preview view has ${k}. Remove it.`);
     if (errors.length) return { ok: false, errors };
     const p = parseConfig({ id: s.id, question: s.title, ...s.data!.price_pages });
-    if (!p.ok) return { ok: false, errors: p.errors.map((e) => (e.startsWith("question:") ? e.replace("question:", "title (for a price playground, the decision as a question of 10 characters or more):") : `data.price_pages.${e}`)) };
+    if (!p.ok) return { ok: false, errors: p.errors.map((e) => (e.startsWith("question:") ? e.replace("question:", "title (for a price lab, the decision as a question of 10 characters or more):") : `data.price_pages.${e}`)) };
     return { ok: true, kind: "price", domain: { ...p.domain, ...(s.notes ? { note: s.notes } : {}) }, ...(s.left_out ? { leftOut: s.left_out } : {}) };
   }
-  if (s.data?.price_pages) errors.push('data.price_pages: a preview view has no price ranking. Remove it, or build a second playground with view.type "price_ranking".');
+  if (s.data?.price_pages) errors.push('data.price_pages: a preview view has no price ranking. Remove it, or build a second lab with view.type "price_ranking".');
   const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand ?? undefined, inline: s.data?.inline ?? undefined, web: s.data?.web ?? undefined });
   if (!k.ok) errors.push(...k.errors);
   if (errors.length || !k.ok) return { ok: false, errors };
   return { ok: true, kind: "preview", domain: { id: s.id, question: s.title, product: "", metrics: [], features: [], vendors: [] }, kit: k.kit, warnings: k.warnings, ...(s.left_out ? { leftOut: s.left_out } : {}) };
 }
 
-/** The spec that parseSpec() would turn into this stored playground. Used to revise a playground part by part, and to show the agent what it built. */
+/** The spec that parseSpec() would turn into this stored lab. Used to revise a lab part by part, and to show the agent what it built. */
 export function toSpec(p: Playground): Spec {
   if (!p.kit) {
     const c = toConfig(p.domain);
@@ -204,13 +205,20 @@ export function toSpec(p: Playground): Spec {
     ...(kit.notes ? { notes: kit.notes } : {}),
     ...(kit.brand || kit.inline || kit.web ? { data: { ...(kit.brand ? { brand: kit.brand } : {}), ...(kit.inline ? { inline: kit.inline } : {}), ...(kit.web ? { web: kit.web } : {}) } } : {}),
     controls: kit.controls,
-    view: { type: "preview", html: kit.preview.html, ...(kit.preview.css ? { css: kit.preview.css } : {}), ...(kit.preview.js ? { js: kit.preview.js } : {}), tailwind: kit.preview.tailwind, ...(kit.preview.map ? { map: true } : {}), height: kit.preview.height },
+    view: { type: "preview", html: kit.preview.html, ...(kit.preview.css ? { css: kit.preview.css } : {}), ...(kit.preview.js ? { js: kit.preview.js } : {}), tailwind: kit.preview.tailwind, ...(kit.preview.map ? { map: true } : {}), ...(kit.preview.data ? { data: true } : {}), height: kit.preview.height },
     outputs: kit.outputs,
   };
 }
 
-/** A revision: the parts given replace the same parts of the current spec; inside `data`, each source given replaces that source, and null removes it. */
-export function mergeSpec(current: Spec, change: Partial<Spec>): unknown {
-  const given = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
-  return { ...current, ...given, id: current.id, ...(current.data || change.data ? { data: { ...current.data, ...change.data } } : {}) };
+/** What a revision gives: any part of a spec, and of the view any field. */
+export type SpecChange = Partial<Omit<Spec, "view">> & { view?: Partial<Spec["view"]> };
+
+/**
+ * A revision: the parts given replace the same parts of the current spec. Two parts are merged field by field: inside
+ * `data`, each source given replaces that source, and null removes it; inside `view`, each field given replaces that
+ * field, so a repair of view.js does not send the html and css again.
+ */
+export function mergeSpec(current: Spec, change: SpecChange): unknown {
+  const defined = (o: object) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+  return { ...current, ...defined(change), id: current.id, ...(change.view ? { view: { ...current.view, ...defined(change.view) } } : {}), ...(current.data || change.data ? { data: { ...current.data, ...change.data } } : {}) };
 }

@@ -47,7 +47,7 @@ export function meterCost(m: Meter, units: number): { amount: number; unknown?: 
 export const GAP_WORDS = {
   interactive: "the page shows this price only through an interactive slider or calculator, so it cannot be read from the text",
   configuration: "the page states several prices that depend on the product or configuration, so no single price applies",
-  trimmed: "the page lists more plans or price steps than Clay keeps, so a price may be missing",
+  trimmed: "the page lists more plans or price steps than Sorvi keeps, so a price may be missing",
 } as const;
 
 export function planCost(plan: Plan, a: Assumptions): PlanCost {
@@ -123,7 +123,7 @@ export function rank(models: Record<string, PricingModel | null>, a: Assumptions
       let effect: string;
       if (!v.best) effect = "No plan meets these requirements, so it is out of the ranking.";
       // A trimmed read can hide a cheaper plan or step: it never "cannot change the winner".
-      else if (v.best.unknowns.includes(GAP_WORDS.trimmed)) effect = "Its page lists more plans or price steps than Clay keeps, so it cannot be ranked: a plan or step that was left out could be cheaper.";
+      else if (v.best.unknowns.includes(GAP_WORDS.trimmed)) effect = "Its page lists more plans or price steps than Sorvi keeps, so it cannot be ranked: a plan or step that was left out could be cheaper.";
       // No known cost at all: say the price is not stated, not "costs at least $0".
       else if (cents(v.best.cost) === 0) effect = top == null ? "Its price is not stated; nothing else can be ranked either." : `Its price is not stated. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top))} per month. The winner depends on this.`;
       else if (top == null) effect = `Costs at least $${fmtN(Math.round(v.best.cost))}; nothing else can be ranked either.`;
@@ -208,7 +208,7 @@ export function stand(models: Record<string, PricingModel | null>, a: Assumption
 }
 
 /**
- * The assumptions of a saved decision for every metric of the playground. A metric that the decision does not name (it was
+ * The assumptions of a saved decision for every metric of the lab. A metric that the decision does not name (it was
  * added by a later revision) counts as 0, which is how the decision is judged: nothing is charged for it.
  */
 export function savedAssumptions(saved: Assumptions, metricIds: string[]): Assumptions {

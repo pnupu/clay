@@ -3,17 +3,19 @@ import { test } from "node:test";
 import { KEY_PLACEHOLDER, maskKey } from "./mask.ts";
 
 test("a hidden key shows its prefix and its last four characters, never the middle", () => {
-  const key = "clay_0123456789abcdefghijklmnopqrstuvwxyzABCDa1b2";
-  assert.equal(maskKey(key), "clay_••••••••••••a1b2");
+  const key = "sorvi_0123456789abcdefghijklmnopqrstuvwxyzABCDa1b2";
+  assert.equal(maskKey(key), "sorvi_••••••••••••a1b2");
   // The same length of dots for every key: the mask does not tell how long the key is.
-  assert.equal(maskKey("clay_" + "x".repeat(90) + "9zZ0"), "clay_••••••••••••9zZ0");
+  assert.equal(maskKey("sorvi_" + "x".repeat(90) + "9zZ0"), "sorvi_••••••••••••9zZ0");
+  // A key made before the rename has the prefix "clay_": it is masked the same way.
+  assert.equal(maskKey("clay_0123456789abcdefghijklmnopqrstuvwxyzABCDa1b2"), "clay_••••••••••••a1b2");
   // Nothing of the middle is in the masked text.
-  for (let i = 5; i < key.length - 4; i += 4) assert.ok(!maskKey(key).includes(key.slice(i, i + 4)), key.slice(i, i + 4));
+  for (let i = 6; i < key.length - 4; i += 4) assert.ok(!maskKey(key).includes(key.slice(i, i + 4)), key.slice(i, i + 4));
 });
 
 test("short keys show nothing of themselves; a key without a prefix shows no prefix; the placeholder stays", () => {
   // Fewer than 16 secret characters: the last four would be too large a part.
-  assert.equal(maskKey("clay_short1234"), "clay_••••••••••••");
+  assert.equal(maskKey("sorvi_short1234"), "sorvi_••••••••••••");
   assert.equal(maskKey("abcd"), "••••••••••••");
   assert.equal(maskKey("x"), "••••••••••••");
   // No underscore, or one that is far inside the key: no prefix is shown.

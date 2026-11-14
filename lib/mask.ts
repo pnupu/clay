@@ -6,15 +6,15 @@ export const KEY_PLACEHOLDER = "<your agent key>";
 const DOTS = "••••••••••••";
 
 /**
- * A key as it is shown while hidden: "clay_••••••••••••a1b2". Only the known prefix of an agent key ("clay_", the kind of
+ * A key as it is shown while hidden: "sorvi_••••••••••••a1b2". Only the known prefix of an agent key ("sorvi_", or the earlier "clay_"; the kind of
  * key, not a secret) is shown: an underscore elsewhere is a normal character of a secret. The last four characters show
  * only when at least twelve more stay hidden; a shorter key shows nothing of itself. The placeholder and an empty text
  * are returned as they are.
  */
-const PREFIX = "clay_";
+const PREFIXES = ["sorvi_", "clay_"];
 export function maskKey(key: string): string {
   if (!key || key === KEY_PLACEHOLDER) return key;
-  const prefix = key.startsWith(PREFIX) ? PREFIX : "";
+  const prefix = PREFIXES.find((p) => key.startsWith(p)) ?? "";
   const secret = key.slice(prefix.length);
   return `${prefix}${DOTS}${secret.length >= 16 ? secret.slice(-4) : ""}`;
 }

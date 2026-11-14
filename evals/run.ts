@@ -1,14 +1,14 @@
-// The eval runner: gives each request to a real agent connected to Clay, checks the result, writes the report.
+// The eval runner: gives each request to a real agent connected to Sorvi, checks the result, writes the report.
 //
 //   node evals/run.ts --base-url <url> [--subject claude|codex] [--model <id>] [--cases <id,id>] [--kind <price,none,...>]
 //                     [--one-leg <id,id|all>] [--concurrency 2] [--timeout 600] [--from <run dir>] [--label <text>]
 //                     [--tools normal --home <dir> --scratch-root <dir>]   the agent keeps the CLI's own tools (web search
-//                         and fetch, shell, files) plus Clay, as a person's agent has, and the CLI's default model unless
+//                         and fetch, shell, files) plus Sorvi, as a person's agent has, and the CLI's default model unless
 //                         --model names one. <dir> of --home is a clean home that you prepare and delete: an empty
 //                         directory with tmp/ and a copy of the CLI's login only (.claude/.credentials.json for claude,
 //                         .codex/auth.json for codex), so no operator settings, plugins, rules or MCP servers reach the
 //                         agent. The scratch directories must be outside this repository (--scratch-root). Without
-//                         --tools the agent has Clay and file tools only: that measures Clay, this measures the trigger.
+//                         --tools the agent has Sorvi and file tools only: that measures Sorvi, this measures the trigger.
 //                     [--memory <file>]   with --tools normal: the person's standing instruction. The file's text is put
 //                         into each scratch directory as CLAUDE.md (claude) or AGENTS.md (codex), where the CLI reads its
 //                         project instructions. A personal skill is installed by the operator in the clean home
@@ -17,7 +17,7 @@
 //                         case that expects a build is said in that form (a case that expects none keeps its request, so
 //                         it still shows that nothing is built unasked): build: "build me a playground for this: <request>";
 //                         play: "<request> ... let me play with it first"; slash: Claude Code's command for the server's
-//                         MCP prompt, "/mcp__clay__playground <request>"; lab, box, claylab, claybox: "build me a lab for this:",
+//                         MCP prompt, "/mcp__sorvi__lab <request>"; lab, box, claylab, claybox: "build me a lab for this:",
 //                         "build me a box for this:", and the same with "clay" before the noun. The checks are the same; the request that was
 //                         sent is kept in each result as `asked`.
 //                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
@@ -40,7 +40,7 @@ import { CAUSE, choiceHandback, creation, directAnswer, fileMatches, lastBuild, 
 import { CHROME, checkPage, personSettles, previewWithoutWebNumbers } from "./page.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES as FIXED, type Case } from "./requests.ts";
-import { parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
+import { linkTimes, parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
 
 const HERE = import.meta.dirname;
 const SECOND_LEG = "ok I'm done, go ahead";
@@ -51,6 +51,16 @@ type CaseResult = {
   firstFail: Check | null;
   checks: Check[];
   seconds: number;
+  /** Seconds from the start of the build leg to the first start_playground result (or the first create result when the agent started none): when the person can have the link. */
+  linkSeconds?: number | null;
+  /** Seconds to the first create result with a URL: when the playground is built. */
+  builtSeconds?: number | null;
+  /** Seconds to the first visible reply that holds the URL: when the person really has the link (they cannot see a tool result). */
+  saidSeconds?: number | null;
+  /** A start_playground succeeded before the agent called the create tool, and the create filled the playground it started. */
+  startedFirst?: boolean;
+  /** The agent started a playground that no create filled: the person's link never becomes the playground. */
+  orphanStart?: boolean;
   tokens: { input: number; cached: number; output: number } | null;
   agentRuns: number;
   subject: SubjectName; model: string | null;
@@ -106,7 +116,7 @@ const memory = flag("memory") ? readFileSync(resolve(flag("memory")!), "utf8") :
 const SAY: Record<string, (request: string) => string> = {
   build: (request) => `build me a playground for this: ${request}`,
   play: (request) => `${request} ... let me play with it first`,
-  slash: (request) => `/mcp__clay__playground ${request}`,
+  slash: (request) => `/mcp__sorvi__lab ${request}`,
   // Other nouns for the same ask, to measure what the word itself does (the tool names say "playground").
   lab: (request) => `build me a lab for this: ${request}`,
   box: (request) => `build me a box for this: ${request}`,
@@ -142,7 +152,7 @@ const wanted = CASES.filter((c) => (!list("cases") || list("cases")!.includes(c.
 const unknown = (list("cases") ?? []).filter((id) => !CASES.some((c) => c.id === id));
 if (unknown.length || !wanted.length) throw new Error(`No such case: ${unknown.join(", ") || "(none selected)"}. Cases: ${CASES.map((c) => c.id).join(", ")}`);
 
-// ---- Clay over MCP, for the harness itself: the tool list (is the kit there?) and the prepared playgrounds.
+// ---- Sorvi over MCP, for the harness itself: the tool list (is the kit there?) and the prepared playgrounds.
 async function mcp(method: string, params?: unknown): Promise<Record<string, unknown>> {
   const r = await fetch(baseUrl + MCP_PATH, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(key ? authHeader(key) : {}) }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(300_000) });
   const body = (await r.json().catch(() => null)) as { result?: Record<string, unknown>; error?: { message?: string } } | null;
@@ -231,6 +241,10 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
 
   // ---- First leg: the request.
   const first = await leg("leg1", asked(c));
+  if (c.expect === "build") {
+    const t = linkTimes(read(join(dir, "leg1.jsonl")) ?? ""); // from the saved transcript, so --from has it too
+    Object.assign(r, { linkSeconds: t?.link ?? null, builtSeconds: t?.built ?? null, saidSeconds: t?.said ?? null, startedFirst: t?.startedFirst ?? false, orphanStart: t?.orphanStart ?? false });
+  }
   add(toolUse(c, first.calls, prepared?.id ?? null));
 
   if (c.expect === "none") {
@@ -330,6 +344,10 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
   const ran = results.filter((r) => r.result !== "skip");
   const rate = (rs: CaseResult[]) => { const n = rs.filter((r) => r.result !== "skip"); return n.length ? `${n.filter((r) => r.result === "pass").length} of ${n.length} (${Math.round((100 * n.filter((r) => r.result === "pass").length) / n.length)}%)` : "none run"; };
   const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? Math.round((s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2) : null; };
+  /** A median for a sentence: "12 s", or "none" when no build has the value (no visible reply held the link). */
+  const medianOf = (xs: (number | null | undefined)[]) => { const m = median(xs.filter((x): x is number => x != null)); return m == null ? "none" : `${m} s`; };
+  const linked = ran.filter((r) => r.linkSeconds != null);
   const tokens = (t: CaseResult["tokens"]) => (t ? `${k(t.input + t.output)} (+${k(t.cached)} cached)` : "not reported");
   const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ");
   const kinds = [...new Set(results.map((r) => r.kind))];
@@ -338,9 +356,10 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
   for (const r of failed) { const cause = CAUSE[r.firstFail!.id] ?? "other"; causes.set(cause, [...(causes.get(cause) ?? []), r]); }
   const shots = results.filter((r) => r.shot);
   const md = [
-    `# Clay evals: run ${meta.runId}`,
+    `# Sorvi evals: run ${meta.runId}`,
     "",
     `- First-try pass rate: **${rate(results)}**${results.length > ran.length ? `; ${results.length - ran.length} skipped` : ""}`,
+    ...(linked.length ? [`- Time until the link exists (the build leg's start to the first start_playground result, or to the first create result when the agent started none), median of ${linked.length} build(s): **${median(linked.map((r) => r.linkSeconds!))} s**. Time to the built playground (the first create result with a URL), median of ${linked.filter((r) => r.builtSeconds != null).length}: ${medianOf(linked.map((r) => r.builtSeconds))}. The link in a visible reply (the person cannot see a tool result), median of ${linked.filter((r) => r.saidSeconds != null).length}: **${medianOf(linked.map((r) => r.saidSeconds))}**. Their total time over all legs, median: ${median(linked.map((r) => r.seconds))} s.`, `- start_playground first (a start succeeded before the create tool was called, and the create filled it): **${linked.filter((r) => r.startedFirst).length} of ${linked.length}** build(s).${ran.some((r) => r.orphanStart) ? ` A started playground that no create filled: ${ran.filter((r) => r.orphanStart).map((r) => r.id).join(", ")}.` : ""}`] : []),
     `- Subject: ${meta.subject}, model ${[...new Set(ran.map((r) => r.model).filter(Boolean))].join(", ") || meta.model || "the CLI's default"}. Server: ${meta.baseUrl} (kit: ${meta.kit ? "yes" : "no"}).${meta.label ? ` ${meta.label}.` : ""}`,
     `- Harness commit ${meta.commit} on ${meta.branch}, started ${meta.startedAt}. Concurrency ${meta.concurrency}, timeout ${meta.timeoutSeconds} s per agent run. Agent runs: ${results.reduce((n, r) => n + r.agentRuns, 0)}.`,
     `- Command: \`${meta.command}\``,
@@ -355,9 +374,9 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
     "",
     "## Cases",
     "",
-    "| Case | Result | First failing check | Time | Tokens in+out |",
-    "|---|---|---|---|---|",
-    ...results.map((r) => `| ${r.id} | ${r.result === "pass" ? "PASS" : r.result === "fail" ? "**FAIL**" : "skip"} | ${r.result === "skip" ? cell(r.skipReason ?? "") : r.firstFail ? cell(`${r.firstFail.id}: ${r.firstFail.reason}`) : ""} | ${r.result === "skip" ? "" : `${r.seconds} s`} | ${r.result === "skip" ? "" : tokens(r.tokens)} |`),
+    "| Case | Result | First failing check | Link exists after | Link said after | Built after | Time | Tokens in+out |",
+    "|---|---|---|---|---|---|---|---|",
+    ...results.map((r) => `| ${r.id} | ${r.result === "pass" ? "PASS" : r.result === "fail" ? "**FAIL**" : "skip"} | ${r.result === "skip" ? cell(r.skipReason ?? "") : r.firstFail ? cell(`${r.firstFail.id}: ${r.firstFail.reason}`) : ""} | ${r.linkSeconds != null ? `${r.linkSeconds} s${r.startedFirst ? " (start)" : ""}${r.orphanStart ? " (a start was not filled)" : ""}` : ""} | ${r.saidSeconds != null ? `${r.saidSeconds} s` : ""} | ${r.builtSeconds != null ? `${r.builtSeconds} s` : ""} | ${r.result === "skip" ? "" : `${r.seconds} s`} | ${r.result === "skip" ? "" : tokens(r.tokens)} |`),
     "",
     "## Failures by cause",
     "",
@@ -374,7 +393,7 @@ function writeReport(dir: string, meta: Meta, results: CaseResult[]) {
   ].join("\n");
   writeFileSync(join(dir, "report.md"), md);
   writeFileSync(join(dir, "results.json"), JSON.stringify({ meta, results }, null, 1));
-  writeFileSync(join(dir, "contact.html"), `<!doctype html><meta charset="utf-8"><title>Clay evals ${meta.runId}</title><style>body{font:14px system-ui;margin:16px;background:#111;color:#eee}main{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:16px}figure{margin:0}img{width:100%;border:1px solid #444}.fail{color:#f88}.pass{color:#8f8}</style><h1>Clay evals ${meta.runId}: ${rate(results)}</h1><main>${shots.map((r) => `<figure><figcaption class="${r.result}">${r.id}: ${r.result}${r.firstFail ? ` (${r.firstFail.id})` : ""}</figcaption><a href="${r.shot}"><img src="${r.shot}" loading="lazy"></a></figure>`).join("")}</main>`);
+  writeFileSync(join(dir, "contact.html"), `<!doctype html><meta charset="utf-8"><title>Sorvi evals ${meta.runId}</title><style>body{font:14px system-ui;margin:16px;background:#111;color:#eee}main{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:16px}figure{margin:0}img{width:100%;border:1px solid #444}.fail{color:#f88}.pass{color:#8f8}</style><h1>Sorvi evals ${meta.runId}: ${rate(results)}</h1><main>${shots.map((r) => `<figure><figcaption class="${r.result}">${r.id}: ${r.result}${r.firstFail ? ` (${r.firstFail.id})` : ""}</figcaption><a href="${r.shot}"><img src="${r.shot}" loading="lazy"></a></figure>`).join("")}</main>`);
 }
 
 /** Make sure the agent key is in no saved file. Returns the number of occurrences that were removed. */

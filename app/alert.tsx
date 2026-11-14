@@ -6,7 +6,7 @@ type View = { address: string; last: { at: string; ok: boolean; status: number |
 const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 
 /**
- * "Tell me when this stops holding": the owner's alert address for this playground's saved decision (lib/alert.ts). The
+ * "Tell me when this stops holding": the owner's alert address for this lab's saved decision (lib/alert.ts). The
  * address is never sent back to the page: after saving, only its masked form and the result of the last message show.
  */
 export default function AlertSetting({ api }: { api: string }) {
@@ -36,7 +36,7 @@ export default function AlertSetting({ api }: { api: string }) {
       {alert ? (
         <>
           <p className="small" style={{ margin: "0 0 6px" }}>
-            After each re-check, Clay posts one message to <code>{alert.address}</code> when this decision stops holding, and one when it holds again.
+            After each re-check, Sorvi posts one message to <code>{alert.address}</code> when this decision stops holding, and one when it holds again.
           </p>
           <p className={`small ${last && !last.ok ? "bad" : "muted"}`} data-alert-last style={{ margin: "0 0 6px" }}>
             {!last ? "No message sent yet." : last.ok ? `Last message (${last.kind === "test" ? "a test" : "a change"}) sent ${when(last.at)}.` : `Last message (${last.kind === "test" ? "a test" : "a change"}) failed ${last.status ? `with status ${last.status}` : "with no answer"}, ${when(last.at)}.`}

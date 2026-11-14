@@ -69,13 +69,13 @@ export type Exploration = {
 };
 
 /**
- * Web reads in progress for a price playground: a first build, a revision or a re-check. The call that started them
+ * Web reads in progress for a price lab: a first build, a revision or a re-check. The call that started them
  * answers before they end (an agent's client cuts a tool call at about 60 s), and the sources fill in while this stands.
  */
 export type Work = { id: string; kind: "build" | "recheck"; startedAt: string; pending: string[]; finishedAt: string | null; stop: string | null };
 /** A function instance lives at most 300 s (maxDuration). Work that is older and not finished was cut off. */
 const WORK_STALE_MS = 330_000;
-/** Where the web reads of a playground stand: running, stalled (cut off before the end), done, or null when none were tracked. */
+/** Where the web reads of a lab stand: running, stalled (cut off before the end), done, or null when none were tracked. */
 export function workStatus(p: Pick<Playground, "work">, now = Date.now()) {
   const w = p.work;
   if (!w) return null;
@@ -84,7 +84,7 @@ export function workStatus(p: Pick<Playground, "work">, now = Date.now()) {
 }
 
 /**
- * Start tracked work on some sources. Work that still runs on the playground (a build that a revision overlaps) keeps
+ * Start tracked work on some sources. Work that still runs on the lab (a build that a revision overlaps) keeps
  * its sources in the pending list: they are still being read, and the report must not call them "not read".
  */
 export function startWork(p: Pick<Playground, "work">, id: string, kind: Work["kind"], ids: string[], now = Date.now()): void {
@@ -101,7 +101,7 @@ export function sourceArrived(p: Pick<Playground, "work"> | undefined, source: s
 /** The run that started the work `id` has ended: its own sources are no longer pending, whatever became of them. */
 export function endWork(p: Pick<Playground, "work"> | undefined, id: string, ids: string[], stop: string | null, now = Date.now()): void {
   const w = p?.work;
-  if (!w || w.id !== id) return; // newer work on the same playground keeps its own mark
+  if (!w || w.id !== id) return; // newer work on the same lab keeps its own mark
   w.pending = w.pending.filter((x) => !ids.includes(x));
   w.stop = stop ?? w.stop;
   if (!w.pending.length) w.finishedAt ??= new Date(now).toISOString();
@@ -116,25 +116,35 @@ export type Playground = {
   exploration: Exploration | null;
   /** The web reads that last ran, or that run now (workStatus()). */
   work?: Work | null;
-  /** A preview playground (lib/kit.ts): controls, a sandboxed preview and outputs. Its `domain` holds only the id and the title. */
+  /** A preview lab (lib/kit.ts): controls, a sandboxed preview and outputs. Its `domain` holds only the id and the title. */
   kit?: KitState;
   /** The Clerk user id of the person whose agent created it. Missing: the admin's (lib/accounts.ts). */
   owner?: string | null;
   /** Marked by the admin as an example: anyone may open and use it without signing in. Missing: only the seed is one. */
   example?: boolean;
-  /** The one example that the landing page embeds under "Try it here" (lib/accounts.ts, markExample). At most one playground has it. */
+  /** The one example that the landing page embeds under "Try it here" (lib/accounts.ts, markExample). At most one lab has it. */
   featured?: boolean;
   /** When a revision by its owner cleared the example mark (lib/accounts.ts, unpublishOnRevision); gone when marked again. */
   exampleCleared?: string | null;
-  /** What the agent left out of this playground and why, as it said (spec left_out). Text from the agent: shown as text. */
+  /** What the agent left out of this lab and why, as it said (spec left_out). Text from the agent: shown as text. */
   leftOut?: { name: string; reason: string; at: string }[];
-  /** Writes that arrived on this playground while it was a published example and were discarded (accounts.ts, keepPublished). Owner only. */
+  /** Writes that arrived on this lab while it was a published example and were discarded (accounts.ts, keepPublished). Owner only. */
   discardedWrites?: Discarded[];
   /** Results of a webhook monitor's re-check that the owner's storage bounds kept out (accounts.ts, boundOwners). Owner only. */
   storageKept?: { at: string }[];
   /** Where to tell the owner that the saved decision stopped holding or holds again (lib/alert.ts). A secret: owner only. */
   alert?: Alert | null;
+  /**
+   * Started and not built (start_playground, lib/started.ts): the person has the link, the agent is still working, and
+   * the page shows this line. `domain` holds only the id and the title. A create by its owner with this id replaces the
+   * whole lab (insertPlayground), so no other field of a started lab outlives it. Text from the agent:
+   * shown as text.
+   */
+  started?: { workingOn: string; at: string };
 };
+
+/** A started lab that no create has filled is dropped this long after its last `working_on` line (parse()). */
+export const STARTED_TTL_MS = 24 * 3_600_000;
 
 export type Store = {
   playgrounds: Record<string, Playground>;
@@ -172,7 +182,7 @@ export const publicBase = (): string | null => process.env.PUBLIC_BASE_URL?.repl
 const FILE = ".data/store.json";
 const BLOB = "clay/store.json";
 const onBlob = () => !!process.env.BLOB_STORE_ID || !!process.env.BLOB_READ_WRITE_TOKEN;
-/** A new playground belongs to the signed-in person of the current request; the admin's has no owner. */
+/** A new lab belongs to the signed-in person of the current request; the admin's has no owner. */
 export const newPlayground = (domain: Domain): Playground => ({ domain, createdAt: new Date().toISOString(), sources: {}, decision: null, events: [], exploration: null, ...(currentUserId() ? { owner: currentUserId() } : {}) });
 
 function parse(text: string | null): Store {
@@ -180,12 +190,14 @@ function parse(text: string | null): Store {
   try {
     raw = JSON.parse(text ?? "");
   } catch {}
-  // No prototype: an id such as "__proto__" or "constructor" from a URL must not look like a playground.
+  // No prototype: an id such as "__proto__" or "constructor" from a URL must not look like a lab.
   const s: Store = { playgrounds: Object.assign(Object.create(null), raw.playgrounds), webhookEventIds: raw.webhookEventIds ?? [], demoPage: raw.demoPage ?? null, budget: raw.budget ?? null, rev: raw.rev ?? null, users: Object.assign(Object.create(null), raw.users) };
-  // The auth-provider playground is the seed: it always exists and its domain comes from the code.
-  // A store written before playgrounds existed has its sources at the top level; they belong to the seed.
+  // The auth-provider lab is the seed: it always exists and its domain comes from the code.
+  // A store written before labs existed has its sources at the top level; they belong to the seed.
   const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), owner: null, sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
   seed.domain = DOMAIN;
+  // An abandoned start: nobody built it within STARTED_TTL_MS. It is gone for every reader, and the next write stores that.
+  for (const [id, p] of Object.entries(s.playgrounds)) if (p.started && !(Date.now() - Date.parse(p.started.at) < STARTED_TTL_MS)) delete s.playgrounds[id];
   return s;
 }
 
@@ -265,7 +277,7 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
   return run;
 }
 
-/** State of one playground for the browser: no webhook secrets. */
+/** State of one lab for the browser: no webhook secrets. */
 export function publicState(s: Store, id: string, owner = true) {
   const p = s.playgrounds[id];
   const sources = Object.fromEntries(Object.entries(p.sources).map(([k, src]) => [k, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
@@ -274,32 +286,45 @@ export function publicState(s: Store, id: string, owner = true) {
 export type PublicState = ReturnType<typeof publicState>;
 
 /**
- * The id a new playground gets: the wanted one, or, when it is taken, the wanted one with a short random suffix. A create
- * never fails on a taken id, so its answer cannot tell a caller that somebody else's playground exists.
+ * The id a new lab gets: the wanted one, or, when it is taken, the wanted one with a short random suffix. A create
+ * never fails on a taken id, so its answer cannot tell a caller that somebody else's lab exists.
  */
 export function freeId(wanted: string, taken: (id: string) => boolean, random = () => randomBytes(3).toString("hex")): string {
   for (let id = wanted; ; id = `${wanted.slice(0, 33)}-${random()}`) if (!taken(id)) return id;
 }
 
+/** The refusal when the current caller may not hold one more lab (a create, or a start: lib/started.ts), or null: the person's cap, then the deployment's bounds. */
+export function oneMoreRefusal(s: Store): string | null {
+  const owner = currentUserId();
+  return playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length, undefined, Object.values(s.playgrounds).some((p) => owner && p.owner === owner));
+}
+
 /**
- * Insert a new playground in ONE store update: the owner's allowance is checked, a free id is taken and the playground is
+ * Insert a new lab in ONE store update: the owner's allowance is checked, a free id is taken and the lab is
  * stored together, so parallel creates by one person cannot pass the cap side by side. Nothing slow (a web read) happens
  * before it: a refused create has spent nothing.
  */
-export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean } | { refused: string }> {
+export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean; filled?: boolean } | { refused: string }> {
   // The storage bounds are checked on the size the insert leaves (update(), boundStorage): their refusal is an answer.
   return update((s) => {
-    // A repeated create (the answer of the first one was lost): the caller's own playground with exactly this spec, under
+    // A repeated create (the answer of the first one was lost): the caller's own lab with exactly this spec, under
     // the id asked for or under that id with a suffix (the first create may have been renamed), is the one they mean.
     // Nothing is inserted. "Own" is the same owner, not "may write": the admin may write everything, and must not be
-    // handed somebody else's playground.
+    // handed somebody else's lab.
     const owner = currentUserId();
     const wanted = make(domain);
     const spec = (p: Playground) => JSON.stringify([{ ...p.domain, id: "" }, p.kit?.kit ?? null]);
     const renamed = `${domain.id.slice(0, 33)}-`;
-    const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && (p.owner ?? null) === owner && spec(p) === spec(wanted));
+    const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && !p.started && (p.owner ?? null) === owner && spec(p) === spec(wanted));
     if (mine) return { id: mine.domain.id, existed: true };
-    const refused = playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length, undefined, Object.values(s.playgrounds).some((p) => owner && p.owner === owner));
+    // The caller's own started lab with this id (start_playground): the build lands in its place, at the link the
+    // person already has. It counted toward the cap since it was started; the storage bounds are checked as for a create.
+    const here = s.playgrounds[domain.id];
+    if (here?.started && (here.owner ?? null) === owner) {
+      s.playgrounds[domain.id] = make(domain);
+      return { id: domain.id, filled: true };
+    }
+    const refused = oneMoreRefusal(s);
     if (refused) return { refused };
     const id = freeId(domain.id, (x) => !!s.playgrounds[x]);
     s.playgrounds[id] = make({ ...domain, id });

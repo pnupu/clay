@@ -47,7 +47,7 @@ test("view.map: only on a preview, kept through a read and a revision, and clay.
   // A revision that sends a view without the flag turns the map off, and view.js then no longer passes.
   const has = (s: unknown, part: RegExp) => assert.ok(errors(s).some((e) => part.test(e)), `no error like ${part} in:\n${errors(s).join("\n")}`);
   has({ ...MAP_EXAMPLE, view: { ...MAP_EXAMPLE.view, map: undefined } }, /view\.js: clay\.map\(\) needs view\.map: true/);
-  // A price playground has no map.
+  // A price lab has no map.
   const price = { id: "email-api", title: "Which transactional email API should we use?", view: { type: "price_ranking", map: true }, data: { price_pages: { product: "transactional email API", metrics: [{ id: "emails", label: "Emails per month", unit: "emails", describe: "Emails sent per month through the API.", min: 1000, max: 500000, initial: 40000 }], vendors: [{ id: "resend", name: "Resend", pricing_url: "https://resend.com/pricing" }, { id: "postmark", name: "Postmark", domain: "postmarkapp.com" }] } } };
   has(price, /view\.map: only a preview view has map/);
   has({ ...MAP_EXAMPLE, view: { ...MAP_EXAMPLE.view, map: "yes" } }, /view\.map/);
@@ -97,6 +97,18 @@ test("a price spec goes to the price engine; price and preview parts cannot be m
   assert.ok(errors({ ...price, controls: BUTTON_EXAMPLE.controls }).some((e) => /controls: the price_ranking view brings its own controls/.test(e)));
   assert.ok(errors({ ...BUTTON_EXAMPLE, data: { ...BUTTON_EXAMPLE.data, price_pages: price.data!.price_pages } }).some((e) => /a preview view has no price ranking/.test(e)));
   assert.ok(errors({ ...price, data: { price_pages: { ...price.data!.price_pages!, vendors: [price.data!.price_pages!.vendors[0]] } } }).some((e) => e.startsWith("data.price_pages.vendors")));
+});
+
+test("a revision changes part of the view: the fields given replace, the others stay, and the type may be left out", () => {
+  const was = toSpec({ ...newPlayground({ id: "spring", question: SPRING_EXAMPLE.title, product: "", metrics: [], features: [], vendors: [] }), kit: { kit: kitOf(SPRING_EXAMPLE) } as KitState });
+  const merged = mergeSpec(was, { view: { js: "clay.onChange(() => {});", height: 400 } }) as Spec;
+  assert.deepEqual(merged.view, { ...was.view, js: "clay.onChange(() => {});", height: 400 });
+  assert.equal(merged.view.html, SPRING_EXAMPLE.view.html);
+  assert.equal(merged.view.type, "preview");
+  // The merged spec is validated like a new one: a field that breaks the view is refused, as before.
+  assert.ok(errors(mergeSpec(was, { view: { height: 5000 } })).some((e) => e.startsWith("view.height")));
+  // A revision without a view leaves it alone.
+  assert.deepEqual((mergeSpec(was, { title: "Another title" }) as Spec).view, was.view);
 });
 
 test("values from the browser: only values a control can have are stored; outputs follow them", () => {
@@ -233,7 +245,7 @@ test("the worked example with live web facts passes the validator, and data.web 
   // Bounds, before any element is validated.
   assert.deepEqual(errorsOf(data(Array.from({ length: 5000 }, () => ({})))), ["data.web: at most 6 entries, got 5000. Nothing was checked or created."]);
   assert.match(errorsOf(data([{ ...MODEL_EXAMPLE.data!.web![0], rows: { describe: "one row per model", fields: Array.from({ length: 300 }, () => ({})) } }, MODEL_EXAMPLE.data!.web![1]]))[0], /data\.web\.0\.rows\.fields: at most 20 entries, got 300/);
-  // A private or non-https page is refused; a price playground cannot carry data.web.
+  // A private or non-https page is refused; a price lab cannot carry data.web.
   assert.match(errorsOf(data([{ ...MODEL_EXAMPLE.data!.web![0], domain: undefined, find: undefined, url: "http://169.254.169.254/latest" }, MODEL_EXAMPLE.data!.web![1]])).join("\n"), /must be a full https/);
   assert.match(errorsOf({ id: "price-with-web", title: "Which email service should we use?", view: { type: "price_ranking" }, data: { web: MODEL_EXAMPLE.data!.web } }).join("\n"), /data\.web: only a preview view can use it/);
   // The web spec is part of what decides how the preview runs: changing a source is not a words-only revision.
@@ -295,19 +307,19 @@ test("a preview that reads web pages or a brand and builds markup from a string 
   };
   for (const [name, js] of Object.entries(sinks)) {
     const r = kit(js, { web });
-    assert.equal(r.ok, true, `${name}: a warning, the playground is still built (${JSON.stringify(r.errors)})`);
+    assert.equal(r.ok, true, `${name}: a warning, the lab is still built (${JSON.stringify(r.errors)})`);
     const w = r.warnings!.filter((x) => x.startsWith("view.js: " + name));
     assert.equal(w.length, 1, name);
-    assert.match(w[0], /this playground reads web pages \(data\.web\)/);
+    assert.match(w[0], /this lab reads web pages \(data\.web\)/);
     assert.match(w[0], /textContent/);
   }
   // A brand counts the same: its title and colour names are text from the web.
   const brand = kit('document.getElementById("out").innerHTML = "<i>" + clay.data.brand.title + "</i>";', { brand: { domain: "stripe.com" } });
   assert.equal(brand.ok, true);
-  assert.ok(brand.warnings!.some((x) => /^view\.js: innerHTML builds markup from a string, and this playground reads a brand \(data\.brand\)/.test(x)));
+  assert.ok(brand.warnings!.some((x) => /^view\.js: innerHTML builds markup from a string, and this lab reads a brand \(data\.brand\)/.test(x)));
   // Both sinks are named once each; bracket access is seen too.
   assert.match(markupWarning({ preview: { js: 'a.innerHTML = x; b["insertAdjacentHTML"]("beforeend", y); c.innerHTML = z;' }, web, brand: null })!, /^view\.js: innerHTML, insertAdjacentHTML build markup/);
-  // No warning: the same data written as text; or markup built in a playground that reads nothing from the web.
+  // No warning: the same data written as text; or markup built in a lab that reads nothing from the web.
   assert.deepEqual(kit('document.getElementById("out").textContent = clay.data.web.prices.map((r) => r.model).join(", ");', { web }).warnings!.filter((x) => /markup/.test(x)), []);
   assert.deepEqual(kit('document.getElementById("out").innerHTML = "<b>" + clay.values.size + "</b>";', {}).warnings!.filter((x) => /markup/.test(x)), []);
   assert.equal(markupWarning({ preview: { js: "el.innerHTML = s;" }, web: [], brand: null }), null);

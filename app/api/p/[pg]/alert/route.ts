@@ -3,7 +3,7 @@ import { ALERT_REFUSED, alertAddress, alertView, plain, sendAlert } from "@/lib/
 import { load, publicBase, update } from "@/lib/store";
 
 /**
- * The alert address of one playground (lib/alert.ts): where its owner is told that the saved decision stopped holding or
+ * The alert address of one lab (lib/alert.ts): where its owner is told that the saved decision stopped holding or
  * holds again. Owner and operator only (refused()); a visitor or another person gets nothing, also on an example. The
  * answer never holds the address: only its masked form and the result of the last message.
  *   GET                         -> { alert: { address, last } | null }
@@ -16,7 +16,7 @@ export async function GET(req: Request, { params }: Ctx) {
   if (no) return no;
   const { pg } = await params;
   const p = (await load()).playgrounds[pg];
-  if (!p) return Response.json({ error: "Playground not found." }, { status: 404 });
+  if (!p) return Response.json({ error: "Lab not found." }, { status: 404 });
   return Response.json({ alert: alertView(p.alert) });
 }
 
@@ -28,12 +28,12 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!b || typeof b !== "object") return Response.json({ error: 'Send {"url": "<address>"}, {"url": null} or {"test": true}.' }, { status: 400 });
   if (b.test === true) {
     const p = (await load()).playgrounds[pg];
-    if (!p) return Response.json({ error: "Playground not found." }, { status: 404 });
-    if (!p.alert) return Response.json({ error: "No alert address is saved for this playground." }, { status: 400 });
+    if (!p) return Response.json({ error: "Lab not found." }, { status: 404 });
+    if (!p.alert) return Response.json({ error: "No alert address is saved for this lab." }, { status: 400 });
     // One test message a minute: the server posts to the address each time.
     if (p.alert.last?.kind === "test" && Date.now() - Date.parse(p.alert.last.at) < 60_000) return Response.json({ error: "A test message was sent less than a minute ago. Wait a minute, then try again.", alert: alertView(p.alert) }, { status: 429 });
     const url = p.alert.url;
-    const r = await sendAlert(url, `Clay test message: alerts for "${plain(p.domain.question, 120)}" come to this channel. When its saved decision stops holding, or holds again, Clay says so here. ${publicBase() ?? new URL(req.url).origin}/p/${pg}`);
+    const r = await sendAlert(url, `Sorvi test message: alerts for "${plain(p.domain.question, 120)}" come to this channel. When its saved decision stops holding, or holds again, Sorvi says so here. ${publicBase() ?? new URL(req.url).origin}/p/${pg}`);
     const alert = await update((s) => {
       const a = s.playgrounds[pg]?.alert;
       if (a && a.url === url) a.last = { at: new Date().toISOString(), ok: r.ok, status: r.status, kind: "test" };
@@ -52,7 +52,7 @@ export async function POST(req: Request, { params }: Ctx) {
     else delete p.alert;
     return alertView(p.alert);
   });
-  if (alert === undefined) return Response.json({ error: "Playground not found." }, { status: 404 });
+  if (alert === undefined) return Response.json({ error: "Lab not found." }, { status: 404 });
   return Response.json({ alert });
 }
 

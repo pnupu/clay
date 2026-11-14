@@ -135,7 +135,7 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
 /** The caller of the page being rendered (server components): the admin's owner cookie, a Clerk session, or a visitor. */
 export const viewer = async (): Promise<Actor> => (await identify(await headers())).actor;
 
-/** May this request open the playground, and change it? Both false when it does not exist. `bad`: see badKey(), also for an unknown id. */
+/** May this request open the lab, and change it? Both false when it does not exist. `bad`: see badKey(), also for an unknown id. */
 export async function access(req: Request, pg: string): Promise<{ read: boolean; write: boolean; bad: Bad }> {
   const { actor, bad } = await identify(req.headers, req);
   const p = (await load()).playgrounds[pg];
@@ -148,24 +148,24 @@ export function badKey(bad: Bad, req: Request): Response | null {
   const connect = `${publicBase() ?? new URL(req.url).origin}/connect`;
   if (bad === "blocked") return Response.json({ error: `Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from ${connect}` }, { status: 429 });
   if (bad === "test") return Response.json({ error: `${TEST_ACCOUNT_LOOK_ONLY} ${connect.replace(/\/connect$/, "/sign-up")}` }, { status: 403 });
-  if (bad === "revoked") return Response.json({ error: `This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in and create a new key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
-  if (bad === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
+  if (bad === "revoked") return Response.json({ error: `This agent key no longer works: its Sorvi account was deleted or blocked, or it may not hold a key. Sign in and create a new key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  if (bad === "unavailable") return Response.json({ error: "Sorvi could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
   if (bad === "key") return Response.json({ error: `This key is not valid. It may have been regenerated or revoked. Get a new agent key at ${connect}` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   return null;
 }
 
 /** Routes only the admin may call: the demo page editor, webhook monitors (their runs are not counted per person) and example marks. */
 const ADMIN_ONLY = /^\/api\/(demo(\/|$)|p\/[^/]+\/(watch|example)(\/|$))/;
-const noAccess = () => Response.json({ error: "Playground not found, or it is private. Sign in as its owner, or use your own agent key." }, { status: 404 });
+const noAccess = () => Response.json({ error: "Lab not found, or it is private. Sign in as its owner, or use your own agent key." }, { status: 404 });
 
 export type Ctx = { params: Promise<{ pg: string }> };
 
 
-/** The state of one playground as JSON, or 404 when it does not exist. `owner` tells the page whether its write buttons will work. */
+/** The state of one lab as JSON, or 404 when it does not exist. `owner` tells the page whether its write buttons will work. */
 export async function stateResponse(pg: string, error: string | null = null, status = error ? 502 : 200, owner = true) {
   const s = await load();
-  if (!s.playgrounds[pg]) return Response.json({ error: `Playground "${pg}" does not exist.` }, { status: 404 });
-  // `version`: what the operator sends when they mark this playground as an example (lib/accounts.ts, markExample).
+  if (!s.playgrounds[pg]) return Response.json({ error: `Lab "${pg}" does not exist.` }, { status: 404 });
+  // `version`: what the operator sends when they mark this lab as an example (lib/accounts.ts, markExample).
   return Response.json({ ...publicState(s, pg, owner), version: viewVersion(s.playgrounds[pg]), error }, { status });
 }
 
@@ -179,13 +179,13 @@ export function storageFull(e: unknown): Response {
 /**
  * The guard of every route that changes state or spends Context.dev requests. Returns the refusal, or null when the request
  * may go on. Call it as `const no = await refused(req); if (no) return no;` before anything else in the handler: it binds the
- * caller to the request (lib/accounts.ts), so a playground created later in the handler gets its owner and every
+ * caller to the request (lib/accounts.ts), so a lab created later in the handler gets its owner and every
  * Context.dev request counts against that person's daily cap.
  * 1. Browsers send Origin on such requests; agents and scripts do not. A request with an Origin must come from the page of
  *    this app itself, and the app must be addressed by localhost, by an IP address or by its public host name, so a foreign
  *    name that is made to resolve to this machine is refused too.
  * 2. The caller (identify()): a visitor may not write anything. The admin may do everything.
- * 3. A route under /api/p/<id>/ may change that playground only for its owner and the admin; the playground id is read from
+ * 3. A route under /api/p/<id>/ may change that lab only for its owner and the admin; the lab id is read from
  *    the URL, so every route there is covered. A few routes are for the admin only (ADMIN_ONLY).
  * The webhook route does not call this: its signature is its authentication.
  */
@@ -213,7 +213,7 @@ export async function refused(req: Request): Promise<Response | null> {
   if (actor.kind === "user" && actor.via === "session" && !(req.method === "DELETE" && new URL(req.url).pathname === "/api/agent-key")) {
     const confirmed = await confirmPerson(actor.userId, (await load()).users[actor.userId]?.checkedAt);
     if (confirmed === "test") return Response.json({ error: `${TEST_ACCOUNT_LOOK_ONLY} ${`${publicBase() ?? new URL(req.url).origin}/sign-up`}` }, { status: 403 });
-    if (confirmed === "revoked") return Response.json({ error: "This account is deleted or blocked, so it cannot build or change playgrounds." }, { status: 403 });
+    if (confirmed === "revoked") return Response.json({ error: "This account is deleted or blocked, so it cannot build or change labs." }, { status: 403 });
     if (confirmed === "unavailable") return badKey("unavailable", req);
   }
   if (actor.kind === "visitor") return Response.json({ error: `Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one at ${publicBase() ?? new URL(req.url).origin}/connect` }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
@@ -224,7 +224,7 @@ export async function refused(req: Request): Promise<Response | null> {
   } catch {
     return Response.json({ error: "Malformed path" }, { status: 400 });
   }
-  if (ADMIN_ONLY.test(path) && actor.kind !== "admin") return Response.json({ error: "Only the operator of this Clay deployment can do this." }, { status: 403 });
+  if (ADMIN_ONLY.test(path) && actor.kind !== "admin") return Response.json({ error: "Only the operator of this Sorvi deployment can do this." }, { status: 403 });
   let pg: string | null = null;
   try {
     pg = /^\/api\/p\/([^/]+)/.exec(path)?.[1] || null;
@@ -233,6 +233,8 @@ export async function refused(req: Request): Promise<Response | null> {
   const p = pg ? s?.playgrounds[pg] : undefined;
   const published = p ? publishedRefusal(actor, p, pg!) : null;
   if (published) return Response.json({ error: published }, { status: 403 });
-  if (p && !canWrite(actor, p)) return canRead(actor, p, pg!) ? Response.json({ error: `This is an example playground: move the controls as you like, but only the operator can save or re-check it. ${agentConnected(actor, s?.users ?? {}) ? "Ask" : "Connect"} your agent to build your own.` }, { status: 403 }) : noAccess();
+  // Started and not built (lib/started.ts): there is nothing to settle, read or mark yet. Its owner may still delete it.
+  if (p?.started && canWrite(actor, p) && !(req.method === "DELETE" && /^\/api\/p\/[^/]+\/?$/.test(path))) return Response.json({ error: "This lab is started and not built yet. Its agent builds it with create_playground." }, { status: 409 });
+  if (p && !canWrite(actor, p)) return canRead(actor, p, pg!) ? Response.json({ error: `This is an example lab: move the controls as you like, but only the operator can save or re-check it. ${agentConnected(actor, s?.users ?? {}) ? "Ask" : "Connect"} your agent to build your own.` }, { status: 403 }) : noAccess();
   return null;
 }

@@ -22,7 +22,7 @@ test("a collection over its bound is refused before any element is validated", (
   assert.deepEqual(!r.ok && r.errors, ["controls: at most 12 entries, got 10000. Nothing was checked or created."]);
   assert.ok(performance.now() - t0 < 50, "no element was validated");
   assert.equal(JSON.stringify(r).length < 200, true);
-  // Every collection has a bound, also the nested ones and the ones of a price playground.
+  // Every collection has a bound, also the nested ones and the ones of a price lab.
   const options = Array.from({ length: 500 }, (_, i) => ({ value: `v${i}` }));
   assert.match(oversize(preview("x", { controls: [{ id: "a", type: "select", options }] }))[0], /controls\.0\.options: at most 12 entries, got 500/);
   assert.match(oversize({ data: { price_pages: { vendors: Array(1000).fill({}) } } })[0], /data\.price_pages\.vendors: at most 6 entries, got 1000/);
@@ -68,13 +68,13 @@ test("a taken id gets a suffix, inside the length limit of an id", () => {
   assert.notEqual(got, long);
 });
 
-test("parallel creates by one person cannot pass the playground cap, and a taken id never fails or leaks", async () => {
+test("parallel creates by one person cannot pass the lab cap, and a taken id never fails or leaks", async () => {
   process.env.CLAY_USER_PLAYGROUNDS = "20";
   const parsed = parseSpec(preview("mine"));
   assert.ok(parsed.ok);
   if (!parsed.ok) return;
   // The step every create path shares (lib/pipeline.ts): one store update that checks the allowance, takes a free id and
-  // inserts. Each create is another playground (another title): identical ones by one person are one playground.
+  // inserts. Each create is another lab (another title): identical ones by one person are one lab.
   let n = 0;
   const create = () => insertPlayground({ ...parsed.domain, question: `${parsed.domain.question} (${++n})` }, (d) => newPlayground(d));
   // Somebody else already owns "mine".
@@ -87,8 +87,8 @@ test("parallel creates by one person cannot pass the playground cap, and a taken
   const refused = results.flatMap((r) => ("refused" in r ? [r.refused] : []));
   assert.equal(created.length, 20);
   assert.equal(refused.length, 5);
-  assert.match(refused[0], /limit of 20 playgrounds/);
-  // Every created playground has its own id, none is the taken one, and the answer says nothing about the other owner.
+  assert.match(refused[0], /limit of 20 labs/);
+  // Every created lab has its own id, none is the taken one, and the answer says nothing about the other owner.
   assert.equal(new Set(created).size, 20);
   assert.ok(created.every((id) => /^mine-[0-9a-f]{6}$/.test(id)));
   const stored = Object.values((await load()).playgrounds);
@@ -96,16 +96,16 @@ test("parallel creates by one person cannot pass the playground cap, and a taken
   assert.equal(stored.filter((p) => p.owner === "other").length, 1);
 });
 
-test("a repeated create of the caller's own playground with the same spec is the same playground; anything else gets a new id", async () => {
+test("a repeated create of the caller's own lab with the same spec is the same lab; anything else gets a new id", async () => {
   const a = parseSpec(preview("idem"));
   const b = parseSpec(preview("idem", { title: "Another question about the button?" }));
   assert.ok(a.ok && b.ok);
   if (!a.ok || !b.ok) return;
   bindActor().actor = { kind: "user", userId: "u7", via: "key" };
   assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: "idem" });
-  // The answer was lost and the agent calls again: no second playground, nothing to read again.
+  // The answer was lost and the agent calls again: no second lab, nothing to read again.
   assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: "idem", existed: true });
-  // Another spec under the same id is another playground.
+  // Another spec under the same id is another lab.
   const other = await insertPlayground(b.domain, (d) => newPlayground(d));
   assert.ok("id" in other && /^idem-[0-9a-f]{6}$/.test(other.id) && !other.existed);
   // Somebody else with the same spec learns nothing: they get their own, under another id.
@@ -113,9 +113,9 @@ test("a repeated create of the caller's own playground with the same spec is the
   const theirs = await insertPlayground(a.domain, (d) => newPlayground(d));
   assert.ok("id" in theirs && /^idem-[0-9a-f]{6}$/.test(theirs.id) && !theirs.existed);
   assert.equal(Object.values((await load()).playgrounds).filter((p) => p.owner === "u7").length, 2);
-  // Their first create was renamed (the id was taken) and its answer was lost: the retry finds that playground.
+  // Their first create was renamed (the id was taken) and its answer was lost: the retry finds that lab.
   assert.deepEqual(await insertPlayground(a.domain, (d) => newPlayground(d)), { id: (theirs as { id: string }).id, existed: true });
-  // The admin may write every playground, but is not handed somebody else's: an identical spec gets its own.
+  // The admin may write every lab, but is not handed somebody else's: an identical spec gets its own.
   bindActor().actor = { kind: "admin" };
   const admins = await insertPlayground(a.domain, (d) => newPlayground(d));
   assert.ok("id" in admins && !admins.existed && admins.id !== "idem" && admins.id !== (theirs as { id: string }).id);

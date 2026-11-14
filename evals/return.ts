@@ -1,13 +1,13 @@
 // Eval cases of kind "return": does a standing decision come back to a later agent session through the person's repository?
 //
 // A person settled a price decision earlier. The decision record (lib/record.ts) is a file in their repository. A fresh
-// agent session, with no memory and no Clay word in the request, is asked "is our email provider still the right pick?".
+// agent session, with no memory and no Sorvi word in the request, is asked "is our email provider still the right pick?".
 // It must find the file, call recheck_playground with its id, and answer correctly:
 //   holds   the prices are as they were: say that it still holds, and update the check line of the file.
 //   broken  the chosen vendor's price went up (evals/return-fixture.ts): say what changed and what the rule now picks, give
 //           the playground link, propose the change, and change no code.
 //   write   the first session: the person says they saved their choice; the agent must write the record file as given.
-//   model   a settled preview on web facts (which model for a coding agent): a model's price went up. Clay has no rule for
+//   model   a settled preview on web facts (which model for a coding agent): a model's price went up. Sorvi has no rule for
 //           a preview, so the agent must judge with the settled rule and the new prices, and propose the other model.
 //
 //   node evals/return.ts --base-url <url> --fixture-url <url> --home <clean home> --scratch-root <dir outside this repository>
@@ -40,7 +40,7 @@ const from = flag("from")?.split(",").map((d) => resolve(d.trim())) ?? null;
 if (!from && (!baseUrl || !fixtureUrl || !outside(home) || !outside(scratchRoot))) throw new Error("Needs --base-url, --fixture-url, and --home and --scratch-root outside this repository (or --from <run dir>).");
 
 export type ReturnCase = { id: "write" | "holds" | "broken" | "model"; kind: "return"; request: (playground: string) => string; note: string };
-/** No Clay word in the two return requests: the file in the repository must carry the agent to the tool. */
+/** No Sorvi word in the two return requests: the file in the repository must carry the agent to the tool. */
 export const RETURN_CASES: ReturnCase[] = [
   { id: "write", kind: "return", request: (id) => `I picked our email provider on the playground page (${id}) and saved my choice. go ahead`, note: "the first session: the record must be written into the repository as given" },
   { id: "holds", kind: "return", request: () => "is our email provider still the right pick?", note: "a fresh session, prices unchanged" },
@@ -117,7 +117,7 @@ async function prepareModel(id: string) {
   if (!record) throw new Error("read_playground gave no decision_record for a settled preview with web sources");
   return record;
 }
-/** The repository of the "model" case: the agent's config and the measurements, no Clay word outside the record. */
+/** The repository of the "model" case: the agent's config and the measurements, no Sorvi word outside the record. */
 function modelRepository(dir: string) {
   const files: Record<string, string> = {
     "agent.config.json": JSON.stringify({ agent: "coding-agent", model: "swift-2", max_seconds_per_task: 300 }, null, 2) + "\n",
@@ -157,10 +157,10 @@ function judge(c: ReturnCase, x: Evidence): Check[] {
     // A saved run does not hold the server's text: the saved outcome of this check is carried over, and said so.
     if (x.recordText == null) check("the file is the server's text, unchanged", x.carried?.["the file is the server's text, unchanged"] ?? false, "carried over from the saved run");
     else check("the file is the server's text, unchanged", (fileAfter ?? "").trim() === x.recordText.trim(), fileAfter == null ? "" : firstDifference(fileAfter.trim(), x.recordText.trim()));
-    check("it told the person where the decision is kept", new RegExp(x.recordPath.replace(/[.\/]/g, "\\$&")).test(x.allText) || /\.clay\/decisions/.test(x.allText), answer.slice(-240));
+    check("it told the person where the decision is kept", new RegExp(x.recordPath.replace(/[.\/]/g, "\\$&")).test(x.allText) || /\.sorvi\/decisions/.test(x.allText), answer.slice(-240));
   } else {
     check("it opened the decision file in the repository before it called the re-check", openedBefore(raw), "");
-    check("it called recheck_playground with the id from the file", recheck.some((x) => x.input.playground_id === id), recheck.map((x) => JSON.stringify(x.input)).join(" ") || `Clay calls: ${x.calls.filter((x) => x.mcp).map((x) => x.tool).join(", ") || "none"}`);
+    check("it called recheck_playground with the id from the file", recheck.some((x) => x.input.playground_id === id), recheck.map((x) => JSON.stringify(x.input)).join(" ") || `Sorvi calls: ${x.calls.filter((x) => x.mcp).map((x) => x.tool).join(", ") || "none"}`);
     check("it did not build a new playground or search the web", !x.calls.some((x) => (x.mcp && x.tool === "create_playground") || /^Web(Search|Fetch)$/.test(x.tool)), x.calls.map((x) => x.tool).join(", "));
     check("it changed no code", x.codeUnchanged, "");
     // The line that the re-check answer gave for the file (the same minute gives the same line as before).
@@ -228,7 +228,7 @@ async function runCase(c: ReturnCase, runDir: string, tag: string): Promise<Resu
   return { id: c.id, kind: "return", request: c.request(id), note: c.note, memory: memory != null, result: checks.every((x) => x.pass) ? "pass" : "fail", checks, seconds: run.seconds, model: run.model, playground: id, answer, recheckAnswer: recheck.at(-1)?.result ?? null, fileBefore, fileAfter, error: run.error };
 }
 /**
- * Did the agent look into .clay with one of its own tools before its first recheck_playground call? The re-check answer
+ * Did the agent look into .sorvi with one of its own tools before its first recheck_playground call? The re-check answer
  * names the file's path itself, so the path anywhere in the transcript proves nothing.
  */
 function openedBefore(raw: string): boolean {
@@ -239,7 +239,7 @@ function openedBefore(raw: string): boolean {
     for (const c of e.message?.content ?? []) {
       if (c.type !== "tool_use") continue;
       if (/recheck_playground$/.test(c.name ?? "")) return false;
-      if (!/^mcp__/.test(c.name ?? "") && JSON.stringify(c.input ?? {}).includes(".clay")) return true;
+      if (!/^mcp__/.test(c.name ?? "") && JSON.stringify(c.input ?? {}).includes(".sorvi")) return true;
     }
   }
   return false;
@@ -276,7 +276,7 @@ if (from) {
       const raw = read(join(dir, r.id, "leg1.jsonl")) ?? "";
       const run = parseClaude(raw);
       const carried = Object.fromEntries(r.checks.map((x) => [x.name, x.pass]));
-      const checks = judge(c, { id: r.playground, error: r.error, calls: run.calls, answer: r.answer, allText: run.allText, raw, fileBefore: r.fileBefore, fileAfter: r.fileAfter, recordPath: `.clay/decisions/${r.playground}.md`, recordText: null, codeUnchanged: carried["it changed no code"] ?? false, carried });
+      const checks = judge(c, { id: r.playground, error: r.error, calls: run.calls, answer: r.answer, allText: run.allText, raw, fileBefore: r.fileBefore, fileAfter: r.fileAfter, recordPath: `.sorvi/decisions/${r.playground}.md`, recordText: null, codeUnchanged: carried["it changed no code"] ?? false, carried });
       const fail = checks.find((x) => !x.pass) ?? null;
       if (fail) failed++;
       again.push({ run: dir.split("/").at(-1)!, id: r.id, memory: r.memory, saved: r.result, now: fail ? "fail" : "pass", firstFail: fail ? `${fail.name}: ${fail.detail}` : null });

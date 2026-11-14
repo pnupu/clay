@@ -54,10 +54,10 @@ test("an answer that says it came from a cache is refused where it is read; one 
 
 test("a monitor is daily and without a wait by default; a source's own settings set the interval and the wait", async () => {
   const { monitorBody, parseWatch } = await import("./contextdev.ts");
-  const body = (watch: Parameters<typeof monitorBody>[4], env = 0) => monitorBody("Clay x: Vast.ai pricing", "https://vast.ai/pricing", "https://clay.example/api/webhooks/context/x/vastai", "Report prices.", watch, env);
+  const body = (watch: Parameters<typeof monitorBody>[4], env = 0) => monitorBody("Sorvi x: Vast.ai pricing", "https://vast.ai/pricing", "https://clay.example/api/webhooks/context/x/vastai", "Report prices.", watch, env);
   // Default: no schedule (the API then runs it once a day) and no browser action.
   assert.deepEqual(body({}), {
-    name: "Clay x: Vast.ai pricing",
+    name: "Sorvi x: Vast.ai pricing",
     tags: ["clay"],
     target: { type: "page", url: "https://vast.ai/pricing", instructions: "Report prices." },
     webhook: { url: "https://clay.example/api/webhooks/context/x/vastai", events: ["change.detected"], retry: {} },
@@ -79,7 +79,7 @@ test("a monitor is daily and without a wait by default; a source's own settings 
   assert.deepEqual(parseWatch(undefined, ids), { ok: true, watch: {} });
   assert.deepEqual(parseWatch({ vastai: { minutes: 60, waitMs: 5000 }, runpod: {} }, ids), { ok: true, watch: { vastai: { minutes: 60, waitMs: 5000 }, runpod: {} } });
   const bad = (x: unknown) => { const r = parseWatch(x, ids); return r.ok ? "" : r.error; };
-  assert.match(bad({ lambda: { minutes: 60 } }), /sources\.lambda: this playground has no such source/);
+  assert.match(bad({ lambda: { minutes: 60 } }), /sources\.lambda: this lab has no such source/);
   assert.match(bad({ vastai: { minutes: 5 } }), /sources\.vastai\.minutes: a whole number from 10 to 525600/);
   assert.match(bad({ vastai: { waitMs: 60_000 } }), /sources\.vastai\.waitMs: a whole number from 0 to 30000/);
   assert.match(bad({ vastai: { minutes: 60.5 } }), /a whole number/);

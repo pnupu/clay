@@ -73,7 +73,7 @@ test("a left-out reason stays as the agent wrote it; only a missing full stop is
   assert.equal(reasonOf('Its page says "contact sales."'), 'Its page says "contact sales."');
 });
 
-test("a card is labelled by what the playground is built on, for any mix", () => {
+test("a card is labelled by what the lab is built on, for any mix", () => {
   const preview = { price: false, preview: true, web: 0, brand: false, inline: false };
   assert.equal(kindLabel(preview), "Preview, tuned by hand");
   assert.equal(kindLabel({ ...preview, inline: true }), "Preview, tuned by hand");
@@ -83,7 +83,7 @@ test("a card is labelled by what the playground is built on, for any mix", () =>
   assert.equal(kindLabel({ ...preview, web: 2, inline: true }, "yours"), "Live web data × your numbers");
   assert.equal(kindLabel({ ...preview, web: 1, brand: true, inline: true }), "Live web data and brand colours × their numbers");
   assert.equal(kindLabel({ price: true, preview: false, web: 0, brand: false, inline: false }), "Price decision");
-  assert.equal(kindLabel({ price: false, preview: false, web: 0, brand: false, inline: false }), "Playground");
+  assert.equal(kindLabel({ price: false, preview: false, web: 0, brand: false, inline: false }), "Lab");
 });
 
 test("a card names the hosts of its sources once each, without www", () => {

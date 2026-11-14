@@ -1,19 +1,20 @@
 "use client";
 
-// The screen of a preview playground: kit controls, the sandboxed preview of the real artifact, and the outputs that go
+// The screen of a preview lab: kit controls, the sandboxed preview of the real artifact, and the outputs that go
 // back to the agent. Every move is local: the page posts the values to the frame, and nothing waits for a network call.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fromFrame, limiter, TILES } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
+import { carriedKit, carryValues } from "@/lib/carry";
 import { hostsOf, joinNames, reasonOf, recordPath, rowNamed, type JoinNames } from "@/lib/card";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
 /**
- * Where the person has the controls, per playground and kit revision, kept in this tab's memory. The screen is mounted
+ * Where the person has the controls, per lab and kit revision, kept in this tab's memory. The screen is mounted
  * again when web data or the brand arrives (the preview must load again with the data); the person may be moving
  * controls at that moment, and must find them where they left them.
  */
@@ -21,16 +22,17 @@ const held = new Map<string, Values>();
 type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
 
 /**
- * `canWrite`: this viewer owns the playground (or is the admin). Anyone else is looking at an example: every control, the
+ * `canWrite`: this viewer owns the lab (or is the admin). Anyone else is looking at an example: every control, the
  * preview and the outputs work for them in their browser, and nothing is settled, reported or saved. Their wording differs:
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version, connected = false }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
+export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version, connected = false }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's lab). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Sorvi team made itself (a lab without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's lab: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
   const router = useRouter();
+  // A drag is not interrupted by the data that arrives: the page keeps the shown screen while a pointer is down (Hold, app/live.tsx).
   useEffect(() => {
     if (!reading) return;
     const t = setInterval(() => router.refresh(), 3000);
@@ -42,10 +44,15 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   // unsatisfying state that the person asked about, whatever its owner tried later.
   // Per view: the owner's page, a visitor's page and the embedded example each keep their own.
   const heldKey = `${id}:${state.rev ?? ""}:${canWrite ? "owner" : "visitor"}:${embedded ? "embedded" : "page"}`;
-  const [values, setValues] = useState<Values>(() => held.get(heldKey) ?? (canWrite ? valuesNow(state) : initialValues(kit.controls)));
+  // After a revision by the agent (a new rev), the person's values come along for the controls that still allow them (lib/carry.ts).
+  const carryKey = `${id}:${embedded ? "embedded" : "page"}`;
+  const [values, setValues] = useState<Values>(() => held.get(heldKey) ?? carryValues(kit.controls, carriedKit.get(carryKey), state.rev ?? "", canWrite ? valuesNow(state) : initialValues(kit.controls)));
   useEffect(() => {
     held.set(heldKey, values);
-  }, [heldKey, values]);
+    carriedKit.set(carryKey, { rev: state.rev ?? "", values });
+    // Gone when this screen goes away: the screen that replaces it after a revision has read it while it rendered.
+    return () => void carriedKit.delete(carryKey);
+  }, [heldKey, carryKey, state.rev, values]);
   const [settled, setSettled] = useState(state.settled);
   const [frame, setFrame] = useState<Frame>({ status: "loading", error: null });
   const [busy, setBusy] = useState(false);
@@ -134,7 +141,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   };
   const stopped = frame.status === "failed" && /^The preview was stopped/.test(frame.error ?? "");
 
-  // What happened is stored for the agent, only from the browser of someone who may write the playground: "ok" once the preview has run 1.5 s without an error, else the error.
+  // What happened is stored for the agent, only from the browser of someone who may write the lab: "ok" once the preview has run 1.5 s without an error, else the error.
   const reports = useRef(0);
   useEffect(() => {
     if (!canWrite || version || frame.status === "loading" || reports.current >= 3) return;
@@ -162,6 +169,15 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     note(c, v);
     setValues({ ...values, [c.id]: v });
   };
+  // Values carried over a revision (lib/carry.ts) are on the page but not in the stored exploration of the revised
+  // controls: they go into the next report, so read_playground says what the page shows.
+  useEffect(() => {
+    if (!canWrite) return;
+    const stored = valuesNow(state);
+    for (const c of kit.controls) if (values[c.id] !== stored[c.id]) note(c, values[c.id]);
+    // Once, with the values this screen was mounted with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!moved.current || !canWrite) return;
     const t = setTimeout(() => {
@@ -213,12 +229,12 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"} data-tall={tall || undefined}>
       <header className="top k-head">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · {builtByViewer ? "a playground built by your agent" : "a playground built by its author's agent"}</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Sorvi</Link> · {builtByViewer ? "a lab built by your agent" : "a lab built by its author's agent"}</> : (byTeam ? "An example by the Sorvi team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
           <Title className={css.title}>{title}</Title>
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
-      {reading && <p className="small muted" data-building>Reading the web pages this playground is built from. The numbers fill in as each page is read; you do not need to reload.</p>}
+      {reading && <p className="small muted" data-building>Reading the web pages this lab is built from. The numbers fill in as each page is read; you do not need to reload.</p>}
 
       <div className={css.grid}>
         {/* The note is a grid item, so that on a narrow screen it can come after the preview: play first, read second. */}
@@ -228,7 +244,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
           {unseenChange && <button className={`primary ${css.jump}`} data-preview-changed onClick={() => stage.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>The preview changed. Show it</button>}
-          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. {kit.preview.map ? "No agent is in the loop; the map loads its tiles through Clay as you move it." : "No agent and no network call is in the loop."} {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
+          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. {kit.preview.map ? "No agent is in the loop; the map loads its tiles through Sorvi as you move it." : "No agent and no network call is in the loop."} {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
         </section>
 
         <div className={`${css.main} k-main`}>
@@ -243,7 +259,9 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                 Preview failed: {frame.error} {!canWrite ? "" : builtByViewer ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : "The error is saved; the author's agent can read it and repair the preview."}
               </p>
             )}
-            <div className={css.mat}>
+            {/* A data view is not an artboard: it is part of the page, in the page's own type and colours (lib/sheet.ts),
+                so it sits on the pane itself, with no mat and no white sheet around it. */}
+            <div className={kit.preview.data ? css.sheet : css.mat}>
               {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: frameHeight }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
@@ -263,7 +281,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               <div className={css.settle}>
                 <button className="primary" disabled={busy || isSettled} onClick={settle}>{isSettled ? "Settled" : settled ? "Settle again on these values" : "Settle on these values"}</button>
                 {isSettled ? (
-                  <span className="small ok" data-settled>{builtByViewer ? <>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</> : "✓ Settled. The author's agent reads these outputs when it next reads this playground."}</span>
+                  <span className="small ok" data-settled>{builtByViewer ? <>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</> : "✓ Settled. The author's agent reads these outputs when it next reads this lab."}</span>
                 ) : settled ? (
                   <span className="small warn">The controls differ from what you settled.</span>
                 ) : (
@@ -283,7 +301,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                   </div>
                   {triedNow && (
                     <p className="small" data-settle-try role="status">
-                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}
+                      Nothing is saved: this is an example. On your own lab your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}
                     </p>
                   )}
                 </div>
@@ -307,7 +325,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                     )}
                   </li>
                 )}
-                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
+                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} pg={id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
                 {kit.inline && <li data-inline><p className="small">{builtByViewer ? "Provided by your agent, not checked" : "Provided by the author's agent, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
                 {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b> — {reasonOf(x.reason)}</p></li>)}
@@ -320,7 +338,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           be inside the frame: a sandboxed frame opens no link), and it says who sees what. For everyone, the owner included. */}
       {kit.preview.map && (
         <p className="small muted k-about" data-map-note>
-          Map tiles: <a href={TILES.licence} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Clay fetches them from {new URL(TILES.upstream).host} for you: Clay sees the area you look at, and the tile server sees Clay, not your internet address.
+          Map tiles: <a href={TILES.licence} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Sorvi fetches them from {new URL(TILES.upstream).host} for you: Sorvi sees the area you look at, and the tile server sees Sorvi, not your internet address.
         </p>
       )}
       {/* What a preview can and cannot do (sandboxed, not sealed from the network) is stated on /privacy. A person looking
@@ -490,13 +508,36 @@ const SELECT_AS_BUTTONS = 5;
 /** More rows than this are folded: the rows the preview names are shown, the rest opens on request. */
 const FOLD_OVER = 8;
 
+/** A field id as a person reads it: "price_per_hour" is "Price per hour". */
+const words = (id: string) => id.replace(/_/g, " ").replace(/^[a-z]/, (c) => c.toUpperCase());
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
+
+/** The values a person opened, by lab and source, kept in this tab's memory. */
+const opened = new Set<string>();
+
+/**
+ * The values read from one source, closed until the person asks for them: the card says where the data comes from, and
+ * the raw tables no longer push the page away. They stay in the page, so any number can still be checked against its
+ * source. No summary: nothing to fold, the content is shown as it is.
+ */
+function Values({ id, summary, children }: { id: string; summary: string | null; children: ReactNode }) {
+  // What the person opened stays open in this tab: the screen is mounted again whenever a source is read (see `held`).
+  const [open, setOpen] = useState(() => opened.has(id));
+  const toggle = (now: boolean) => {
+    if (now) opened.add(id);
+    else opened.delete(id);
+    setOpen(now);
+  };
+  return summary == null ? <>{children}</> : <details className={css.values} open={open} onToggle={(e) => toggle(e.currentTarget.open)}><summary>{summary}</summary>{children}</details>;
+}
+
 /**
  * One web source in "Where the data comes from": the page (a link), when it was read, every value that was read, what was
  * quarantined, and what changed since the person settled. So a person can check any number against its page.
  * A long table shows first the rows that the preview's own names match (`names`), and the rest on request. A row whose
  * name the read did not find cannot be matched to anything: it is listed last, as such, and counted in a line of its own.
  */
-function WebSourceItem({ source: s, state: st, reading, since, names }: { source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
+function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /** The lab's id. */ pg: string; source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
   const [all, setAll] = useState(false);
   const read = st?.read;
   const link = st?.url && /^https:\/\//.test(st.url) ? st.url : null;
@@ -511,12 +552,16 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
   const nameless = key ? rows.filter((r) => r[key] == null) : [];
   const used = key ? named.filter((r) => rowNamed(r[key], names)) : [];
   const foldable = rows.length > FOLD_OVER;
-  // Folded: the rows this playground names, or the first few when it names none. The other rows stay in the page, hidden.
+  // Folded: the rows this lab names, or the first few when it names none. The other rows stay in the page, hidden.
   const first = used.length ? used : (named.length ? named : nameless).slice(0, 5);
   const ordered = [...named, ...nameless];
   const isShown = (r: (typeof rows)[number]) => !foldable || all || first.includes(r);
   const tableId = `rows-${s.id}`;
   const site = hostsOf([host])[0] ?? host;
+  /** The name under which this tab remembers that the person opened the values of this source. */
+  const fold = `${pg}:${s.id}`;
+  // Values the read did not find: counted in the line that opens the values, so "unknown" is said also while they are closed.
+  const unknown = s.fields ? s.fields.filter((f) => read?.fields?.[f.id] == null).length : rows.reduce((n, r) => n + fields.filter((f) => r[f.id] == null).length, 0);
   return (
     <li data-web-source={s.id}>
       <p className="small">
@@ -527,26 +572,29 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
       {!read && !reading && <p className="small warn">This page could not be read{st?.error ? `: ${st.error.slice(0, 200)}` : ""}. Its values are unknown.</p>}
       {read && st?.error && <p className="small warn">{st.error.slice(0, 200)}</p>}
       {read && s.fields && (
-        <table className={css.web}>
-          <tbody>
-            {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{f.id}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
-          </tbody>
-        </table>
+        <Values id={fold} summary={unknown ? `${s.fields.length - unknown} of ${count(s.fields.length, "value")} read, ${unknown} unknown` : `${count(s.fields.length, "value")} read`}>
+          <table className={`${css.web} ${css.webFields}`}>
+            <tbody>
+              {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{words(f.id)}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
+            </tbody>
+          </table>
+        </Values>
       )}
       {read && s.rows && (
-        <>
+        // A page on which no row was found has nothing to fold: the line that says so stays in view.
+        <Values id={fold} summary={rows.length ? `${count(rows.length, "row")} read${unknown ? `, ${count(unknown, "value")} unknown` : ""}` : null}>
           <div className={`${css.webScroll} ${all ? css.webOpen : ""}`} id={tableId}>
             <table className={css.web}>
-              <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe}>{f.id}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
+              <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe} className={f.type === "number" ? css.num : undefined}>{words(f.id)}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
               <tbody>
-                {ordered.map((r, i) => <tr key={i} hidden={!isShown(r)}>{fields.map((f) => <td key={f.id}>{f.id === key && r[f.id] == null ? <span className="muted"><span className={css.unseen}>unknown: </span>no name read</span> : shown(r[f.id])}</td>)}</tr>)}
+                {ordered.map((r, i) => <tr key={i} hidden={!isShown(r)}>{fields.map((f) => <td key={f.id} className={f.type === "number" ? css.num : undefined}>{f.id === key && r[f.id] == null ? <span className="muted"><span className={css.unseen}>unknown: </span>no name read</span> : shown(r[f.id])}</td>)}</tr>)}
                 {!rows.length && <tr><td colSpan={fields.length}><span className="warn">No row was found on this page.</span></td></tr>}
               </tbody>
             </table>
           </div>
           {foldable && (
             <p className={`small muted ${css.rowsNote}`} data-rows-note>
-              {all ? `All ${rows.length} rows read from ${site}.` : used.length ? `Shown: ${used.length === 1 ? "the 1 row that matches" : `the ${used.length} rows that match`} the names this playground uses, of ${rows.length} read.` : `Shown: the first ${first.length} of ${rows.length} rows read.`}{" "}
+              {all ? `All ${rows.length} rows read from ${site}.` : used.length ? `Shown: ${used.length === 1 ? "the 1 row that matches" : `the ${used.length} rows that match`} the names this lab uses, of ${rows.length} read.` : `Shown: the first ${first.length} of ${rows.length} rows read.`}{" "}
               <button className="small-btn" aria-expanded={all} aria-controls={tableId} onClick={() => setAll(!all)}>{all ? "Show fewer rows" : `Show all ${rows.length} rows read from ${site}`}</button>
             </p>
           )}
@@ -556,7 +604,7 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
               {foldable && !all ? ` ${nameless.length === 1 ? "It is" : "They are"} listed last under “Show all”.` : ` ${nameless.length === 1 ? "It is" : "They are"} listed last, marked “no name read”.`}
             </p>
           )}
-        </>
+        </Values>
       )}
       {read?.truncated && <p className="small warn">The page was too long to read in full. Rows may be missing.</p>}
       {read?.quarantined.map((q, i) => <p className="small warn" key={i}>Not used: the extraction returned {q.value} for {q.path}, but that number is not in the page text. It is shown as unknown.</p>)}

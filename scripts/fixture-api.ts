@@ -26,7 +26,7 @@ createServer(async (req, res) => {
     prices = (b.prices as typeof prices | undefined) ?? prices;
     return send({ text, prices });
   }
-  // A fictional brand, so a preview playground with data.brand can be built without a real request.
+  // A fictional brand, so a preview lab with data.brand can be built without a real request.
   if (req.url === "/brand/retrieve") return send({ status: "ok", key_metadata: { credits_consumed: 0 }, brand: { domain: b.domain, title: "Fixture Brand", colors: [{ hex: "#5e6ad2", name: "Iris" }, { hex: "#0f1011", name: "Ink" }, { hex: "#f7f8f8", name: "Paper" }], logos: [] } });
   if (req.url !== "/web/scrape") return res.writeHead(404).end("{}");
   const wantsJson = (b.formats as { json?: boolean } | undefined)?.json === true;
@@ -34,7 +34,7 @@ createServer(async (req, res) => {
   if (read === "fail") return res.writeHead(500, { "Content-Type": "application/json" }).end(JSON.stringify({ error_code: "FIXTURE_FAILURE", message: "fixture read failed" }));
   const [price, extra] = Array.isArray(read) ? read : [read, 1];
   const none = read === "none";
-  // The meter is keyed by the first metric of the playground's extraction schema, so any agent-built price spec gets a price.
+  // The meter is keyed by the first metric of the lab's extraction schema, so any agent-built price spec gets a price.
   const metric = Object.keys((b.jsonParams as { schema?: { properties?: { plans?: { items?: { properties?: { meters?: { properties?: object } } } } } } } | undefined)?.schema?.properties?.plans?.items?.properties?.meters?.properties ?? {})[0] ?? "emails";
   send({
     url: b.url,

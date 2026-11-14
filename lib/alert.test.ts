@@ -50,7 +50,7 @@ test("sending: the address is checked again, nothing throws, the body is the fix
   assert.deepEqual(await sendAlert(SLACK, "hello", async () => { throw new Error("network"); }), { ok: false, status: null });
 });
 
-// A price playground with two vendors; Beta's price is the one that moves.
+// A price lab with two vendors; Beta's price is the one that moves.
 const model = (price: number) => ({ vendor: "x", currency: "USD", plans: [{ name: "Pro", base_price: price, custom_pricing: false, price_quote: null, meters: [], features: [] }] });
 function playground(beta: number): Playground {
   return {

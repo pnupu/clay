@@ -1,9 +1,9 @@
 // The decision domain. A Domain is plain data: the seed below is one, and an agent creates more at runtime (lib/config.ts validates them).
-// The extraction schema, the extraction instructions and the playground controls are all generated from it.
+// The extraction schema, the extraction instructions and the lab controls are all generated from it.
 
 export type MetricDef = { id: string; label: string; unit: string; describe: string; min: number; max: number; initial: number };
 export type FeatureDef = { id: string; label: string; describe: string };
-/** `url`: the pricing page, when the creator of the playground knows it. Without it, Search finds the page on `domain`. */
+/** `url`: the pricing page, when the creator of the lab knows it. Without it, Search finds the page on `domain`. */
 export type VendorDef = { id: string; name: string; domain: string; url?: string; demo?: boolean };
 
 export type Domain = {
@@ -89,7 +89,7 @@ export type Plan = {
   base_price: number | null;
   custom_pricing: boolean | null;
   price_gap?: PriceGap | null;
-  /** Clay kept only part of what the page lists (more plans or price steps than PRICE_LIMITS): never complete. */
+  /** Sorvi kept only part of what the page lists (more plans or price steps than PRICE_LIMITS): never complete. */
   trimmed?: boolean;
   price_quote: string | null;
   meters: Meter[] | null;
@@ -186,7 +186,7 @@ export function extractionSchema(d: Domain) {
 /**
  * Context.dev takes at most 2,000 characters of extraction instructions (ScrapeJsonParams.instructions, maxLength 2000 in
  * docs.context.dev/openapi.json on 2026-11-14). A longer text is refused with "too big, max 2000" for every page, so a
- * playground with such a text reads nothing. lib/config.ts refuses a config whose product and notes do not fit.
+ * lab with such a text reads nothing. lib/config.ts refuses a config whose product and notes do not fit.
  */
 export const INSTRUCTIONS_LIMIT = 2000;
 
@@ -215,7 +215,7 @@ const gap = (x: unknown): ReadGap | null => (GAPS.includes(x as ReadGap) ? (x as
 /**
  * Bounds of one stored price read, as lib/web.ts bounds a web read: the extraction is page data, and a page can be very
  * long. Only the permitted fields are copied, at every level (an allow-list), and texts are cut. A read with more plans
- * or more price steps than Clay keeps is never bridged: its plans are marked "trimmed", which makes the vendor "cannot be
+ * or more price steps than Sorvi keeps is never bridged: its plans are marked "trimmed", which makes the vendor "cannot be
  * ranked" with that reason (lib/pricing.ts) and names it in the agent's problems list (lib/report.ts).
  */
 export const PRICE_LIMITS = { plans: 20, meters: 5, tiers: 12, features: 6, name: 80, quote: 200, short: 40, bytes: 64_000 } as const;
@@ -251,7 +251,7 @@ function boundRaw(raw: RawModel): { model: RawModel; trimmed: boolean } {
       const m = mv as Record<string, unknown>;
       const tiersIn = list(m.tiers);
       // Several open-ended prices are separate products ("configuration" in normaliseUnbounded): two of them keep that
-      // reading. Otherwise, more steps than Clay keeps are dropped, never bridged, and the read is trimmed.
+      // reading. Otherwise, more steps than Sorvi keeps are dropped, never bridged, and the read is trimmed.
       const openEnded = tiersIn.filter((tv) => tv && typeof tv === "object" && (tv as { up_to?: unknown }).up_to == null);
       const over = tiersIn.length > PRICE_LIMITS.tiers;
       if (over && openEnded.length <= 1) trimmed = true;

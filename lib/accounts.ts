@@ -1,11 +1,11 @@
 // Who is calling, and what may they do. No Next.js imports: the routes resolve the caller (app/api/respond.ts) and bind it here.
 //
 // Three kinds of caller:
-// - visitor: not signed in. May read and use the example playgrounds; may not write or spend anything.
-// - user: a person signed in through Clerk (a browser session) or their agent (a personal agent key). Owns the playgrounds
+// - visitor: not signed in. May read and use the example labs; may not write or spend anything.
+// - user: a person signed in through Clerk (a browser session) or their agent (a personal agent key). Owns the labs
 //   their agent creates. Only the Clerk user id is stored: no email address or name.
-// - admin: the owner key (CLAY_ACCESS_KEY). May do everything, and marks playgrounds as examples.
-// A playground with no owner (every playground created before accounts existed) belongs to the admin.
+// - admin: the owner key (CLAY_ACCESS_KEY). May do everything, and marks labs as examples.
+// A lab with no owner (every lab created before accounts existed) belongs to the admin.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { isHosted } from "./access.ts";
@@ -15,7 +15,7 @@ import type { Budget } from "./store.ts";
 export type Actor = { kind: "visitor" } | { kind: "admin" } | { kind: "user"; userId: string; via: "session" | "key" };
 export const VISITOR: Actor = { kind: "visitor" };
 
-/** What Clay stores per person: the hash of their agent key and their request count of the day. Keyed by Clerk user id. */
+/** What Sorvi stores per person: the hash of their agent key and their request count of the day. Keyed by Clerk user id. */
 export type Account = {
   keyHash: string | null;
   keyCreatedAt: string | null;
@@ -47,7 +47,7 @@ export const currentUserId = (): string | null => {
 };
 
 type Owned = { owner?: string | null; example?: boolean; featured?: boolean; createdAt?: string; domain?: { id?: string } };
-/** The seed playground is an example unless the admin unmarks it. Any other playground is an example only when marked. */
+/** The seed lab is an example unless the admin unmarks it. Any other lab is an example only when marked. */
 export const isExample = (p: Owned, id = p.domain?.id): boolean => p.example ?? id === DOMAIN.id;
 export const ownerOf = (p: Owned): string | null => p.owner ?? null;
 
@@ -64,32 +64,34 @@ export function unpublishOnRevision(p: Owned & { featured?: boolean; exampleClea
   delete (p as { discardedWrites?: unknown }).discardedWrites; // they were about the published example
   return true;
 }
-export const EXAMPLE_CLEARED = "This playground was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Clay deployment looks at it and marks it again.";
+export const EXAMPLE_CLEARED = "This lab was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Sorvi deployment looks at it and marks it again.";
 
 /**
- * Mark or unmark a playground as an example, and choose the featured example: the one the landing page embeds.
+ * Mark or unmark a lab as an example, and choose the featured example: the one the landing page embeds.
  * Only the admin may do either (the example route is admin-only already; this is the same rule where the data changes).
- * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
- * example also unfeatures it. Returns what the playground is now, or the refusal.
+ * Featuring needs an example, and takes the mark from every other lab, so at most one is featured. Unmarking an
+ * example also unfeatures it. Returns what the lab is now, or the refusal.
  */
 /**
- * `look`: the version of what a visitor would see of the playground (lib/report.ts, viewVersion) and whether web reads
+ * `look`: the version of what a visitor would see of the lab (lib/report.ts, viewVersion) and whether web reads
  * still run on it (a build, a re-check or a brand read), whose results nobody has seen yet.
  */
 export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown; version?: unknown }, a: Actor | null, look: (p: Owned) => { version: string; busy: boolean }): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
-  if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
+  if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Sorvi deployment can mark or feature an example." };
   const p = playgrounds[id];
-  if (!p) return { ok: false, status: 404, error: "Playground not found." };
+  if (!p) return { ok: false, status: 404, error: "Lab not found." };
+  // A started lab (lib/started.ts) has nothing built to show: it can never be an example.
+  if ((p as { started?: unknown }).started) return { ok: false, status: 409, error: "This lab is started and not built yet: there is nothing to publish." };
   // A field that is sent must be a boolean: {"example": "false"} is refused, not read as "leave it as it is".
   const sent = [mark.example, mark.featured].filter((v) => v !== undefined);
   if (!sent.length || sent.some((v) => typeof v !== "boolean")) return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };
   // Publishing (marking or featuring) approves what the operator reviewed: the version of that view must still be the
-  // playground's version, checked here inside the same store update that publishes it. Unmarking needs no version.
+  // lab's version, checked here inside the same store update that publishes it. Unmarking needs no version.
   if (mark.example === true || mark.featured === true) {
     const { version: now, busy } = look(p);
-    if (busy) return { ok: false, status: 409, error: "This playground is still reading web pages (a build, a re-check or a brand read runs), and what they bring has not been seen yet. Wait until the reads have ended, open the playground again, look at it, then mark it with the version it shows then." };
-    if (typeof mark.version !== "string") return { ok: false, status: 400, error: `Send the version you reviewed with the mark: {"example": true, "version": "${now}"}. GET /api/p/${id}/state returns it as "version"; look at the playground before you mark it.` };
-    if (mark.version !== now) return { ok: false, status: 409, error: `This playground changed after the version you reviewed (${mark.version.slice(0, 16)}; it is now ${now}). Open it again, look at what changed, then mark it with the new version.` };
+    if (busy) return { ok: false, status: 409, error: "This lab is still reading web pages (a build, a re-check or a brand read runs), and what they bring has not been seen yet. Wait until the reads have ended, open the lab again, look at it, then mark it with the version it shows then." };
+    if (typeof mark.version !== "string") return { ok: false, status: 400, error: `Send the version you reviewed with the mark: {"example": true, "version": "${now}"}. GET /api/p/${id}/state returns it as "version"; look at the lab before you mark it.` };
+    if (mark.version !== now) return { ok: false, status: 409, error: `This lab changed after the version you reviewed (${mark.version.slice(0, 16)}; it is now ${now}). Open it again, look at what changed, then mark it with the new version.` };
   }
   const example = typeof mark.example === "boolean" ? mark.example : isExample(p, id);
   if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured: mark it as an example first, or send {"example": true, "featured": true}.' };
@@ -115,26 +117,26 @@ export function orderExamples<T extends Owned>(playgrounds: Record<string, T>): 
     .sort(([, a], [, b]) => Number(b.featured === true) - Number(a.featured === true) || (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 }
 
-/** May this caller open the playground? Examples are open to everyone; any other playground only to its owner and the admin. */
+/** May this caller open the lab? Examples are open to everyone; any other lab only to its owner and the admin. */
 export function canRead(a: Actor | null, p: Owned, id?: string): boolean {
   if (a?.kind === "admin" || isExample(p, id)) return true;
   return a?.kind === "user" && ownerOf(p) === a.userId;
 }
-/** May this caller change the playground or spend requests on it? Only its owner and the admin; an example only the admin. */
+/** May this caller change the lab or spend requests on it? Only its owner and the admin; an example only the admin. */
 export function canWrite(a: Actor | null, p: Owned): boolean {
   if (a?.kind === "admin") return true;
   return a?.kind === "user" && ownerOf(p) === a.userId;
 }
 
 /**
- * A published example changes for visitors only through the operator: on a playground marked as an example, every
+ * A published example changes for visitors only through the operator: on a lab marked as an example, every
  * write by anyone else (re-check, collect, settle, explore, a saved or deleted decision, a preview report, a delete) is
  * refused, because new web values, a new decision or a new state would reach every visitor unseen. The owner may still
  * revise it (revise_playground), which clears the mark (unpublishOnRevision). Returns the refusal, or null.
  */
 export function publishedRefusal(a: Actor | null, p: Owned, id: string): string | null {
   if (a?.kind === "admin" || !isExample(p, id) || !canWrite(a, p)) return null;
-  return "This playground is a published example: only the operator of this Clay deployment can change it now. Ask the operator to unpublish it, or revise it with revise_playground, which clears the example mark so that other people no longer see it.";
+  return "This lab is a published example: only the operator of this Sorvi deployment can change it now. Ask the operator to unpublish it, or revise it with revise_playground, which clears the example mark so that other people no longer see it.";
 }
 
 /** A write that keepPublished() discarded, as its owner is told (lib/report.ts). */
@@ -173,44 +175,44 @@ export function limit(raw: string | undefined, fallback: number): number {
 }
 /** Context.dev requests per person per UTC day (CLAY_USER_DAILY_REQUESTS, default 40). */
 export const userDailyCap = () => limit(process.env.CLAY_USER_DAILY_REQUESTS, 40);
-/** Playgrounds per person (CLAY_USER_PLAYGROUNDS, default 20). */
+/** Labs per person (CLAY_USER_PLAYGROUNDS, default 20). */
 export const userPlaygroundCap = () => limit(process.env.CLAY_USER_PLAYGROUNDS, 20);
 
-/** The refusal when the current caller may not create one more playground, or null. Only signed-in people are capped. */
+/** The refusal when the current caller may not create one more lab, or null. Only signed-in people are capped. */
 // Checked inside the create's store update (store.ts, insertPlayground), so parallel creates stop at the cap.
 export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): string | null {
   if (a?.kind !== "user") return null;
   const cap = userPlaygroundCap();
   const own = Object.values(playgrounds).filter((p) => ownerOf(p) === a.userId).length;
-  return cap > 0 && own >= cap ? `You have reached the limit of ${cap} playgrounds per person. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.` : null;
+  return cap > 0 && own >= cap ? `You have reached the limit of ${cap} labs per person. Nothing was created. Delete a lab you no longer need on the Sorvi home page ("Your labs"), then try again.` : null;
 }
 /**
  * The deployment-wide bound: every request reads and parses the one store document, so its size is the real limit
  * (measured: about 25 ms to read and parse 10 MB, 150 ms for 50 MB, plus the blob transfer on Vercel). A person may not
- * create a playground once the deployment holds CLAY_MAX_PLAYGROUNDS playgrounds (default 2,000) or its store
+ * create a lab once the deployment holds CLAY_MAX_PLAYGROUNDS labs (default 2,000) or its store
  * CLAY_MAX_STORE_BYTES characters (default 10,000,000); 0 turns a bound off. The operator is not bound: examples and the
- * operator's own playgrounds stay creatable.
+ * operator's own labs stay creatable.
  */
 export function deploymentCapMessage(count: number, bytes: number, a: Actor | null = currentActor(), ownsAny = true): string | null {
   if (a?.kind !== "user") return null;
   const maxCount = limit(process.env.CLAY_MAX_PLAYGROUNDS, 2_000);
   const maxBytes = maxStoreChars();
-  if (maxCount > 0 && count >= maxCount) return `This Clay deployment holds its limit of ${maxCount} playgrounds. Nothing was created. ${makeRoom(ownsAny)}`;
-  if (maxBytes > 0 && bytes >= maxBytes) return `This Clay deployment's storage is full (${bytes} of ${maxBytes} characters). Nothing was created. ${makeRoom(ownsAny)}`;
+  if (maxCount > 0 && count >= maxCount) return `This Sorvi deployment holds its limit of ${maxCount} labs. Nothing was created. ${makeRoom(ownsAny)}`;
+  if (maxBytes > 0 && bytes >= maxBytes) return `This Sorvi deployment's storage is full (${bytes} of ${maxBytes} characters). Nothing was created. ${makeRoom(ownsAny)}`;
   return null;
 }
 const maxStoreChars = () => limit(process.env.CLAY_MAX_STORE_BYTES, 10_000_000);
 /** What a refused person can do: delete one of theirs, or, owning none, ask the operator. */
-const makeRoom = (ownsAny: boolean) => (ownsAny ? 'Delete a playground you no longer need on the Clay home page ("Your playgrounds"), or try again later.' : "Ask the operator of this Clay deployment to make room, or try again later.");
+const makeRoom = (ownsAny: boolean) => (ownsAny ? 'Delete a lab you no longer need on the Sorvi home page ("Your labs"), or try again later.' : "Ask the operator of this Sorvi deployment to make room, or try again later.");
 /**
- * Characters per person over their own playgrounds (CLAY_USER_STORE_BYTES, default 600,000): 20 playgrounds the size of
+ * Characters per person over their own labs (CLAY_USER_STORE_BYTES, default 600,000): 20 labs the size of
  * the largest live example (about 26,000 characters) fit, so filling the 10,000,000 of the deployment takes about 16 accounts.
  */
 export const userStoreAllowance = () => limit(process.env.CLAY_USER_STORE_BYTES, 600_000);
 /** A write that the storage bounds refuse: nothing of it is stored (store.ts update()). */
 export class StorageRefused extends Error {}
 /**
- * A write of a person's that grows their playgrounds by at most this many characters, without adding or revising one,
+ * A write of a person's that grows their labs by at most this many characters, without adding or revising one,
  * passes a full deployment store: a settle (its outputs are capped at 32,000 characters, OUTPUT_LIMIT), an exploration
  * record and a saved decision (a few hundred characters each), and a re-check result (a price read up to about 4,000, a
  * web source up to about 6,000 in the live examples). Only the person's own allowance holds such writes.
@@ -218,10 +220,10 @@ export class StorageRefused extends Error {}
 export const SMALL_WRITE = 40_000;
 /**
  * The storage bounds, checked inside every store update on the size it leaves (store.ts update() calls this before the
- * write and the function it returns after it). A write by a person that grows their own playgrounds is refused when
- * their playgrounds would hold more than their allowance, and, when the store would hold more than
- * CLAY_MAX_STORE_BYTES, if it adds a playground, revises one (a new spec) or grows them by more than SMALL_WRITE. So a
- * full store stops creates, revisions and large growth, and the people who already have playgrounds can still settle,
+ * write and the function it returns after it). A write by a person that grows their own labs is refused when
+ * their labs would hold more than their allowance, and, when the store would hold more than
+ * CLAY_MAX_STORE_BYTES, if it adds a lab, revises one (a new spec) or grows them by more than SMALL_WRITE. So a
+ * full store stops creates, revisions and large growth, and the people who already have labs can still settle,
  * explore, save a decision and store a re-check. A write that does not grow them (a delete, a smaller revision) always
  * passes, and so does the operator. Throws StorageRefused.
  */
@@ -240,22 +242,22 @@ export function boundStorage(playgrounds: Record<string, Owned>, a: Actor | null
     const own = chars(now);
     if (own <= before) return;
     const allowance = userStoreAllowance(), max = maxStoreChars();
-    if (allowance > 0 && own > allowance) throw new StorageRefused(`Your playgrounds would hold ${own} characters, over the limit of ${allowance} characters per person. Nothing was stored. Make the playground smaller, or delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.`);
+    if (allowance > 0 && own > allowance) throw new StorageRefused(`Your labs would hold ${own} characters, over the limit of ${allowance} characters per person. Nothing was stored. Make the lab smaller, or delete a lab you no longer need on the Sorvi home page ("Your labs"), then try again.`);
     const large = own - before > SMALL_WRITE || now.some(([id, p]) => specs.get(id) !== specOf(p)); // added (no spec before), revised, or large
     const total = max > 0 && large ? storeChars() : 0;
-    if (max > 0 && large && total > max) throw new StorageRefused(`This Clay deployment's storage is full (${total} of ${max} characters). Nothing was stored. ${makeRoom(owned.length > 0)}`);
+    if (max > 0 && large && total > max) throw new StorageRefused(`This Sorvi deployment's storage is full (${total} of ${max} characters). Nothing was stored. ${makeRoom(owned.length > 0)}`);
   };
 }
-/** Characters that a person's playgrounds hold (the work bookkeeping left out), as the storage bounds count them. */
+/** Characters that a person's labs hold (the work bookkeeping left out), as the storage bounds count them. */
 export const ownedChars = (playgrounds: Record<string, Owned>, owner: string) => Object.values(playgrounds).filter((p) => ownerOf(p) === owner).reduce((n, p) => n + JSON.stringify({ ...p, work: undefined }).length, 0);
-/** A person at or over their storage allowance: a webhook monitor's re-check of their playground is not even read (its result could not be stored). */
+/** A person at or over their storage allowance: a webhook monitor's re-check of their lab is not even read (its result could not be stored). */
 export const atAllowance = (playgrounds: Record<string, Owned>, owner: string) => userStoreAllowance() > 0 && ownedChars(playgrounds, owner) >= userStoreAllowance();
 /**
- * The same bounds for a write with no caller (a webhook monitor's re-check), per owner of the person's playgrounds it
+ * The same bounds for a write with no caller (a webhook monitor's re-check), per owner of the person's labs it
  * grows: over the owner's allowance, or larger than SMALL_WRITE while the store is over CLAY_MAX_STORE_BYTES. Such
- * growth is not refused (nobody waits for the answer): each of that owner's playgrounds that the write grew keeps what
+ * growth is not refused (nobody waits for the answer): each of that owner's labs that the write grew keeps what
  * it held before (its `work` bookkeeping excepted), and the owner is told (`storageKept`, the last 10). A write that
- * is stored clears that note. Operator-owned playgrounds and published examples (keepPublished guards those) are not
+ * is stored clears that note. Operator-owned labs and published examples (keepPublished guards those) are not
  * bound here.
  */
 function boundOwners(playgrounds: Record<string, Owned>, now = () => new Date().toISOString()): (after: Record<string, Owned>, storeChars: () => number) => void {
@@ -287,13 +289,14 @@ function boundOwners(playgrounds: Record<string, Owned>, now = () => new Date().
   };
 }
 // No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").
-export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC. Until then the playgrounds still work, because moving the controls needs no web request, and your agent can still build preview playgrounds that use no web data`;
+export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC. Until then the labs still work, because moving the controls needs no web request, and your agent can still build preview labs that use no web data`;
 
-// Agent keys: "clay_" and 32 random bytes. Only the SHA-256 hash is stored; the key is shown once.
-const KEY_PREFIX = "clay_";
+// Agent keys: "sorvi_" and 32 random bytes. A key with the earlier prefix "clay_" keeps working: running agents hold such keys. Only the SHA-256 hash is stored; the key is shown once.
+const KEY_PREFIX = "sorvi_";
+const KEY_PREFIXES = [KEY_PREFIX, "clay_"];
 export const newAgentKey = () => KEY_PREFIX + randomBytes(32).toString("base64url");
 export const hashKey = (key: string) => createHash("sha256").update(key).digest("hex");
-export const looksLikeAgentKey = (s: string) => s.startsWith(KEY_PREFIX) && s.length >= 40 && s.length <= 100;
+export const looksLikeAgentKey = (s: string) => KEY_PREFIXES.some((p) => s.startsWith(p)) && s.length >= 40 && s.length <= 100;
 /** The user whose agent key this is, or null. Every stored hash is compared in constant time. */
 export function userOfKey(key: string, accounts: Record<string, Account>): string | null {
   if (!looksLikeAgentKey(key)) return null;
@@ -366,5 +369,5 @@ export const testAccountsAllowed = (hosted: boolean, env: Record<string, string 
 /** The one test-account rule, for the key check and the Clerk webhook: only test identifiers, on a public app, not allowed. */
 export const refusesTestAccount = (ids: { address: string; verified: boolean }[]): boolean => onlyTestAddresses(ids) && !testAccountsAllowed(isHosted());
 /** What a Clerk test account hears when it tries to build or spend on a public app (it may still sign in and look). */
-export const TEST_ACCOUNT_LOOK_ONLY = "This account's only email address is a Clerk test address (+clerk_test). It can sign in and look around, but not build, change or re-check playgrounds, or spend web requests. Sign up with an email address you own:";
-export const TEST_ACCOUNT_MESSAGE = "Clay gives no agent key to an account whose only email address is a Clerk test address (+clerk_test). Sign up with an email address you own";
+export const TEST_ACCOUNT_LOOK_ONLY = "This account's only email address is a Clerk test address (+clerk_test). It can sign in and look around, but not build, change or re-check labs, or spend web requests. Sign up with an email address you own:";
+export const TEST_ACCOUNT_MESSAGE = "Sorvi gives no agent key to an account whose only email address is a Clerk test address (+clerk_test). Sign up with an email address you own";

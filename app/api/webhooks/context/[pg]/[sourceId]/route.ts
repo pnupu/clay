@@ -7,7 +7,7 @@ import { load, update } from "@/lib/store";
 export const maxDuration = 300;
 
 /**
- * Context.dev monitor webhook (https://docs.context.dev/webhooks). The route ids only select the playground, the source and its secret;
+ * Context.dev monitor webhook (https://docs.context.dev/webhooks). The route ids only select the lab, the source and its secret;
  * the signature over the raw body is the authentication. A verified change.detected event triggers the same re-check as the button.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ pg: string; sourceId: string }> }) {

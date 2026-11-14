@@ -132,7 +132,7 @@ await create(`sbx-flood-${tag}`, FLOOD);
 await create(`sbx-nav-${tag}`, NAVIGATE);
 await create(`sbx-nav204-${tag}`, NAVIGATE_204);
 await create(`sbx-hints-${tag}`, HINTS);
-// A hint written straight in view.html, with the value bound into its address: refused when the playground is created.
+// A hint written straight in view.html, with the value bound into its address: refused when the lab is created.
 const markup = await fetch(`${base}/api/playgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...spec(`sbx-markup-${tag}`, ""), view: { type: "preview", html: `<p id="report">{{size}}</p><link rel="prerender" href="${RECV}/markup-prerender?size={{size}}">` } }) });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/snap/bin/chromium" });
@@ -200,7 +200,7 @@ const bare = await fetch(`${base}/p/sbx-probe-${tag}/frame`);
 check("frame URL without Fetch Metadata headers: refused, with a notice and no script", bare.status === 403 && /Preview unavailable/.test(await bare.text()) && /^sandbox; default-src 'none'/.test(bare.headers.get("content-security-policy") ?? ""), `status ${bare.status}`);
 const csp = res.headers.get("content-security-policy") ?? "";
 check("the frame response carries the sandbox policy as a header", /^sandbox allow-scripts; default-src 'none'/.test(csp) && csp.includes("connect-src 'none'") && csp.includes("frame-ancestors 'self'"), csp.slice(0, 60));
-// The admin's playground page pins its frame to the version that page rendered (app/manage.tsx, MarkExample): a frame
+// The admin's lab page pins its frame to the version that page rendered (app/manage.tsx, MarkExample): a frame
 // pinned to another version runs none of the current code, and one pinned to the current version runs it.
 const FM = { "Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "same-origin" };
 const now = (await (await fetch(`${base}/api/p/sbx-probe-${tag}/state`)).json()).version as string;
@@ -232,7 +232,7 @@ for (const path of ["/", "/connect", "/sign-in", `/p/sbx-probe-${tag}`]) {
 // Resource hints: every route is blocked, and nothing reaches the receiver (dns-prefetch and preconnect send no HTTP
 // request, so for them only the DOM result shows it).
 {
-  check("a resource hint in view.html is refused when the playground is created", markup.status === 400, `status ${markup.status}`);
+  check("a resource hint in view.html is refused when the lab is created", markup.status === 400, `status ${markup.status}`);
   if (markup.status === 201) { const page = await context.newPage(); await page.goto(`${base}/p/sbx-markup-${tag}`, { waitUntil: "load" }); await page.waitForTimeout(3000); await page.close(); }
   const page = await context.newPage();
   await page.goto(`${base}/p/sbx-hints-${tag}`, { waitUntil: "load" });

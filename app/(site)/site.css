@@ -31,7 +31,7 @@ html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-t
   html[data-type] main > .hero.hero--clay { padding-top: calc(var(--nav) + var(--s-6)); padding-bottom: var(--s-8); }
 }
 
-/* ---- A live preview playground inside a website page: Clay's own UI, as tall as its parts.
+/* ---- A live preview lab inside a website page: Sorvi's own UI, as tall as its parts.
    The stage on top, the controls and what the agent would write side by side under it, their edges shared. */
 .live .k-root { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; font: 14px/1.4 var(--font-text); color: var(--p-ink); }
 .live .k-root > div, .live .k-main { display: contents; }
@@ -98,7 +98,7 @@ html[data-type] footer.closing > .wrap { display: grid; grid-template-rows: auto
 /* ---- The owner's list on the landing page. */
 .mine .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
-/* ---- /connect and /privacy: task pages. One section, as tall as its text; Clay's own blocks on the right. */
+/* ---- /connect and /privacy: task pages. One section, as tall as its text; Sorvi's own blocks on the right. */
 html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8)); }
 .doc__head { display: grid; gap: var(--s-5); align-content: start; }
 .doc__head > p:not(.t-lead) { max-width: 52ch; }
@@ -111,12 +111,12 @@ html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8))
 .doc-foot { padding: var(--s-5) 0 var(--s-7); }
 @media (max-width: 1023px) { .doc__steps { margin-top: var(--s-7); } }
 
-/* The kit's script outlines any [bracketed] text as a forgotten placeholder. In Clay's own blocks, and in what the page
-   prints from real playgrounds (titles, control names, the text an agent would write), square brackets are real. */
+/* The kit's script outlines any [bracketed] text as a forgotten placeholder. In Sorvi's own blocks, and in what the page
+   prints from real labs (titles, control names, the text an agent would write), square brackets are real. */
 .clay [data-placeholder], .live [data-placeholder] { outline: none !important; }
 :is(.shot, .gallery, .mine, .asked, .nav__menu, .rank2) [data-placeholder], :is(.shot, .gallery, .mine, .asked, .nav__menu)[data-placeholder] { outline: none !important; }
 
-/* ---- The hero's price ranking (hero-ranking.tsx): Clay's own UI, as tall as its rows. */
+/* ---- The hero's price ranking (hero-ranking.tsx): Sorvi's own UI, as tall as its rows. */
 .rank2 { display: grid; gap: var(--s-4); padding: var(--s-6); background: var(--c-pane); border: 1px solid var(--c-line); border-radius: var(--r-md); color: var(--p-ink); font: 16px/1.5 var(--font-text); }
 .rank2 p { margin: 0; }
 .rank2__label, .rank2__note, .rank2__flip { font-size: 14px; color: var(--p-muted); }
@@ -155,7 +155,7 @@ html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8))
 .truths b { font-weight: 500; }
 
 /* ---- The three steps as one live demonstration: the sentence, the real component and its controls, the text that
-   changes as they move. The playground's own parts take their places in the steps' grid. */
+   changes as they move. The lab's own parts take their places in the steps' grid. */
 .demo { display: grid; gap: var(--s-4) var(--gutter, 24px); grid-template-columns: minmax(0, 3fr) minmax(0, 5fr) minmax(0, 4fr);
   grid-template-areas: "s1 s2 s3" "typed stage out" "typed controls out" "note note note"; align-items: start; }
 .demo--words { grid-template-areas: none; grid-template-columns: repeat(3, minmax(0, 1fr)); }

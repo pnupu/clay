@@ -5,10 +5,10 @@ import { useState } from "react";
 import { STANDING_INSTRUCTION } from "@/connect/standing-instruction";
 import { KEY_PLACEHOLDER, maskKey } from "@/lib/mask";
 
-/** What a person types to their agent: the sentence that asks for a playground, once for a look or feel and once for a decision on prices. */
+/** What a person types to their agent: the sentence that asks for a lab, once for a look or feel and once for a decision on prices. */
 const EXAMPLES = [
-  { kind: "A look or a feel", text: "build me a playground for the Sign up button in my app: its corner radius, padding, shadow and hover" },
-  { kind: "A decision on prices", text: "build me a playground for this: which transactional email service for about 30,000 emails a month now, maybe 200,000 later?" },
+  { kind: "A look or a feel", text: "build me a lab for the Sign up button in my app: its corner radius, padding, shadow and hover" },
+  { kind: "A decision on prices", text: "build me a lab for this: which transactional email service for about 30,000 emails a month now, maybe 200,000 later?" },
 ];
 
 /** What stands in a command for the operator's key. The page never has the key itself: it lives in the deployment's settings. */
@@ -82,12 +82,12 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
       {byHand(id, needsKey)}
     </>
   );
-  // CLAY_AGENT_KEY is the name on the agent's side for every viewer, also when it holds the owner key: CLAY_ACCESS_KEY is
+  // SORVI_AGENT_KEY is the name on the agent's side for every viewer, also when it holds the owner key: CLAY_ACCESS_KEY is
   // the server's own setting, and in a shell profile it would also reach a local `pnpm dev`. In the Codex command the
   // operator's placeholder is quoted: pasted as it is, a shell would read "<owner" as a redirection.
-  const claude = keyless ? { text: `claude mcp add --scope user --transport http clay ${endpoint}`, real: `claude mcp add --scope user --transport http clay ${endpoint}` } : withKey((k) => `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${k}"`);
-  const codex = keyless ? { text: `codex mcp add clay --url ${endpoint}`, real: `codex mcp add clay --url ${endpoint}` } : withKey((k) => `export CLAY_AGENT_KEY=${operator ? `'${k}'` : k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var CLAY_AGENT_KEY`);
-  const env = "CLAY_AGENT_KEY";
+  const claude = keyless ? { text: `claude mcp add --scope user --transport http sorvi ${endpoint}`, real: `claude mcp add --scope user --transport http sorvi ${endpoint}` } : withKey((k) => `claude mcp add --scope user --transport http sorvi ${endpoint} --header "Authorization: Bearer ${k}"`);
+  const codex = keyless ? { text: `codex mcp add sorvi --url ${endpoint}`, real: `codex mcp add sorvi --url ${endpoint}` } : withKey((k) => `export SORVI_AGENT_KEY=${operator ? `'${k}'` : k}\ncodex mcp add sorvi --url ${endpoint} --bearer-token-env-var SORVI_AGENT_KEY`);
+  const env = "SORVI_AGENT_KEY";
 
   return (
     <>
@@ -99,14 +99,14 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
           ) : (
             <p>You are in as the operator (the owner key). Your agent connects with that same key. This page does not have the key: it is the value of <code>CLAY_ACCESS_KEY</code> in the deployment’s settings. In the commands below, put it in place of <code>{OWNER_PLACEHOLDER}</code>.</p>
           )}
-          <p className="small muted">Playgrounds that your agent builds as the operator are the operator’s, and can be marked as examples.{keyless ? "" : " The operator session is a cookie of this browser: to see Clay as a new person does, open it in a private window."}</p>
+          <p className="small muted">Labs that your agent builds as the operator are the operator’s, and can be marked as examples.{keyless ? "" : " The operator session is a cookie of this browser: to see Sorvi as a new person does, open it in a private window."}</p>
         </section>
       ) : (
       <section className="pane">
           <h2>1. Your agent key</h2>
           {key ? (
             <>
-              <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it. It stays on this page, hidden, until you leave the page.</p>
+              <p className="ok">This is your new key. Copy it now: Sorvi shows it only once and keeps only a hash of it. It stays on this page, hidden, until you leave the page.</p>
               <div className="command copyable">
                 <pre className="code" data-testid="agent-key">{shown}</pre>
                 <button className="small-btn primary" onClick={() => copy("key", key)}>{label("key")}</button>
@@ -118,7 +118,7 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
               </p>
             </>
           ) : since ? (
-            <p>You have a key, created on {new Date(since).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}. Clay cannot show it again, so the commands below show a placeholder and cannot be copied. To fill them in, create a new key (the old one then stops working).</p>
+            <p>You have a key, created on {new Date(since).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}. Sorvi cannot show it again, so the commands below show a placeholder and cannot be copied. To fill them in, create a new key (the old one then stops working).</p>
           ) : (
             <p>You have no key yet. Create one: the commands below then show it filled in.</p>
           )}
@@ -132,19 +132,19 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
       )}
 
       <section className="pane">
-        <h2>2. Add Clay to your agent</h2>
+        <h2>2. Add Sorvi to your agent</h2>
         <h3>Claude Code</h3>
         {block("claude", claude.text, !operator, claude.real)}
-        <p className="small muted"><code>--scope user</code> makes Clay available in every folder, not only the one you are in.</p>
-        <p className="small muted">The first time your agent uses each Clay tool, Claude Code asks you to allow it. Allow it.</p>
+        <p className="small muted"><code>--scope user</code> makes Sorvi available in every folder, not only the one you are in.</p>
+        <p className="small muted">The first time your agent uses each Sorvi tool, Claude Code asks you to allow it. Allow it.</p>
 
         <h3>Codex</h3>
         {block("codex", codex.text, !operator, codex.real)}
         <p className="small muted">Codex reads the key from <code>{env}</code> each time it starts. Also put the export line in your shell profile (for example <code>~/.zshrc</code>).</p>
-        <p className="small muted">For <code>codex exec</code> (no questions asked): add this line under <code>[mcp_servers.clay]</code> in <code>~/.codex/config.toml</code>, or Clay&apos;s tools are refused:</p>
+        <p className="small muted">For <code>codex exec</code> (no questions asked): add this line under <code>[mcp_servers.sorvi]</code> in <code>~/.codex/config.toml</code>, or Sorvi&apos;s tools are refused:</p>
         {block("codex-approve", `default_tools_approval_mode = "approve"`, false)}
         <p className="small muted"><code>codex exec</code> can only read files by default. To let it write your settled result into your code, run it with <code>-s workspace-write</code>:</p>
-        <pre className="code">{`codex exec -s workspace-write "build me a playground for <your request>"`}</pre>
+        <pre className="code">{`codex exec -s workspace-write "build me a lab for <your request>"`}</pre>
         <p className="small muted">To answer it in the same session later, <code>-s</code> goes before <code>resume</code>:</p>
         {block("codex-resume", `codex exec -s workspace-write resume --last "I'm done."`, false)}
 
@@ -153,34 +153,34 @@ export default function AgentKey({ endpoint, createdAt, operator = false, keyles
       </section>
 
       <section className="pane">
-        <h2>3. Ask for a playground</h2>
-        <p>Type <strong>“build me a playground for …”</strong> to your agent, with what you want to try, tune or decide in your own words. For example:</p>
+        <h2>3. Ask for a lab</h2>
+        <p>Type <strong>“build me a lab for …”</strong> to your agent, with what you want to try, tune or decide in your own words. For example:</p>
         {EXAMPLES.map((e) => (
           <div key={e.kind}>
             <h3>{e.kind}</h3>
             {block(`example-${e.kind}`, e.text, false)}
           </div>
         ))}
-        <p className="small muted">In Claude Code the same works as a command: <code>/mcp__clay__playground the hover on my Sign up button</code> (type <code>/</code> and it is listed as <code>/clay:playground</code>). Codex has no such commands: type the sentence. Other words work too: “make a playground …”, “let me play with it first”, “clay this”.</p>
-        <p className="small muted">Measured on 14 November 2026 with the agents&apos; normal tools and nothing pasted anywhere: asked with this sentence, Claude Code 2.1.321 built a playground in 14 of 14 runs and Codex 0.167.0 in 4 of 4; the Claude Code command in 4 of 4. Asked a plain question or given an exact instruction without it, Claude Code built none (0 of 3).</p>
+        <p className="small muted">In Claude Code the same works as a command: <code>/mcp__sorvi__lab the hover on my Sign up button</code> (type <code>/</code> and it is listed as <code>/sorvi:lab</code>). Codex has no such commands: type the sentence. Other words work too: “make a lab …”, “let me play with it first”, or the older word “playground”.</p>
+        <p className="small muted">Measured on 14 November 2026, under the earlier names “Clay” and “playground”, with the agents&apos; normal tools and nothing pasted anywhere: asked with this sentence, Claude Code 2.1.321 built a lab in 14 of 14 runs and Codex 0.167.0 in 4 of 4; the Claude Code command in 4 of 4. Asked a plain question or given an exact instruction without it, Claude Code built none (0 of 3).</p>
         <p>What happens: your agent answers with a link. Open it and move the controls until it looks, feels or costs right. Then press Settle (or save your decision) and tell your agent you are done. It reads what you chose and carries it out.</p>
       </section>
 
       <section className="pane">
         <details>
-          <summary><strong>Optional: let your agent offer a playground on its own</strong></summary>
-          <p>When you do not ask for a playground, Claude Code mostly edits the file or looks the price up itself. To make it build one on its own when you are vague, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
+          <summary><strong>Optional: let your agent offer a lab on its own</strong></summary>
+          <p>When you do not ask for a lab, Claude Code mostly edits the file or looks the price up itself. To make it build one on its own when you are vague, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
           {block("standing-instruction", STANDING_INSTRUCTION, false)}
-        <p className="small muted">Measured on 14 November 2026 with Claude Code 2.1.321 and its normal tools (shell, web search), before the server&apos;s opening text was changed to the explicit sentence, on four vague requests, three runs each: without these lines it built a playground in 2 of 12 runs, with them in 12 of 12. For an exact instruction or a plain question it still built none (0 of 9). Codex built one with and without the lines.</p>
+        <p className="small muted">Measured on 14 November 2026, under the earlier names, with Claude Code 2.1.321 and its normal tools (shell, web search), before the server&apos;s opening text was changed to the explicit sentence, on four vague requests, three runs each: without these lines it built a lab in 2 of 12 runs, with them in 12 of 12. For an exact instruction or a plain question it still built none (0 of 9). Codex built one with and without the lines.</p>
         </details>
       </section>
 
       <section className="pane">
         <h2>Later</h2>
         <ul className="plain">
-          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__clay__recheck</code>). Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds.{operator ? "" : " Each run spends web requests from your daily allowance."}</li>
-          {!operator && <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>}
-          <li><strong>Remove Clay:</strong> <code>claude mcp remove clay</code> or <code>codex mcp remove clay</code>. If Claude Code says clay exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local clay</code> in that folder and <code>claude mcp remove --scope user clay</code>.</li>
+          <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.sorvi/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__sorvi__recheck</code>). Save <a href="/sorvi-recheck.yml">sorvi-recheck.yml</a> as <code>.github/workflows/sorvi-recheck.yml</code> and add your key as the repository secret <code>SORVI_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds.{operator ? "" : " Each run spends web requests from your daily allowance."}</li>
+          {!operator && <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove sorvi</code>, then the add command again. Codex: change the export line.</li>}
+          <li><strong>Remove Sorvi:</strong> <code>claude mcp remove sorvi</code> or <code>codex mcp remove sorvi</code>. If Claude Code says sorvi exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local sorvi</code> in that folder and <code>claude mcp remove --scope user sorvi</code>.</li>
         </ul>
       </section>
     </>
