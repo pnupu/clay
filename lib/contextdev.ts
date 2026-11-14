@@ -133,7 +133,9 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
       await new Promise((r) => setTimeout(r, retryAfterMs(String(data.message ?? ""))));
       continue;
     }
-    if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
+    // The message of an error may be an object (an input validation error lists its issues): say it, not "[object Object]".
+    const said = typeof data.message === "string" ? data.message : data.message == null ? "" : JSON.stringify(data.message).slice(0, 300);
+    if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${said}`.trim());
     return { ...(data as T), _ms: ms };
   }
 }
