@@ -99,20 +99,38 @@ export const HARDEN = `
   var range = D.createRange, ccf = Range.prototype.createContextualFragment, selectContents = Range.prototype.selectNodeContents, selectNode = Range.prototype.selectNode;
   var innerSet = Object.getOwnPropertyDescriptor(E, "innerHTML").set;
   var origReplaceChildren = E.replaceChildren, origReplaceWith = E.replaceWith, origBefore = E.before, origAfter = E.after, origPrepend = E.prepend, origAppend = E.append;
-  function parse(ctx, html, whole) { var r = range.call(document); (whole ? selectNode : selectContents).call(r, ctx); var f = ccf.call(r, html == null ? "" : String(html)); clean(f); return f; }
+  // Parsed INERTLY, as the native setters do: a template's content, where a script is marked as already started and never
+  // runs when the nodes are moved into the page (createContextualFragment would make it run). Markup for an svg or math
+  // element is parsed inside a wrapper of that kind, so its elements get the right namespace.
+  var SVG = "http://www.w3.org/2000/svg", MATH = "http://www.w3.org/1998/Math/MathML";
+  function parse(ctx, html) {
+    var t = createEl.call(document, "template"), text = html == null ? "" : String(html);
+    var wrap = ctx && ctx.namespaceURI === SVG ? "svg" : ctx && ctx.namespaceURI === MATH ? "math" : null;
+    innerSet.call(t, wrap ? "<" + wrap + ">" + text + "</" + wrap + ">" : text);
+    var f = t.content;
+    if (wrap && f.firstChild) { var r = range.call(document); selectContents.call(r, f.firstChild); f = r.extractContents(); }
+    clean(f);
+    return f;
+  }
   lock(Range.prototype, "createContextualFragment", function (html) { var f = ccf.call(this, html); clean(f); return f; });
   lockSetter(E, "innerHTML", function (html) {
     if (this.localName === "template") { innerSet.call(this, html); clean(this.content); return; }
-    origReplaceChildren.call(this, parse(this, html, false));
+    origReplaceChildren.call(this, parse(this, html));
   });
   if (window.ShadowRoot) { var shadowSet = (Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "innerHTML") || {}).set; if (shadowSet) lockSetter(ShadowRoot.prototype, "innerHTML", function (html) { var t = createEl.call(document, "template"); innerSet.call(t, html); clean(t.content); this.replaceChildren(t.content); }); }
-  lockSetter(E, "outerHTML", function (html) { origReplaceWith.call(this, parse(this, html, true)); });
+  lockSetter(E, "outerHTML", function (html) { origReplaceWith.call(this, parse(this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null, html)); });
   lock(E, "insertAdjacentHTML", function (where, html) {
     var w = String(where).toLowerCase(), outside = w === "beforebegin" || w === "afterend";
-    var f = parse(outside && this.parentNode ? this.parentNode : this, html, false);
+    var f = parse(outside ? (this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null) : this, html);
     if (w === "beforebegin") origBefore.call(this, f); else if (w === "afterbegin") origPrepend.call(this, f); else if (w === "beforeend") origAppend.call(this, f); else if (w === "afterend") origAfter.call(this, f); else throw new DOMException("insertAdjacentHTML: bad position", "SyntaxError");
   });
-  ["setHTMLUnsafe", "setHTML"].forEach(function (k) { if (E[k]) lock(E, k, function (html) { origReplaceChildren.call(this, parse(this, html, false)); }); if (window.ShadowRoot && ShadowRoot.prototype[k]) lock(ShadowRoot.prototype, k, function () { refuse("shadow html"); }); });
+  // setHTML is the browser's sanitizer: it keeps its own semantics (no scripts, no handlers), and the guard cleans its
+  // result. setHTMLUnsafe is parsed inertly like innerHTML (declarative shadow roots in it are not created).
+  [E, window.ShadowRoot && ShadowRoot.prototype].forEach(function (P) {
+    if (!P) return;
+    var safe = P.setHTML; if (typeof safe === "function") lock(P, "setHTML", function () { var r = safe.apply(this, arguments); clean(this); return r; });
+    if (typeof P.setHTMLUnsafe === "function") lock(P, "setHTMLUnsafe", function (html) { var f = parse(this.host || this, html); this.replaceChildren(f); });
+  });
   if (Document.parseHTMLUnsafe) lock(Document, "parseHTMLUnsafe", function () { refuse("parsed document"); });
   var parseFrom = DOMParser.prototype.parseFromString;
   lock(DOMParser.prototype, "parseFromString", function () { var d = parseFrom.apply(this, arguments); if (d && d.documentElement) clean(d.documentElement); return d; });

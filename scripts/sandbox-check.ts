@@ -81,7 +81,19 @@ const tries = {
 document.head.innerHTML += "<style>p { margin: 0 }</style>";
 out["head.innerHTML keeps the viewport meta (not a hint)"] = document.querySelector('meta[name="viewport"]') ? "blocked nothing it should keep" : "ALLOWED removal of the viewport meta";
 for (const [k, f] of Object.entries(tries)) { try { out[k] = f() ? "ALLOWED inserted" : "blocked (stripped)"; } catch (e) { out[k] = "blocked " + e.name; } }
-document.getElementById("report").textContent = JSON.stringify(out);
+// The guard must keep the native semantics of HTML strings: a script set through innerHTML never runs, an event handler
+// behaves as natively (it runs), and setHTML() is the browser's sanitizer (no script, no handler).
+const S = "<" + "script>", ES = "<" + "/script>";
+const a1 = document.createElement("div"); a1.innerHTML = S + "window.__ran = 1" + ES; document.body.appendChild(a1);
+const a2 = document.createElement("div"); a2.innerHTML = '<img src="data:," onerror="window.__err = 1">'; document.body.appendChild(a2);
+const a3 = document.createElement("div"); const hasSetHTML = typeof a3.setHTML === "function";
+try { if (hasSetHTML) { a3.setHTML('<img src="data:," onerror="window.__s = 1">' + S + "window.__s2 = 1" + ES); document.body.appendChild(a3); } } catch (e) { out["setHTML sanitizes"] = "ALLOWED threw " + e.name; }
+setTimeout(() => {
+  out["innerHTML script stays inert"] = window.__ran ? "ALLOWED it ran" : "blocked (inert, as natively)";
+  out["innerHTML onerror handler as natively"] = window.__err ? "ok (it ran, as natively)" : "ALLOWED? it did not run, unlike native";
+  out["setHTML sanitizes"] ??= !hasSetHTML ? "ok (setHTML not supported here)" : window.__s || window.__s2 || a3.querySelector("script") ? "ALLOWED a script or handler survived" : "blocked (sanitized)";
+  document.getElementById("report").textContent = JSON.stringify(out);
+}, 600);
 `;
 
 const create = async (id: string, js: string) => {
@@ -193,7 +205,7 @@ for (const path of ["/", "/connect", "/sign-in", `/p/sbx-probe-${tag}`]) {
   const doc = (await page.waitForSelector("iframe")).contentFrame().then((f) => f!);
   await (await doc).waitForFunction(() => document.getElementById("report")?.textContent?.startsWith("{"), null, { timeout: 15000 }).catch(() => {});
   const out = JSON.parse((await (await doc).locator("#report").textContent().catch(() => "{}")) || "{}") as Record<string, string>;
-  for (const [k, v] of Object.entries(out)) check(`resource hint, ${k}`, v.startsWith("blocked"), v);
+  for (const [k, v] of Object.entries(out)) check(`resource hint, ${k}`, v.startsWith("blocked") || v.startsWith("ok"), v);
   await page.waitForTimeout(3500);
   check("no resource hint reached the outside receiver", leaks.length === 0, leaks.slice(0, 4).join(", "));
   await page.close();
