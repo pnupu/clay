@@ -7,7 +7,7 @@ export type Given = { about: RegExp; value: number; mentioned?: number[] };
 
 export type Case = {
   id: string;
-  kind: "price" | "look" | "feel" | "none" | "return";
+  kind: "price" | "look" | "feel" | "none" | "return" | "data";
   request: string;
   /** Folder under evals/files/ whose files are copied into the agent's scratch directory. */
   files?: string;
@@ -26,6 +26,8 @@ export type Case = {
   fileMust?: { path: string; match: RegExp };
   /** For code cases with a playground: the file that must take the settled outputs. */
   targetFile?: string;
+  /** Kind "data": the playground must stand on facts read live from web pages (data.web), combined with the person's numbers. */
+  web?: boolean;
   /** For return visits: tools the agent must call, and what a revise must add. */
   mustCall?: ("read" | "recheck" | "revise")[];
   mustAdd?: RegExp;
@@ -147,6 +149,31 @@ export const CASES: Case[] = [
     fileMust: { path: "Button.tsx", match: /rounded-\[8px\]|rounded-lg|border-?[rR]adius:\s*["']?8(px)?/ },
     request: "make the button radius 8px in Button.tsx",
     expected: "The agent edits Button.tsx to an 8px radius and says so. No playground.",
+  },
+
+  // ---- Live web facts times the person's own numbers: comparisons the price engine cannot express. They need data.web.
+  {
+    id: "data-model", kind: "data", needsKit: true, expect: "build", web: true, files: "data-model", targetFile: "agent.config.json",
+    request: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured. what should we be using?",
+    expected: "A playground that multiplies the team's measured tokens, time and pass rate per task (bench.json) by per-token prices read live from the providers' pricing pages, with the person's volume and limits as controls and the model as a choice. After settling, agent.config.json names the chosen model.",
+  },
+  {
+    id: "data-gpu", kind: "data", needsKit: true, expect: "build", web: true,
+    request: "we fine-tune a model every month, roughly 200 GPU hours. I don't know which GPU we even need or where to rent it. runpod? lambda? somebody else?",
+    expected: "A playground with the GPU as a choice and hourly prices per GPU read live from two or three vendors' pages, at 200 hours a month. The same GPU is compared across vendors; a vendor that does not list it shows as unknown.",
+    given: [{ about: /hour/i, value: 200 }],
+  },
+  {
+    id: "data-seats", kind: "data", needsKit: true, expect: "build", web: true,
+    request: "we're 14 people, probably 25 by next year. I need to pick an issue tracker, Linear or Jira or Asana, and I can't tell what each plan would actually cost us",
+    expected: "A playground with per-seat plan prices read live from the three vendors' pricing pages, the number of seats as a control starting at 14 and reaching 25, and the plan as a choice.",
+    given: [{ about: /seat|people|user|member|team/i, value: 14, mentioned: [14, 25] }],
+  },
+  {
+    id: "data-fact", kind: "data", needsKit: true, expect: "build", web: true,
+    request: "our API runs on Cloudflare Workers, about 3 million requests a month on the free plan and growing. when does the paid plan start to make sense for us?",
+    expected: "A playground that reads the free plan's request limit and the paid plan's price and included requests live from Cloudflare's Workers pricing page, with requests per month as a control starting at 3 million.",
+    given: [{ about: /request/i, value: 3_000_000 }],
   },
 
   // ---- Return visits to a playground that the harness prepared (email services, a saved decision).

@@ -17,9 +17,9 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, wri
 import { randomBytes } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import { chromium, type Browser } from "playwright-core";
-import { MCP_PATH, TOOL, authHeader, dimensions, finalProblems, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, vendorId, type Dimension } from "./adapter.ts";
-import { CAUSE, creation, directAnswer, fileMatches, lastBuild, namesChoice, ranges, readBack, toolUse, verdict, type Check } from "./check.ts";
-import { CHROME, checkPage, personSettles } from "./page.ts";
+import { MCP_PATH, TOOL, authHeader, dimensions, finalProblems, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, readFacts, vendorId, type Dimension } from "./adapter.ts";
+import { CAUSE, choiceHandback, creation, directAnswer, fileMatches, lastBuild, namesChoice, ranges, readBack, sources, toolUse, unknowns, verdict, type Check } from "./check.ts";
+import { CHROME, checkPage, personSettles, previewWithoutWebNumbers } from "./page.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES as FIXED, type Case } from "./requests.ts";
 import { parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
@@ -220,6 +220,8 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   add(...page.checks);
   r.shot = page.shot ? relative(runDir, page.shot) : null;
   add(ranges(c.given, dims));
+  // Kind "data": the facts carry sources, and an unknown is not shown as a number.
+  if (c.web) add(sources(page.web), unknowns(page.web.length ? await previewWithoutWebNumbers(browser, { baseUrl, url, key }) : null));
 
   // ---- Second leg: the person settles, then the same conversation continues.
   if (oneLeg.includes(c.id) || oneLeg.includes("all")) {
@@ -253,7 +255,12 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   const second = await leg("leg2", SECOND_LEG, first.sessionId);
   if (second.error === "not run") return finish();
   add(readBack(second.calls, built.id));
-  if (c.targetFile) add(fileMatches(original(c.targetFile) ?? "", read(join(ws, c.targetFile)), person.outputs));
+  if (c.web) {
+    // What the person chose, from the server (the values of the select controls they settled).
+    const res = await mcp("tools/call", { name: TOOL.read, arguments: { playground_id: built.id } }).catch(() => null);
+    const choices = readFacts(String((res?.content as { text?: string }[] | undefined)?.[0]?.text ?? "")).choices;
+    add(choiceHandback(choices, c.targetFile ? (original(c.targetFile) ?? "") : null, c.targetFile ? read(join(ws, c.targetFile)) : null, second.allText));
+  } else if (c.targetFile) add(fileMatches(original(c.targetFile) ?? "", read(join(ws, c.targetFile)), person.outputs));
   else if (person.chosen) add(namesChoice(second.allText, person.chosen, vendorId(first.calls, person.chosen)));
   return finish();
 }

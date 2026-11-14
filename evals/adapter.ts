@@ -29,7 +29,7 @@ export function parseBuild(resultText: string): Build {
   }
 }
 /** The problems that mean a broken build, which the agent must repair or tell the person. The others are true findings about a page. */
-export const isBuildError = (problem: string) => /^BROKEN BUILD|was not read|no plan was found|none states a quantity|no page states a price|no page says whether|could not be read/.test(problem);
+export const isBuildError = (problem: string) => /^BROKEN BUILD|was not read|no plan was found|no row was found|none states a quantity|no page states a price|no page says whether|could not be read/.test(problem);
 /**
  * The problems list of a read result once the build has ended, or null while it runs (or for a playground without one).
  * A build answers the agent before every page is read, so the last create or revise result may hold an empty list that
@@ -44,7 +44,7 @@ export function finalProblems(readResultText: string): string[] | null {
   }
 }
 /** Who a problem is about: "resend: ..." gives "resend", "metric emails: ..." gives "emails". */
-export const problemSubject = (problem: string) => problem.split(":")[0].replace(/^(metric|feature)\s+/, "").trim();
+export const problemSubject = (problem: string) => problem.split(":")[0].replace(/^(metric|feature)\s+/, "").replace(/^data\.web\./, "").trim();
 /** The playground id a tool call works on. */
 export const callTarget = (input: Record<string, unknown>) => (typeof input.playground_id === "string" ? input.playground_id : typeof input.id === "string" ? input.id : null);
 /** The create tool refused because the server already has a playground with that id. In an eval that is a leftover of an earlier run. */
@@ -138,6 +138,63 @@ export const PAGE = {
 
 /** The request with which the page reports the person's exploration to the agent. The checker's own control moves must not be stored as the person's. */
 export const EXPLORATION_REPORT = "**/api/p/*/explore";
+
+/** The requests with which the page reports to the server (the person's exploration, how the preview ran). A probe that feeds the preview altered data must not send them. */
+export const PAGE_REPORTS = ["**/api/p/*/explore", "**/api/p/*/preview"];
+/** The request for the preview's frame document. */
+export const FRAME_REQUEST = "**/p/*/frame";
+/**
+ * The frame document with every number of the web data replaced by null: what the preview gets when nothing could be
+ * read. Returns null when the document has no web data. The config sits in the document as `var cfg = {...};`.
+ */
+export function withoutWebNumbers(frameHtml: string): string | null {
+  const start = frameHtml.indexOf("var cfg = ");
+  const end = frameHtml.indexOf(";\nfunction check(", start);
+  if (start < 0 || end < 0) return null;
+  try {
+    const cfg = JSON.parse(frameHtml.slice(start + 10, end)) as { data?: { web?: unknown } };
+    if (!cfg.data?.web || !Object.keys(cfg.data.web as object).length) return null;
+    const strip = (v: unknown): unknown => (typeof v === "number" ? null : Array.isArray(v) ? v.map(strip) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, strip(x)])) : v);
+    cfg.data.web = strip(cfg.data.web);
+    return frameHtml.slice(0, start + 10) + JSON.stringify(cfg).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029") + frameHtml.slice(end);
+  } catch {
+    return null;
+  }
+}
+
+/** One web source as the page lists it under "Where the data comes from". */
+export type WebSourceOnPage = { id: string; link: boolean; read: number; unknown: number; failed: boolean };
+/** The web sources of a preview playground on the page: is there a link to the page, how many values are shown as read, how many as unknown. */
+export async function webSources(page: Page): Promise<WebSourceOnPage[]> {
+  const out: WebSourceOnPage[] = [];
+  for (const el of await page.locator("[data-web-source]").all()) {
+    const cells = await el.locator("td").allInnerTexts();
+    const unknown = cells.filter((t) => /^unknown\b/.test(t.trim())).length;
+    out.push({ id: (await el.getAttribute("data-web-source")) ?? "", link: (await el.locator('a[href^="https://"]').count()) > 0, read: cells.length - unknown, unknown, failed: /could not be read|No row was found/.test(await el.innerText()) });
+  }
+  return out;
+}
+/** The visible text of the preview, or null when the page has none. */
+export async function previewText(page: Page): Promise<string | null> {
+  const frame = await (await page.$(PAGE.preview))?.contentFrame();
+  return frame ? frame.locator("body").innerText().then((t) => t.replace(/\s+/g, " ").trim(), () => "") : null;
+}
+/**
+ * From a read result after the settle: the choices the person made (the values of select controls: every settled text
+ * value that is not a colour), and whether the server holds unknown values for a web source.
+ */
+export function readFacts(readResultText: string): { choices: string[]; anyUnknown: boolean } {
+  try {
+    const r = JSON.parse(readResultText) as { settled?: { values?: Record<string, unknown> } | string; data?: { source?: string; status?: string; unknown?: unknown[] }[] };
+    const values = typeof r.settled === "object" && r.settled ? (r.settled.values ?? {}) : {};
+    return {
+      choices: Object.values(values).filter((v): v is string => typeof v === "string" && v.trim() !== "" && !/^#[0-9a-f]{6}$/i.test(v)),
+      anyUnknown: (r.data ?? []).some((s) => s.source === "web" && (s.status === "failed" || (Array.isArray(s.unknown) && s.unknown.length > 0))),
+    };
+  } catch {
+    return { choices: [], anyUnknown: false };
+  }
+}
 
 /** How many visible elements the preview shows, or null when the page has no preview. Zero means a blank preview. */
 export async function previewContent(page: Page): Promise<number | null> {

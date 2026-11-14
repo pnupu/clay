@@ -138,7 +138,7 @@ export const webInstructions = (s: WebSource) =>
 const plain = (s: string) => s.toLowerCase().replace(/(\d),(?=\d{3}(\D|$))/g, "$1");
 /** The ways a page may write a number: 3, 3.00, 1000, 0.30 or .30, 1k, 1M. */
 function numberForms(n: number): string[] {
-  const forms = [String(n), n.toFixed(2)];
+  const forms = [String(n), n.toFixed(2), n.toFixed(3)];
   if (Math.abs(n) > 0 && Math.abs(n) < 1) forms.push(String(n).replace(/^(-?)0/, "$1"));
   if (n >= 1000 && n % 1000 === 0) forms.push(`${n / 1000}k`);
   if (n >= 1_000_000 && n % 100_000 === 0) forms.push(`${n / 1_000_000}m`, `${n / 1_000_000} million`);

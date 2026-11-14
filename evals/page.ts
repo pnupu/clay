@@ -3,7 +3,7 @@
 // Every selector comes from adapter.ts. The control discovery is generic (range, checkbox, select, colour inputs).
 import { createHash } from "node:crypto";
 import type { Browser, Locator, Page } from "playwright-core";
-import { EXPLORATION_REPORT, PAGE, missingControls, previewContent, settle, signIn, type Dimension } from "./adapter.ts";
+import { EXPLORATION_REPORT, FRAME_REQUEST, PAGE, PAGE_REPORTS, missingControls, previewContent, previewText, settle, signIn, webSources, withoutWebNumbers, type Dimension, type WebSourceOnPage } from "./adapter.ts";
 import type { Check } from "./check.ts";
 
 export const CHROME = process.env.CHROME ?? "/snap/bin/chromium";
@@ -94,13 +94,15 @@ async function reacts(page: Page, control: Locator, kind: string, animated: { ye
   return yes;
 }
 
-export type PageResult = { checks: Check[]; shot: string | null };
+export type PageResult = { checks: Check[]; shot: string | null; web: WebSourceOnPage[]; preview: string | null };
 
 /** Load the page, look for error states, move every control, take the contact-sheet screenshot. */
 export async function checkPage(browser: Browser, o: { baseUrl: string; url: string; key?: string; dims: Dimension[] | null; shotPath: string }): Promise<PageResult> {
   const { context, page, errors, response } = await open(browser, o.baseUrl, o.url, o.key, true);
   const checks: Check[] = [];
   let shot: string | null = null;
+  let web: WebSourceOnPage[] = [];
+  let preview: string | null = null;
   try {
     // ---- Does it load without an error state and without console errors?
     const status = response instanceof Error ? null : (response?.status() ?? null);
@@ -127,8 +129,12 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     checks.push(load ? { id: "page_loads", status: "fail", reason: load } : { id: "page_loads", status: "pass", reason: `loaded, no error state, no console error${hasPreview ? "" : `, ${ranked} vendor(s) ranked`}` });
     if (!rendered) {
       checks.push({ id: "controls", status: "fail", reason: "no page to find controls on" });
-      return { checks, shot };
+      return { checks, shot, web, preview };
     }
+
+    // What the data panel and the preview show at the start values (for the checks of kind "data").
+    web = await webSources(page);
+    preview = await previewText(page);
 
     // ---- Do controls exist, and does each one change something visible?
     const controls = await page.locator(PAGE.controls).locator('input[type="range"], input[type="checkbox"], select, input[type="color"], [role="group"]:has(button)').all();
@@ -157,7 +163,34 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
       checks.push(!visible ? { id: "preview", status: "fail", reason: "the preview is blank: no visible element in it" } : { id: "preview", status: "pass", reason: `the preview shows ${visible} visible element(s) and no error` });
     }
     if (errors.length && !load) checks[0] = { id: "page_loads", status: "fail", reason: cut(errors[0]) }; // an error raised by moving a control
-    return { checks, shot };
+    return { checks, shot, web, preview };
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * The preview's text when every number of its web data is missing. The frame document is altered on its way to the
+ * browser; the page's reports to the server are answered in the browser, so the stored playground is not touched.
+ * Null when the preview has no web data or did not load.
+ */
+export async function previewWithoutWebNumbers(browser: Browser, o: { baseUrl: string; url: string; key?: string }): Promise<string | null> {
+  const { context, page } = await open(browser, o.baseUrl, "about:blank", o.key);
+  try {
+    let altered = false;
+    for (const pattern of PAGE_REPORTS) await context.route(pattern, (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+    await context.route(FRAME_REQUEST, async (route) => {
+      const response = await route.fetch();
+      const body = withoutWebNumbers(await response.text());
+      altered ||= body != null;
+      await route.fulfill({ response, ...(body != null ? { body } : {}) });
+    });
+    await page.goto(o.url, { waitUntil: "networkidle", timeout: 45000 });
+    await page.locator(PAGE.preview).first().waitFor({ timeout: 30000 });
+    await page.waitForTimeout(PAGE.previewSettleMs);
+    return altered ? await previewText(page) : null;
+  } catch {
+    return null;
   } finally {
     await context.close();
   }

@@ -1,8 +1,8 @@
 // Unit tests of the checker's pure parts. Run: node --test evals/check.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
-import { dimensions, finalProblems } from "./adapter.ts";
+import { choiceHandback, creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, sources, unknowns, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
+import { dimensions, finalProblems, readFacts, withoutWebNumbers } from "./adapter.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES } from "./requests.ts";
 
@@ -11,16 +11,17 @@ const call = (tool: string, input: Record<string, unknown> = {}, result: unknown
 const byId = (id: string) => CASES.find((c) => c.id === id)!;
 
 test("the request set: 20 cases with unique ids, no product words in a request", () => {
-  assert.equal(CASES.length, 20);
-  assert.equal(new Set(CASES.map((c) => c.id)).size, 20);
+  assert.equal(CASES.length, 24);
+  assert.equal(new Set(CASES.map((c) => c.id)).size, 24);
   for (const c of CASES) assert.doesNotMatch(c.request, /clay|playground|slider|create_|mcp/i, c.id);
   assert.deepEqual(Object.fromEntries(["price", "look", "feel", "none", "return"].map((k) => [k, CASES.filter((c) => c.kind === k).length])), { price: 6, look: 5, feel: 4, none: 3, return: 2 });
+  assert.deepEqual(CASES.filter((c) => c.kind === "data").map((c) => [c.needsKit, c.web]), [[true, true], [true, true], [true, true], [true, true]]);
   assert.ok(CASES.filter((c) => c.kind === "look" || c.kind === "feel").every((c) => c.needsKit));
 });
 
 test("the held-out set: 6 requests (2 price, 2 look, 2 feel) with their own ids and no product words", () => {
   assert.deepEqual(HELD_OUT.map((c) => c.kind), ["price", "price", "look", "look", "feel", "feel"]);
-  assert.equal(new Set([...HELD_OUT, ...CASES].map((c) => c.id)).size, 26);
+  assert.equal(new Set([...HELD_OUT, ...CASES].map((c) => c.id)).size, 30);
   for (const c of HELD_OUT) assert.doesNotMatch(c.request, /clay|playground|slider|create_|mcp/i, c.id);
 });
 
@@ -202,4 +203,40 @@ test("verdict: one failing check fails the case, and the first one is reported",
   assert.equal(verdict([{ id: "a", status: "pass", reason: "" }, { id: "b", status: "na", reason: "" }]).result, "pass");
   const v = verdict([{ id: "a", status: "pass", reason: "" }, { id: "b", status: "fail", reason: "x" }, { id: "c", status: "fail", reason: "y" }]);
   assert.deepEqual([v.result, v.firstFail?.id], ["fail", "b"]);
+});
+
+test("data cases: the facts carry sources, an unknown is not a number, the choice comes back", () => {
+  const src = (over: object = {}) => ({ id: "anthropic", link: true, read: 12, unknown: 0, failed: false, ...over });
+  assert.equal(sources([src(), src({ id: "openai" })]).status, "pass");
+  assert.match(sources([]).reason, /lists no web source/);
+  assert.match(sources([src({ failed: true, read: 0 })]).reason, /no web source was read/);
+  assert.match(sources([src(), src({ id: "openai", read: 0 })]).reason, /1 of 2 web sources show no value: openai/);
+  assert.match(sources([src({ link: false })]).reason, /no link/);
+  // The probe loads the preview with every web number missing: it must say unknown, and must not show a broken number.
+  assert.equal(unknowns("Opus: unknown, Sonnet: unknown (no price found)").status, "pass");
+  assert.match(unknowns("Opus $NaN per task, unknown").reason, /shows "NaN"/);
+  assert.match(unknowns("cost: undefined").reason, /undefined/);
+  assert.match(unknowns("Opus $0.00 per task, Luna $0.00 per task").reason, /names nothing as unknown/);
+  assert.match(unknowns("").reason, /names nothing as unknown/);
+  assert.equal(unknowns(null).status, "fail");
+  // The probe's document: every number of the web data is null, nothing else changes.
+  const doc = '<script>(function () { var cfg = {"controls":[],"values":{"tasks":2000},"data":{"brand":null,"inline":{"n":5},"web":{"prices":[{"model":"a\\u003cb","input":4,"cached":0.2}],"plan":{"seat":8,"sso":true}}},"html":"x"};\nfunction check(controls, v) {}})();</script>';
+  const probed = withoutWebNumbers(doc)!;
+  assert.match(probed, /"web":\{"prices":\[\{"model":"a\\u003cb","input":null,"cached":null\}\],"plan":\{"seat":null,"sso":true\}\}/);
+  assert.match(probed, /"values":\{"tasks":2000\}.*"inline":\{"n":5\}/);
+  assert.equal(withoutWebNumbers(doc.replace(/"web":\{.*\}\},"html"/, '"web":{}},"html"')), null);
+  assert.equal(withoutWebNumbers("<html>no config</html>"), null);
+  // The choice the person settled must be in the file, or without a file in the answer.
+  const before = '{ "model": "claude-opus-5-5" }';
+  assert.equal(choiceHandback(["claude-sonnet-5-5"], before, '{ "model": "claude-sonnet-5-5" }', "").status, "pass");
+  assert.match(choiceHandback(["claude-sonnet-5-5"], before, before, "").reason, /did not change/);
+  assert.match(choiceHandback(["claude-sonnet-5-5"], before, '{ "model": "gpt-6-luna" }', "").reason, /does not hold the settled choice/);
+  assert.equal(choiceHandback(["H100", "RunPod"], null, null, "You settled on an H100 at RunPod for 300 hours.").status, "pass");
+  assert.match(choiceHandback(["H100"], null, null, "You settled on an A100.").reason, /the answer does not hold/);
+  assert.equal(choiceHandback([], null, null, "").status, "na");
+  // What the harness reads from the server after the settle.
+  const read = JSON.stringify({ settled: { values: { tasks: 3000, model: "claude-sonnet-5-5", accent: "#ff0000", on: true } }, data: [{ source: "web", status: "read", unknown: ["GPT-6 Luna / cached_input"] }, { source: "inline" }] });
+  assert.deepEqual(readFacts(read), { choices: ["claude-sonnet-5-5"], anyUnknown: true });
+  assert.deepEqual(readFacts(JSON.stringify({ settled: "none: ...", data: [{ source: "web", status: "read", unknown: [] }] })), { choices: [], anyUnknown: false });
+  assert.deepEqual(readFacts("not json"), { choices: [], anyUnknown: false });
 });

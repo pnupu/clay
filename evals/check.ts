@@ -25,6 +25,8 @@ export const CAUSE: Record<string, string> = {
   settle: "page error",
   controls: "dead control",
   ranges: "bad ranges",
+  sources: "facts not read from the web",
+  unknowns: "an unknown value shown as a number",
   handback_read: "hand-back mismatch",
   handback_match: "hand-back mismatch",
 };
@@ -169,6 +171,39 @@ export function directAnswer(c: Case, finalText: string, before: string | null, 
   }
   if (c.answer) return c.answer.test(finalText) ? pass("direct_answer", `the answer matches ${c.answer}`) : fail("direct_answer", `the answer does not match ${c.answer}`);
   return finalText.trim().length > 40 ? pass("direct_answer", "the agent answered in words") : fail("direct_answer", "the agent gave no answer");
+}
+
+// ---- Kind "data": live web facts times the person's own numbers.
+/** The facts on the page must carry sources: at least one web source with a link to its page and values that were read. */
+export function sources(list: { id: string; link: boolean; read: number; failed: boolean }[]): Check {
+  if (!list.length) return fail("sources", "the page lists no web source: its facts were not read from the web");
+  const good = list.filter((s) => s.link && s.read > 0 && !s.failed);
+  if (!good.length) return fail("sources", `no web source was read: ${list.map((s) => `${s.id} (${s.failed ? "failed" : s.read ? "no link" : "no value"})`).join(", ")}`);
+  const bad = list.filter((s) => !good.includes(s));
+  return bad.length ? fail("sources", `${bad.length} of ${list.length} web sources show no value: ${bad.map((s) => s.id).join(", ")}`) : pass("sources", `${list.length} web source(s), each with a link to its page and values read (${good.reduce((n, s) => n + s.read, 0)} in all)`);
+}
+
+/**
+ * An unknown value must not be shown as a number. The probe: the preview is loaded with every number of its web data
+ * missing (null), as when no page could be read. It must then say so in words, and must not show the text of a broken
+ * calculation (NaN, undefined, null, Infinity). A preview that turns a missing price into $0 says neither.
+ * `withNulls`: the preview's text in that probe; null when the probe could not run.
+ */
+export function unknowns(withNulls: string | null): Check {
+  if (withNulls == null) return fail("unknowns", "the preview could not be loaded with its web numbers missing (no web data in it, or no preview)");
+  const broken = /\bNaN\b|\bundefined\b|\bnull\b|\bInfinity\b/.exec(withNulls);
+  if (broken) return fail("unknowns", `with its web numbers missing, the preview shows "${broken[0]}": a missing value went into a calculation`);
+  if (!/unknown|not stated|not listed|no price|not available|not found|missing|n\/a|—|–/i.test(withNulls)) return fail("unknowns", "with every web number missing, the preview names nothing as unknown: a missing value is shown as a number, or the preview is empty");
+  return pass("unknowns", "with its web numbers missing, the preview says unknown and shows no broken number");
+}
+
+/** The hand-back of a choice: the file (or, without a file, the answer) must hold every choice the person settled. */
+export function choiceHandback(choices: string[], before: string | null, after: string | null, answer: string): Check {
+  if (!choices.length) return na("handback_match", "the person had no choice to settle (the playground has no select)");
+  const text = before != null ? after : answer;
+  if (before != null && (after == null || after === before)) return fail("handback_match", "the file did not change");
+  const missing = choices.find((c) => !(text ?? "").toLowerCase().includes(c.toLowerCase()));
+  return missing ? fail("handback_match", `${before != null ? "the file" : "the answer"} does not hold the settled choice: ${cut(missing, 80)}`) : pass("handback_match", `${before != null ? "the file" : "the answer"} holds the settled choice(s): ${choices.map((c) => cut(c, 40)).join(", ")}`);
 }
 
 /** A case passes only if every applicable check passes. */

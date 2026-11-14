@@ -39,6 +39,8 @@ test("a number that is not in the page text is quarantined: unknown, never a gue
   assert.equal(numberOnPage(3, page), true);
   assert.equal(numberOnPage(1000, page), true);
   assert.equal(numberOnPage(0.3, "$0.30 per million"), true);
+  assert.equal(numberOnPage(0.02, "$0.020 / 1M cached"), true);
+  assert.equal(numberOnPage(1.2, "$1.200"), true);
   assert.equal(numberOnPage(0.3, "$1.30 per million"), false);
   assert.equal(numberOnPage(35, "tiers: 3, 5 and 8"), false);
   assert.equal(numberOnPage(2000000, "2 million tokens"), true);

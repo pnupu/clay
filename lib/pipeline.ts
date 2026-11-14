@@ -344,6 +344,11 @@ async function extractWeb(src: WebSource, url: string): Promise<WebRead> {
   const r = await scrape(url, { schema: webSchema(src), instructions: webInstructions(src) });
   if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`.trim());
   const text = r.markdown.success && r.markdown.data ? r.markdown.data : "";
+  try {
+    // The page text of the capture, kept locally so a quarantined number can be checked by hand (skipped on a read-only filesystem).
+    mkdirSync(".data/pages", { recursive: true });
+    writeFileSync(`.data/pages/web--${src.id}--${new URL(url).hostname}.md`, text);
+  } catch {}
   return guard(src, r.json.data, text, { url, fetchedAt: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString(), truncated: r.json.isTruncated === true });
 }
 
