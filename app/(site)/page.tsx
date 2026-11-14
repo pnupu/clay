@@ -218,7 +218,7 @@ export default async function Home() {
               <div className="span-2 footer__col"><h3>Web data</h3><ul><li><a href="https://context.dev">Context.dev</a></li></ul></div>
             </div>
             <div className="footer__legal">
-              <span>&copy; 2026 Clay &nbsp; Built at Junction 2026 for the Context.dev challenge. Web data is read through Context.dev.</span>
+              <span>&copy; 2026 Clay &nbsp; <a href="/privacy">Privacy and security</a> &nbsp; Built at Junction 2026 for the Context.dev challenge. Web data is read through Context.dev.</span>
               <div className="socials" />
               <a className="credits" href="/credits.txt">Typefaces: Gabarito, Figtree and DM Mono, SIL Open Font Licence</a>
             </div>

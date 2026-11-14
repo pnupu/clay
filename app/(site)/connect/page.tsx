@@ -55,7 +55,7 @@ export default async function Connect() {
       </main>
       <footer className="doc-foot">
         <div className="wrap footer__legal">
-          <span>&copy; 2026 Clay &nbsp; Built at Junction 2026 for the Context.dev challenge. Web data is read through Context.dev.</span>
+          <span>&copy; 2026 Clay &nbsp; <a href="/privacy">Privacy and security</a> &nbsp; Built at Junction 2026 for the Context.dev challenge. Web data is read through Context.dev.</span>
           <a className="credits" href="/credits.txt">Typefaces: Gabarito, Figtree and DM Mono, SIL Open Font Licence</a>
         </div>
       </footer>
