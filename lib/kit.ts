@@ -195,6 +195,8 @@ export function markupWarning(kit: { preview: { js: string }; web?: unknown[] | 
 const SMALLEST_TEXT = 12;
 /** A data view may bring this many colours of its own (a brand colour, a series) before it is told to use the variables. */
 const OWN_COLOURS = 2;
+/** The most characters of one filled source (view.css, or one style attribute) that the look check reads. */
+const FILLED_MOST = 200_000;
 /**
  * How a preview that shows data looks: problems for the agent that builds it, in the build and revise results. A page
  * of facts written in styles of its own (a typeface, 11 px text, a dozen colours) does not match the page around it or
@@ -206,7 +208,7 @@ const OWN_COLOURS = 2;
  * what view.js sets is not seen, and neither is a style element inside view.html, a colour by name, a colour function
  * with another function inside it (rgb(var(--r) 1 2)) or a size in em or %.
  */
-export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "data" | "map"> & { tailwind?: boolean }; web?: unknown[] | null }): string[] {
+export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "data" | "map"> & { tailwind?: boolean }; web?: unknown[] | null; controls?: Control[] }): string[] {
   const { preview } = kit;
   if (!preview.data) {
     return kit.web?.length && !preview.map && !preview.tailwind
@@ -218,16 +220,21 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   // browser reads them, also one that is never closed, and then a ";" ends its last declaration. So a value is always
   // the text between a colon and ";" or "}", and no declaration runs into the next source.
   // (Not seen: "/*" inside a string or a url(), which is no comment; it hides the styles after it from this check.)
-  const plain = (s: string) => `${s.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ")};`;
+  // The styles are read as the page opens: every {{control_id}} is filled with the start value of its control (the
+  // start size of a slider, the text of a toggle as it starts), one level deep as in the frame. A name that is no
+  // control is read as one word. A filled text is cut at FILLED_MOST characters: a toggle text can be long.
+  const start = (name: string) => {
+    const c = kit.controls?.find((x) => x.id === name);
+    return c ? textOf(c, c.initial) : "x";
+  };
+  const plain = (s: string) => `${s.replace(PLACEHOLDER, (_, name: string) => start(name)).slice(0, FILLED_MOST).replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ")};`;
   const styles = [plain(preview.css), ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => plain(m[1] ?? m[2]))].join("\n");
   // The declarations, in one pass over the text: what stands before a ";" or a "}" is a declaration ("property: value"),
   // what stands before a "{" is a selector (".font:hover", "#add") and is left out. Every check below reads one
   // declaration at a time and each of its patterns can match a number or a colour only from its first character, so
   // the time grows with the length of the text and no faster: a view.css of the largest size, written to be slow,
   // costs milliseconds. It must: this runs on what an agent sends, before anything is stored.
-  // A value bound to a control ({{control_id}}) is read as one word, or its braces would cut the declaration in two:
-  // "font-family: {{face}}" is a typeface of its own, and the size in "font-size: {{size}}px" is not known here.
-  const decls = [...styles.replace(/\{\{[^{}]*\}\}/g, "x").matchAll(/([^;{}]*)([;{}])/g)]
+  const decls = [...styles.matchAll(/([^;{}]*)([;{}])/g)]
     .filter((m) => m[2] !== "{")
     .map((m) => /^\s*([\w-]+)\s*:([\s\S]*)$/.exec(m[1]))
     .filter((m) => m != null)
@@ -237,7 +244,8 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   // The size of font-size and of the font shorthand, in px or rem (16 px): the first number with such a unit. A number
   // starts only where no digit, letter, point or hyphen stands before it, so a long run of digits is read one time.
   const size = /(?<![\w.-])(\d+(?:\.\d+)?|\.\d+)(px|rem)\b/i;
-  const small = [...new Set(decls.filter((d) => d.prop === "font" || d.prop === "font-size").map((d) => size.exec(d.value)).filter((m) => m != null).map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
+  // A size inside a function (calc, clamp, min, max, var) is not a plain size: its terms are not read as one.
+  const small = [...new Set(decls.filter((d) => (d.prop === "font" || d.prop === "font-size") && !d.value.includes("(")).map((d) => size.exec(d.value)).filter((m) => m != null).map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
   if (small.length) out.push(`view.css or a style attribute of view.html: font-size ${small.join(", ")} is under ${SMALLEST_TEXT} px, the smallest text of a data view. Text that small is a sign of too much text: use .small (13 px), and move the long part into <details>.`);
   // Colours in the values of declarations only: "#add" in a selector is an id, and "#grad" in url(#grad) names a
   // gradient or a clip path of a chart. One colour written in two ways is one colour: #fff, #FFFFFF and #ffffffff.
@@ -399,7 +407,7 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   // one more set of sizes and colours: the two do not go together.
   if (raw.view.data === true && raw.view.tailwind === true) errors.push("view: view.data and view.tailwind do not go together. A data view (a comparison, a table of facts) is written with Clay's parts and needs no Tailwind: remove view.tailwind. When the preview is the person's own Tailwind component, remove view.data.");
   if (errors.length) return { ok: false, errors };
-  warnings.push(...styleProblems({ preview: { html, css, data: raw.view.data === true, map: raw.view.map === true, tailwind: raw.view.tailwind === true }, web }));
+  warnings.push(...styleProblems({ preview: { html, css, data: raw.view.data === true, map: raw.view.map === true, tailwind: raw.view.tailwind === true }, web, controls }));
   return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, ...(raw.view.map === true ? { map: true } : {}), ...(raw.view.data === true ? { data: true } : {}), height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
 }
 

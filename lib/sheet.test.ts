@@ -93,6 +93,8 @@ test("the look of a page is checked in a time that grows with its length: a view
     "colour functions that are never closed": `.a { color: ${"rgb(".repeat(4_990)} }`,
     "font declarations with no end": "font: ".repeat(3_333),
     "comments that are never closed": "/*".repeat(10_000),
+    "placeholders that are never closed": "{{".repeat(10_000),
+    "one placeholder with no end": `{{${"a".repeat(19_998)}`,
   };
   for (const [what, css] of Object.entries(hostile)) {
     const start = performance.now();
@@ -139,8 +141,26 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // comment that is never closed and after a view.css that does not close its last rule.
   assert.deepEqual(styleProblems({ preview: { html: '<p style="font-size: 1em /* n"><b style="padding: 4px">x</b></p>', css: "", data: true } }), []);
   assert.deepEqual(styleProblems({ preview: { html: '<b style="padding: 4px">x</b>', css: ".a { font-size: 1em", data: true } }), []);
-  // A value bound to a control is still a declaration: a typeface from a control is a typeface of its own, the size
-  // next to a bound line height is read, and a size that comes from a control is not known.
+  // The styles are read as the page opens: every {{control_id}} is filled with the start value of its control.
+  const controls = parsed({
+    ...MODEL_EXAMPLE,
+    controls: [
+      ...MODEL_EXAMPLE.controls!,
+      { id: "size", type: "slider", label: "Text size", meaning: "font-size of the table in px", min: 6, max: 20, initial: 9, unit: "px" },
+      { id: "big", type: "slider", label: "Head size", meaning: "font-size of the head in px", min: 12, max: 30, initial: 16, unit: "px" },
+      { id: "face", type: "select", label: "Typeface", meaning: "font of the buttons", initial: "inherit", options: [{ value: "inherit" }, { value: "Inter" }] },
+      { id: "shadow", type: "toggle", label: "Shadow", meaning: "box-shadow of a card", initial: true, on: "box-shadow: 0 1px 2px #111111;", off: "" },
+    ],
+    view: { ...MODEL_EXAMPLE.view, css: "td { font-size: {{size}}px } th { font-size: calc({{big}} * 1px) } button { font: {{face}} } .card { {{shadow}} border-color: #222222; outline-color: #333333 }" },
+  });
+  // The slider that starts at 9 px is small text; the one that starts at 16 px is not. "inherit" from a control is no
+  // typeface. The declaration inside the toggle text and the ones after it are all read: three colours.
+  // A term of calc() is not a size.
+  const look = controls.warnings.filter((w) => w.startsWith("view.css"));
+  assert.equal(look.length, 2, look.join("\n"));
+  assert.match(look[0], /font-size 9px is under 12 px/);
+  assert.match(look[1], /3 colours of its own \(#111111, #222222, #333333\)/);
+  // A name that is no control is read as one word: the declaration around it stays whole.
   assert.match(data(".a { font-family: {{face}} }")[0], /Clay's typeface/);
   assert.match(data(".a { font: 600 10px/{{lh}} Arial }").join("\n"), /Clay's typeface[\s\S]*font-size 10px is under 12 px/);
   assert.deepEqual(data(".a { font-size: {{size}}px; color: {{ink}} }"), []);
