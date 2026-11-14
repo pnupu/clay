@@ -25,8 +25,12 @@ test("the first 200 characters of the server instructions say what Clay is for, 
 test("the prompts: the person's own request with the whole loop, short, with and without what they want", () => {
   const withWhat = PROMPTS.playground.text("  the hover on the button in button.css ");
   assert.ok(withWhat.startsWith("Build me a Clay playground for this: the hover on the button in button.css\n"));
+  // Claude Code 2.1.321 gives the prompt only the first word after the command ("the"): the text then points at the
+  // person's whole line, which that client puts just above the prompt.
+  assert.match(PROMPTS.playground.text("the"), /^Build me a Clay playground for this: the\n\(Some clients pass only the first word here: when my words after the command, just above, say more, they are my request\.\)/);
+  assert.match(PROMPTS.recheck.text("the"), /about the still right\? \(Some clients pass only the first word here/);
   // The loop, in order: the real file first, the reference and the build, the link and the wait, the hand-back.
-  const order = ["read my real file", "kit_reference", "create_playground", "price_ranking", "Give me the link and wait until I say I am done", "read_playground", "decision_record"].map((x) => withWhat.indexOf(x));
+  const order = ["read my real file", "kit_reference", "create_playground", "price_ranking", 'Follow "next" in each tool result until the build is done and its problems are repaired', "give me the link and wait until I say I am done", "read_playground", "or tell me the decision I saved", "decision_record"].map((x) => withWhat.indexOf(x));
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), JSON.stringify(order));
   assert.match(withWhat, /Do not guess, edit my files or answer the question before that/);
   // Without it, the agent asks first, then builds by the same loop.
@@ -36,10 +40,11 @@ test("the prompts: the person's own request with the whole loop, short, with and
   assert.equal(PROMPTS.playground.text("   "), bare);
   // The return path.
   assert.match(PROMPTS.recheck.text(), /^Is my saved decision still right\? Find the decision files in this repository \(\.clay\/decisions\/\*\.md\), call recheck_playground with the playground id in each/);
-  assert.match(PROMPTS.recheck.text("the email provider"), /^Is my saved decision about the email provider still right\? Find the decision file /);
-  assert.match(PROMPTS.recheck.text(), /change nothing until I agree/);
+  assert.match(PROMPTS.recheck.text("the email provider"), /^Is my saved decision about the email provider still right\? \(Some clients[^)]*\) Find the decision file /);
+  assert.match(PROMPTS.recheck.text(), /Follow the answer: its verdict and do_now, or "next" while the pages are still being read/);
+  assert.match(PROMPTS.recheck.text(), /change nothing in my code until I agree/);
   // Short: the agent reads them every time.
-  for (const text of [withWhat, bare, PROMPTS.recheck.text("x")]) assert.ok(text.split(/\s+/).length <= 150, String(text.split(/\s+/).length));
+  for (const text of [withWhat, bare, PROMPTS.recheck.text("x")]) assert.ok(text.split(/\s+/).length <= 180, String(text.split(/\s+/).length));
 });
 
 test("the standing instruction: the file and the text on /connect are the same, short, and name both tools", () => {

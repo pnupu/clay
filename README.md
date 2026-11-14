@@ -50,7 +50,7 @@ codex mcp add clay --url https://<host>/api/mcp --bearer-token-env-var CLAY_AGEN
 - How a person asks: "build me a playground for …". In Claude Code also `/mcp__clay__playground <what you want to try>`.
 - A lost key: create a new one on `/connect` (the old one stops working); in Claude Code remove Clay and add it again, in Codex change the export. Remove Clay with `claude mcp remove clay` or `codex mcp remove clay`. When Clay is in more than one Claude Code scope (an earlier add without `--scope user`), `claude mcp remove clay` refuses and lists them; remove each with `--scope local` (in that folder) and `--scope user`.
 
-`/connect` shows these commands with the person's key filled in, each with a Copy button, and three example requests (look, feel, price).
+`/connect` shows these commands with the person's key filled in, each with a Copy button, and two example requests (a look or a feel; a decision on prices).
 
 Limits per person: `CLAY_USER_DAILY_REQUESTS` (default 40) Context.dev requests per UTC day, caused by their agent or their page, and `CLAY_USER_PLAYGROUNDS` (default 20) playgrounds. 0 turns a limit off. The deployment-wide `CONTEXT_DEV_DAILY_CAP` stays. Deployment-wide, a person cannot create a playground once the deployment holds `CLAY_MAX_PLAYGROUNDS` playgrounds (default 2,000) or its store `CLAY_MAX_STORE_BYTES` characters (default 10,000,000); the operator is not bound. Every request reads and parses the one store document: measured on a development machine, 1 MB takes about 2 ms, 10 MB about 25 ms and 50 MB about 150 ms to read and parse (and about as long again to write), before the blob transfer on Vercel. At a limit the person and the agent get a message that says which limit and what to do. After 20 requests with a wrong bearer token in 10 minutes, an address gets 429 for the rest of the window (per function instance; the keys have 256 bits).
 
@@ -89,7 +89,7 @@ Then ask for a playground: type "build me a playground for …" with what you wa
 
 The server also has two MCP prompts, so nothing must be pasted anywhere. Claude Code shows an MCP prompt as a command (its documentation: "Claude Code lists each MCP prompt as `/servername:promptname (MCP)`. Typing `/mcp__servername__promptname` also runs it."; "Pass them space-separated after the command."):
 
-- `/mcp__clay__playground <what you want to try, tune or decide>` (listed as `/clay:playground`): the same request with the whole loop. Without words after it, the agent asks what you want to play with.
+- `/mcp__clay__playground <what you want to try, tune or decide>` (listed as `/clay:playground`): the same request with the whole loop. Without words after it, the agent asks what you want to play with. Claude Code 2.1.321 splits the words on spaces and gives the prompt only the first one; the agent still reads the whole line, which Claude Code puts into the conversation, and the prompt text says so.
 - `/mcp__clay__recheck [which decision]` (listed as `/clay:recheck`): "is my saved decision still right?".
 
 Codex CLI 0.167.0 has no commands for MCP prompts (its documentation lists tools, server instructions and authentication as the supported MCP features, and no prompts): in Codex, type the sentence. The agent builds a playground and gives you its URL. Explore, then press Settle (preview) or save a decision (price). Tell the agent you are done: it reads the result and writes it into your code, or reports the decision. Later ask "what did I decide, and does it still hold?".

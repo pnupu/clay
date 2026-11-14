@@ -1,7 +1,9 @@
 // The texts an agent reads: the server instructions and the tool descriptions. They are the product's API for another model.
 // Many clients show only the first 200 characters or so of the instructions and load tool descriptions on demand
 // (Codex lists the server as a deferred namespace; Claude Code sees mostly tool names first). So the first sentence of
-// each text says WHEN to use it, and lib/texts.test.ts keeps it that way.
+// each tool text says WHEN to use it, and the head of the instructions says what Clay is for and that a person asks for a
+// playground (the explicit path); the unprompted trigger follows inside the first 512 characters, which Codex's
+// documentation names as the part to keep self-contained. lib/texts.test.ts keeps it that way.
 import { LIMITS } from "./config.ts";
 
 export const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the saved tolerance (dollars per month, set by the person, default 0) more than the cheapest fully priced vendor.";
@@ -51,7 +53,12 @@ export const RECORD = {
  * they are the commands /mcp__clay__playground and /mcp__clay__recheck (listed as /clay:playground). The text is the
  * person's own request, in their voice, with the whole loop; it is short, because the agent reads it every time.
  */
-const LOOP = `1. First read my real file, or find the real pages that state the facts. 2. Build it: for a look, a feel or a choice that depends on my own numbers, call kit_reference once, then create_playground; for a choice between priced services, create_playground with view.type "price_ranking". 3. Give me the link and wait until I say I am done. Do not guess, edit my files or answer the question before that. 4. Then call read_playground and carry out what I settled: write the outputs into my files exactly as given, and when the result has decision_record, write that file too.`;
+const LOOP = `1. First read my real file, or find the real pages that state the facts. 2. Build it: for a look, a feel or a choice that depends on my own numbers, call kit_reference once, then create_playground; for a choice between priced services, create_playground with view.type "price_ranking". Follow "next" in each tool result until the build is done and its problems are repaired. 3. Then give me the link and wait until I say I am done. Do not guess, edit my files or answer the question before that. 4. Then call read_playground and carry out what I settled: write the outputs into my files exactly as given, or tell me the decision I saved; when the result has decision_record, write that file too.`;
+/**
+ * Claude Code splits the words after a command on spaces and gives a prompt only the first one as its argument; the
+ * person's whole line is in the conversation just above the prompt. So the text never rests on the argument alone.
+ */
+const WHOLE = "(Some clients pass only the first word here: when my words after the command, just above, say more, they are my request.)";
 export const PROMPTS = {
   playground: {
     title: "Build me a playground",
@@ -59,7 +66,7 @@ export const PROMPTS = {
     what: "What you want to try, tune or decide. For example: the hover on the button in button.css; which email provider for 40,000 emails a month.",
     text: (what?: string) =>
       what?.trim()
-        ? `Build me a Clay playground for this: ${what.trim()}\n\n${LOOP}`
+        ? `Build me a Clay playground for this: ${what.trim()}\n${WHOLE}\n\n${LOOP}`
         : `I want a Clay playground. Ask me in one line what I want to try, tune or decide (how something looks, how a motion feels, which service, model or plan to pick). When I have answered, build it:\n\n${LOOP}`,
   },
   recheck: {
@@ -67,7 +74,7 @@ export const PROMPTS = {
     description: "Re-check a decision that Clay keeps in this repository (.clay/decisions/) against today's prices and facts.",
     which: "Which decision, in your words (for example: the email provider). Leave it out to check every decision file.",
     text: (which?: string) =>
-      `Is my saved decision${which?.trim() ? ` about ${which.trim()}` : ""} still right? Find the decision ${which?.trim() ? "file" : "files"} in this repository (.clay/decisions/*.md), call recheck_playground with the playground id in ${which?.trim() ? "it" : "each"}, and tell me in one or two lines whether it still holds. Follow do_now in the answer: when it no longer holds, say what changed and what the saved rule now picks, give me the link, and propose the change; change nothing until I agree.`,
+      `Is my saved decision${which?.trim() ? ` about ${which.trim()}` : ""} still right? ${which?.trim() ? `${WHOLE} ` : ""}Find the decision ${which?.trim() ? "file" : "files"} in this repository (.clay/decisions/*.md), call recheck_playground with the playground id in ${which?.trim() ? "it" : "each"}, and tell me in one or two lines whether it still holds. Follow the answer: its verdict and do_now, or "next" while the pages are still being read. When it no longer holds, say what changed, give me the link and propose the change; change nothing in my code until I agree.`,
   },
 };
 
