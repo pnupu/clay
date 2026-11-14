@@ -117,7 +117,11 @@ const SAY: Record<string, (request: string) => string> = {
 const say = argv.includes("--say") ? (flag("say") ?? "") : null;
 if (say != null && !Object.hasOwn(SAY, say)) throw new Error(`--say is one of: ${Object.keys(SAY).join(", ")}.`);
 if (say === "slash" && flag("subject") === "codex") throw new Error("--say slash is Claude Code's command form; Codex has no commands for MCP prompts.");
-/** With --from, the request as the earlier run sent it: the reused transcript answered that one, and no agent starts, so --say changes nothing. */
+/**
+ * With --from, the request as the earlier run sent it: the reused transcript answered that one, so the saved wording wins
+ * over --say. Only a case that the earlier results.json does not have (a run that was stopped before its report) takes
+ * the wording of --say: then the person who re-checks states what was sent.
+ */
 const sentBefore: Record<string, string | undefined> = (() => {
   try {
     return from ? Object.fromEntries((JSON.parse(readFileSync(join(from, "results.json"), "utf8")) as { results: { id: string; asked?: string; request: string }[] }).results.map((r) => [r.id, r.asked ?? r.request])) : {};
@@ -125,7 +129,9 @@ const sentBefore: Record<string, string | undefined> = (() => {
     return {};
   }
 })();
-const asked = (c: Case) => (from ? (sentBefore[c.id] ?? c.request) : say && c.expect === "build" ? SAY[say](c.request) : c.request);
+const asked = (c: Case) => sentBefore[c.id] ?? (say && c.expect === "build" ? SAY[say](c.request) : c.request);
+/** The `asked` field of a result: present with --say, and whenever the sent wording differs from the plain request. */
+const sent = (c: Case) => (say || asked(c) !== c.request ? { asked: asked(c) } : {});
 if (memory != null && toolSet !== "normal") throw new Error("--memory needs --tools normal: the files-only mode loads no project instructions.");
 if (flag("tools") && !["normal", "files"].includes(flag("tools")!)) throw new Error("--tools is normal or files.");
 if (toolSet === "normal" && !from && (!home || !scratchRoot || !relative(resolve(HERE, ".."), home).startsWith("..") || !relative(resolve(HERE, ".."), scratchRoot).startsWith(".."))) throw new Error("--tools normal needs --home <clean home> and --scratch-root <dir>, both outside this repository.");
@@ -156,7 +162,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   // A dot directory: tsc and Next.js skip it, so scratch .tsx files do not break the repository's typecheck.
   const kept = join(dir, ".ws");
   const ws = scratchRoot && !from ? join(scratchRoot, runId, c.id) : kept;
-  const r: CaseResult = { id: c.id, kind: c.kind, request: c.request, ...(say || asked(c) !== c.request ? { asked: asked(c) } : {}), note: c.note, result: "skip", firstFail: null, checks: [], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
+  const r: CaseResult = { id: c.id, kind: c.kind, request: c.request, ...sent(c), note: c.note, result: "skip", firstFail: null, checks: [], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
   if (c.needsKit && !kit) return { ...r, skipReason: "needs the kit, which this server does not have" };
   // --from: the earlier run's transcripts, scratch directory, playground and the person's choice are reused; no agent starts.
   const old = from ? join(from, "cases", c.id) : null;
@@ -405,7 +411,7 @@ await Promise.all(Array.from({ length: Math.max(1, concurrency) }, async () => {
       results[i] = await runCase(c, browser, kit);
     } catch (e) {
       const check: Check = { id: "agent_run", status: "fail", reason: `harness error: ${String(e instanceof Error ? e.message : e).slice(0, 200)}` };
-      results[i] = { id: c.id, kind: c.kind, request: c.request, ...(say ? { asked: asked(c) } : {}), result: "fail", firstFail: check, checks: [check], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
+      results[i] = { id: c.id, kind: c.kind, request: c.request, ...sent(c), result: "fail", firstFail: check, checks: [check], seconds: 0, tokens: null, agentRuns: 0, subject, model: model ?? null, server: baseUrl, playground: null, shot: null, person: null };
     }
     results[i] = redact(results[i]); // an error text (a browser error with the owner link, say) may hold the key
     console.error(`${c.id}: ${results[i].result}${results[i].firstFail ? ` (${results[i].firstFail!.id}: ${results[i].firstFail!.reason})` : ""}`);
