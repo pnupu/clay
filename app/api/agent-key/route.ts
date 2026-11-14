@@ -18,7 +18,8 @@ export async function POST(req: Request) {
   if (userId instanceof Response) return userId;
   // Asked at this moment, so a Clerk test account on a public app gets no key; nothing about the address is stored.
   const verdict = await clerkVerdict(userId);
-  if (verdict === "gone") return Response.json({ error: `${TEST_ACCOUNT_MESSAGE}.` }, { status: 403 });
+  if (verdict === "test") return Response.json({ error: `${TEST_ACCOUNT_MESSAGE}.` }, { status: 403 });
+  if (verdict === "gone") return Response.json({ error: "This account is deleted or blocked, so it cannot get an agent key." }, { status: 403 });
   if (verdict === "unknown") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Try again in a few minutes." }, { status: 503 });
   const key = newAgentKey();
   const createdAt = new Date().toISOString();

@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
-import { spend } from "./store.ts";
+import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
-import { newPlayground } from "./store.ts";
 
 const admin: Actor = { kind: "admin" };
 const ann: Actor = { kind: "user", userId: "user_ann", via: "session" };
@@ -103,6 +102,7 @@ test("agent keys follow the Clerk account: confirmed every 10 minutes, revoked w
   // Clerk confirms: allow and record the time. Deleted, banned or a test account on a public app: refuse and revoke.
   assert.deepEqual(keyDecision({ checkedAt: ago(KEY_CHECK_MS) }, now, "ok"), { allow: true, revoke: false, checkedAt: new Date(now).toISOString() });
   assert.deepEqual(keyDecision({ checkedAt: ago(1000) }, now, "gone"), { allow: false, revoke: true, checkedAt: null });
+  assert.deepEqual(keyDecision({ checkedAt: ago(1000) }, now, "test"), { allow: false, revoke: true, checkedAt: null });
   // Clerk unreachable: fail open only within the grace after the last confirmation, never for a key never confirmed.
   assert.equal(keyDecision({ checkedAt: ago(KEY_GRACE_MS - 1) }, now, "unknown").allow, true);
   assert.equal(keyDecision({ checkedAt: ago(KEY_GRACE_MS) }, now, "unknown").allow, false);
@@ -120,6 +120,12 @@ test("Clerk test accounts: no agent key on a public app unless explicitly allowe
   assert.equal(onlyTestAddresses([v("ann+clerk_test@example.com", false)]), false);
   assert.equal(onlyTestAddresses([]), false);
   assert.equal(onlyTestAddresses([v("ann+clerktest@example.com")]), false);
+  // Clerk test phone numbers: +1 (XXX) 555-0100 to 555-0199.
+  assert.equal(onlyTestAddresses([v("+1 (201) 555-0123")]), true);
+  assert.equal(onlyTestAddresses([v("+12015550199"), v("ann+clerk_test@example.com")]), true);
+  assert.equal(onlyTestAddresses([v("+12015550200")]), false);
+  assert.equal(onlyTestAddresses([v("ann2015550123@example.com")]), false);
+  assert.equal(onlyTestAddresses([v("+12015550123"), v("+358401234567")]), false);
   assert.equal(testAccountsAllowed(true, {}), false);
   assert.equal(testAccountsAllowed(true, { CLAY_ALLOW_TEST_ACCOUNTS: "true" }), false);
   assert.equal(testAccountsAllowed(true, { CLAY_ALLOW_TEST_ACCOUNTS: "1" }), true);

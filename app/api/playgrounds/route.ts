@@ -1,7 +1,7 @@
 import { createPlayground, createPreview, originOf } from "@/lib/pipeline";
 import { MAX_SPEC_BYTES, parseSpec } from "@/lib/spec";
 import { load } from "@/lib/store";
-import { identify, refused } from "@/app/api/respond";
+import { badKey, identify, refused } from "@/app/api/respond";
 import { canRead } from "@/lib/accounts";
 import { readJson } from "@/app/api/body";
 
@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 
 /** The playgrounds this caller may open: the examples, their own, or all for the admin. */
 export const GET = async (req: Request) => {
-  const { actor } = await identify(req.headers);
+  const { actor, bad } = await identify(req.headers, req);
+  const badAnswer = badKey(bad);
+  if (badAnswer) return badAnswer;
   return Response.json(Object.values((await load()).playgrounds).filter((p) => canRead(actor, p)).map((p) => ({ id: p.domain.id, question: p.domain.question, createdAt: p.createdAt, vendors: p.domain.vendors.map((v) => v.name) })));
 };
 

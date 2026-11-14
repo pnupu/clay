@@ -16,6 +16,8 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * preview and the outputs work for them in their browser, and nothing is settled, reported or saved.
  */
 export default function Kit({ id, title, state, canWrite }: { id: string; title: string; state: KitState; canWrite: boolean }) {
+  // The https logo hosts that the frame's img-src allows (lib/frame.ts): the preview can send requests there.
+  const logoHosts = (state.brandData?.logos ?? []).filter((l) => /^https:\/\//.test(l.url)).length;
   const api = `/api/p/${id}`;
   const { kit } = state;
   const [values, setValues] = useState<Values>(() => valuesNow(state));
@@ -150,8 +152,11 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
             <div className={css.stageHead}>
               <h2>Preview</h2>
               <span className="small muted">
-                Built by the owner&apos;s agent. It runs in a sandbox: it cannot read this page or send data to other sites
-                {state.brandData?.logos?.length || state.kit.preview.tailwind ? `, but your browser loads ${[state.brandData?.logos?.length ? "the brand's logo images from their hosts" : "", state.kit.preview.tailwind ? "the Tailwind build from jsDelivr" : ""].filter(Boolean).join(" and ")}, and those hosts see your IP address` : ""}.
+                Built by the owner&apos;s agent. It runs in a sandbox and cannot read this page.{" "}
+                {logoHosts > 0
+                  ? "It can load images from the brand's logo hosts, and an image address can carry the values you set here, so those hosts can see them and your IP address."
+                  : "It cannot send what you set here to other sites."}
+                {state.kit.preview.tailwind ? " Your browser loads the Tailwind build from jsDelivr." : ""}
               </span>
             </div>
             {frame.status === "failed" && (

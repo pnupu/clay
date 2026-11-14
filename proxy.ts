@@ -27,6 +27,7 @@ export default async function proxy(req: NextRequest, ev: NextFetchEvent) {
 
 export const config = {
   // Everything except Next.js internals, static files (Clerk's documented matcher), the MCP endpoint (agents send their
-  // key, not a session), the signed webhooks and the demo pricing page (Context.dev reads it; no handshake redirect there).
-  matcher: ["/((?!_next|api/mcp|api/webhooks|demo-vendor|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)"],
+  // key, not a session), the signed webhooks, the demo pricing page (Context.dev reads it; no handshake redirect there) and the preview frame
+  // (a handshake redirect would take it to another host; its route reads the session without one, identify()).
+  matcher: ["/((?!_next|api/mcp|api/webhooks|demo-vendor|p/[^/]+/frame$|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)"],
 };

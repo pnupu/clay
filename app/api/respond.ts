@@ -13,8 +13,9 @@ const guesses = guessLimiter();
 const clientIp = (h: { get(name: string): string | null }) => h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
 
 /**
- * What Clerk says about this person now (lib/accounts.ts): "gone" when deleted, banned, or holding only Clerk test
- * addresses on a public app; "unknown" when Clerk does not answer within 5 seconds or fails. The addresses are only read.
+ * What Clerk says about this person now (lib/accounts.ts): "gone" when deleted or banned; "test" when only Clerk test
+ * addresses or numbers are verified on a public app; "unknown" when Clerk does not answer within 5 seconds or fails.
+ * The addresses are only read, never stored.
  */
 export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
   if (!clerkOn()) return "unknown";
@@ -23,8 +24,8 @@ export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
     const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("timeout")), 5000)));
     const u = await Promise.race([(await clerkClient()).users.getUser(userId), timeout]);
     if (u.banned) return "gone";
-    const emails = u.emailAddresses.map((e) => ({ address: e.emailAddress, verified: e.verification?.status === "verified" }));
-    return onlyTestAddresses(emails) && !testAccountsAllowed(isHosted()) ? "gone" : "ok";
+    const ids = [...u.emailAddresses.map((e) => ({ address: e.emailAddress, verified: e.verification?.status === "verified" })), ...u.phoneNumbers.map((p) => ({ address: p.phoneNumber, verified: p.verification?.status === "verified" }))];
+    return onlyTestAddresses(ids) && !testAccountsAllowed(isHosted()) ? "test" : "ok";
   } catch (e) {
     return (e as { status?: unknown })?.status === 404 ? "gone" : "unknown";
   } finally {
@@ -32,11 +33,28 @@ export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
   }
 }
 
-/** Confirm an agent key's person with Clerk at most every 10 minutes (keyDecision()); revoke the key of a person who is gone. */
+/**
+ * Confirm an agent key's person with Clerk at most every 10 minutes (keyDecision()); revoke the key of a person who is
+ * gone. Parallel requests of one person share one Clerk call. After Clerk failed to answer, this instance does not ask
+ * again for 60 seconds (the grace rule decides meanwhile), so an outage does not make every request wait 5 seconds.
+ */
+const pending = new Map<string, Promise<ClerkVerdict>>();
+const unreachableUntil = new Map<string, number>();
 async function confirmKey(userId: string, checkedAt: string | null | undefined): Promise<"ok" | "revoked" | "unavailable"> {
   const now = Date.now();
   if (!needsCheck({ checkedAt }, now)) return "ok";
-  const d = keyDecision({ checkedAt }, now, await clerkVerdict(userId));
+  let verdict: ClerkVerdict = "unknown";
+  if (!((unreachableUntil.get(userId) ?? 0) > now)) {
+    let ask = pending.get(userId);
+    if (!ask) {
+      ask = clerkVerdict(userId).finally(() => pending.delete(userId));
+      pending.set(userId, ask);
+    }
+    verdict = await ask;
+    if (verdict === "unknown") unreachableUntil.set(userId, now + 60_000);
+    else unreachableUntil.delete(userId);
+  }
+  const d = keyDecision({ checkedAt }, now, verdict);
   if (d.revoke || d.checkedAt)
     await update((s) => {
       const a = s.users[userId];
@@ -53,7 +71,8 @@ async function confirmKey(userId: string, checkedAt: string | null | undefined):
  * sent and matched nothing, so the caller can say so instead of acting as a visitor. Works on route requests and, with
  * the headers of the page request, in server components.
  */
-export async function identify(h: { get(name: string): string | null }): Promise<{ actor: Actor; bad: null | "key" | "blocked" | "revoked" | "unavailable" }> {
+export type Bad = null | "key" | "blocked" | "revoked" | "unavailable";
+export async function identify(h: { get(name: string): string | null }, req?: Request): Promise<{ actor: Actor; bad: Bad }> {
   const key = process.env.CLAY_ACCESS_KEY;
   const authorization = h.get("authorization");
   // Without an owner key, only the development server without Clerk is open, as before accounts existed.
@@ -77,20 +96,38 @@ export async function identify(h: { get(name: string): string | null }): Promise
     const { userId } = await auth();
     return { actor: userId ? { kind: "user", userId, via: "session" } : VISITOR, bad: null };
   } catch {
-    // auth() throws where the Clerk proxy did not run (proxy.ts leaves out the MCP and webhook routes): no session there.
-    return { actor: VISITOR, bad: null };
+    // auth() throws where the Clerk proxy did not run (proxy.ts leaves out the MCP, webhook and preview frame routes).
+    // With the request at hand, read the session cookie directly: this never redirects, and an expired session counts
+    // as signed out. The browser keeps the session fresh while the page around the frame is open.
+    if (!req) return { actor: VISITOR, bad: null };
+    try {
+      const state = await (await clerkClient()).authenticateRequest(req);
+      const userId = state.isAuthenticated ? state.toAuth().userId : null;
+      return { actor: userId ? { kind: "user", userId, via: "session" } : VISITOR, bad: null };
+    } catch {
+      return { actor: VISITOR, bad: null };
+    }
   }
 }
 
 /** The caller of the page being rendered (server components): the admin's owner cookie, a Clerk session, or a visitor. */
 export const viewer = async (): Promise<Actor> => (await identify(await headers())).actor;
 
-/** May this request open the playground, and change it? `null` when the playground does not exist. */
-export async function access(req: Request, pg: string): Promise<{ read: boolean; write: boolean } | null> {
+/** May this request open the playground, and change it? `null` when the playground does not exist. `bad`: see badKey(). */
+export async function access(req: Request, pg: string): Promise<{ read: boolean; write: boolean; bad: Bad } | null> {
   const p = (await load()).playgrounds[pg];
   if (!p) return null;
-  const { actor } = await identify(req.headers);
-  return { read: canRead(actor, p, pg), write: canWrite(actor, p) };
+  const { actor, bad } = await identify(req.headers, req);
+  return { read: canRead(actor, p, pg), write: canWrite(actor, p), bad };
+}
+
+/** The answer to a bearer token that did not identify anyone, or null. Also for the read routes, so an agent learns that its key failed. */
+export function badKey(bad: Bad): Response | null {
+  if (bad === "blocked") return Response.json({ error: "Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from the Connect your agent page." }, { status: 429 });
+  if (bad === "revoked") return Response.json({ error: "This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in on Clay and create a new key on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  if (bad === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
+  if (bad === "key") return Response.json({ error: "This key is not valid. It may have been regenerated or revoked. Get a new agent key on the Connect your agent page of Clay." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  return null;
 }
 
 /** Routes only the admin may call: the demo page editor, webhook monitors (their runs are not counted per person) and example marks. */
@@ -136,12 +173,10 @@ export async function refused(req: Request): Promise<Response | null> {
     } catch {}
     if (!sameSite) return Response.json({ error: "Cross-origin requests are not allowed" }, { status: 403 });
   }
-  const { actor, bad } = await identify(req.headers);
+  const { actor, bad } = await identify(req.headers, req);
   holder.actor = actor;
-  if (bad === "blocked") return Response.json({ error: "Too many requests with a wrong key from this address. Wait 10 minutes, then use the agent key from the Connect your agent page." }, { status: 429 });
-  if (bad === "revoked") return Response.json({ error: "This agent key no longer works: its Clay account was deleted or blocked, or it may not hold a key. Sign in on Clay and create a new key on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
-  if (bad === "unavailable") return Response.json({ error: "Clay could not confirm your account with its sign-in service just now. Nothing was done. Try again in a few minutes." }, { status: 503, headers: { "Retry-After": "60" } });
-  if (bad === "key") return Response.json({ error: "This key is not valid. It may have been regenerated or revoked. Get a new agent key on the Connect your agent page of Clay." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  const badAnswer = badKey(bad);
+  if (badAnswer) return badAnswer;
   if (actor.kind === "visitor") return Response.json({ error: "Sign in to do this. An agent sends its personal agent key as the header Authorization: Bearer <key>; get one on the Connect your agent page." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   // Decoded, so an encoded form of an admin-only path (for example /api/p/x/%77atch) is recognised too.
   let path: string;

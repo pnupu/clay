@@ -80,8 +80,7 @@ export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Acto
   const own = Object.values(playgrounds).filter((p) => ownerOf(p) === a.userId).length;
   return cap > 0 && own >= cap ? `You have reached the limit of ${cap} playgrounds per person. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.` : null;
 }
-// No final period: the MCP tools quote this text inside a sentence of their own.
-export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC, and the playgrounds still work: moving the controls needs no web request`;
+export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC, and the playgrounds still work: moving the controls needs no web request.`;
 
 // Agent keys: "clay_" and 32 random bytes. Only the SHA-256 hash is stored; the key is shown once.
 const KEY_PREFIX = "clay_";
@@ -126,15 +125,15 @@ export const KEY_CHECK_MS = 10 * 60_000;
  * every agent at once, and a deleted person keeps a key for at most KEY_CHECK_MS + KEY_GRACE_MS.
  */
 export const KEY_GRACE_MS = 60 * 60_000;
-/** What Clerk says about a person: fine, gone (deleted, banned, or not allowed a key), or nothing (not reachable). */
-export type ClerkVerdict = "ok" | "gone" | "unknown";
+/** What Clerk says about a person: fine, gone (deleted or banned), a test account not allowed a key here, or nothing (not reachable). */
+export type ClerkVerdict = "ok" | "gone" | "test" | "unknown";
 
 /** Must this key's person be confirmed with Clerk before the request goes on? */
 export const needsCheck = (acc: Pick<Account, "checkedAt">, now: number): boolean => !acc.checkedAt || !(now - Date.parse(acc.checkedAt) < KEY_CHECK_MS);
 /** After asking Clerk: allow the request? Revoke the key (remove its hash)? Record a new confirmation time? */
 export function keyDecision(acc: Pick<Account, "checkedAt">, now: number, verdict: ClerkVerdict): { allow: boolean; revoke: boolean; checkedAt: string | null } {
   if (verdict === "ok") return { allow: true, revoke: false, checkedAt: new Date(now).toISOString() };
-  if (verdict === "gone") return { allow: false, revoke: true, checkedAt: null };
+  if (verdict === "gone" || verdict === "test") return { allow: false, revoke: true, checkedAt: null };
   const last = acc.checkedAt ? Date.parse(acc.checkedAt) : NaN;
   return { allow: now - last < KEY_GRACE_MS, revoke: false, checkedAt: null };
 }
@@ -142,8 +141,9 @@ export function keyDecision(acc: Pick<Account, "checkedAt">, now: number, verdic
 // Clerk test addresses (name+clerk_test@...) sign up with a fixed code and no mailbox, so anyone can make many accounts
 // with them. A public app gives no agent key to an account whose only verified addresses are test addresses, unless
 // CLAY_ALLOW_TEST_ACCOUNTS=1 (the team's own local runs). The addresses are read from Clerk when needed and never stored.
-export const isTestAddress = (address: string) => /\+clerk_test@/i.test(address);
-/** Does this account have verified email addresses, all of them Clerk test addresses? */
+// Clerk test phone numbers are +1 (XXX) 555-0100 to 555-0199, with the same fixed code.
+export const isTestAddress = (address: string) => (address.includes("@") ? /\+clerk_test@/i.test(address) : /^1?\d{3}55501\d{2}$/.test(address.replace(/\D/g, "")));
+/** Does this account have verified email addresses or phone numbers, all of them Clerk test ones? */
 export const onlyTestAddresses = (emails: { address: string; verified: boolean }[]): boolean => {
   const verified = emails.filter((e) => e.verified);
   return verified.length > 0 && verified.every((e) => isTestAddress(e.address));

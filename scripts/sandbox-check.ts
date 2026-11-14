@@ -135,6 +135,11 @@ for (const [id, what, text] of [[`sbx-flood-${tag}`, "a message flood stops the 
   check(what, text.test(alert) && (await page.locator("iframe").count()) === 0, alert.slice(0, 80));
   await page.close();
 }
+// A client-side navigation keeps the policy of the page the visitor landed on, so every page must limit frames.
+for (const path of ["/", "/connect", "/sign-in", `/p/sbx-probe-${tag}`]) {
+  const policy = (await fetch(`${base}${path}`)).headers.get("content-security-policy") ?? "";
+  check(`${path} limits frames (frame-src 'self' and Clerk's hosts only)`, /^frame-src 'self'( https:\/\/[a-z0-9.-]+)*$/.test(policy), policy.slice(0, 90));
+}
 // The preview keeps navigating its frame to a URL that answers 204. The page's frame-src must stop every such request.
 {
   const page = await context.newPage();
