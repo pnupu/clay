@@ -21,9 +21,9 @@ export async function POST(req: Request) {
   const id = String(body.id ?? "");
   // The id becomes a file name: letters, digits and hyphens only.
   if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)) return Response.json({ error: "The id must be lower-case letters, digits and hyphens." }, { status: 400 });
-  // The level and its files tell the agent what it may edit: a result that names another level, or no files for a level, is refused.
+  // The level and its files tell the agent what it may edit: a result that names another level, no files for a level, or a path that is absolute or leaves the repository is refused.
   if (body.level != null && !["instance", "variant", "token"].includes(String(body.level))) return Response.json({ error: "The level must be instance, variant or token." }, { status: 400 });
-  if (body.level != null && !(Array.isArray(body.files) && body.files.length > 0 && body.files.every((f) => typeof f === "string" && !f.split(/[\\/]/).includes("..")))) return Response.json({ error: "The level must name the files it changes." }, { status: 400 });
+  if (body.level != null && !(Array.isArray(body.files) && body.files.length > 0 && body.files.every((f) => typeof f === "string" && !/^([\\/]|[A-Za-z]:)/.test(f) && !f.split(/[\\/]/).includes("..")))) return Response.json({ error: "The level must name the files it changes." }, { status: 400 });
   const dir = join(process.cwd(), ".clay", "settled");
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${id}.json`), `${JSON.stringify({ ...body, settledAt: new Date().toISOString() }, null, 2)}\n`);
