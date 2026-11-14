@@ -238,6 +238,10 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   if (!html.trim()) errors.push('view.html: the preview needs html: the markup of the real thing (for example the person\'s button), with {{control_id}} where a control value goes.');
   for (const [k, text] of [["html", html], ["css", css], ["js", js]] as const) if (text.length > KIT_LIMITS[k]) errors.push(`view.${k}: ${text.length} characters, the limit is ${KIT_LIMITS[k]}. Keep only the part the person tunes.`);
   if (/<script/i.test(html)) errors.push("view.html: script tags in the html do not run. Put the JavaScript in view.js.");
+  // Best effort against requests the frame's policy does not cover (resource hints, refresh, a base URL, nested frames):
+  // these elements have no place in a preview body. The frame also blocks adding them from view.js (lib/frame.ts, HARDEN).
+  const banned = [...new Set([...html.matchAll(/<\s*(link|meta|base|iframe|frame|frameset|object|embed|portal|applet)\b/gi)].map((m) => m[1].toLowerCase()))];
+  if (banned.length) errors.push(`view.html: ${banned.map((t) => `<${t}>`).join(", ")} ${banned.length === 1 ? "is" : "are"} not allowed in a preview: ${banned.length === 1 ? "it" : "they"} can make the browser send requests or navigate outside the sandbox. Put styles in view.css or style attributes, fonts and images as data: URLs, and leave out meta and base; the preview shows the real component, not a page around it.`);
   if (!isNum(height) || height < 120 || height > 900) errors.push("view.height: the height of the preview in px, 120 to 900 (default 360).");
 
   const ids = controls.map((c) => c.id);

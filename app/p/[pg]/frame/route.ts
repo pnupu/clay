@@ -31,6 +31,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ pg: stri
   if (!p || !k || !a?.read) return new Response("Not found", { status: 404 });
   // Someone else's example starts at its initial values: the owner's current values are theirs (lib/report.ts, nonOwnerView).
   return new Response(frameDocument(k, valuesNow(a.write ? k : nonOwnerView(p).kit!)), {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": frameCsp(k), "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
+    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": frameCsp(k), "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store", "X-DNS-Prefetch-Control": "off" },
   });
 }

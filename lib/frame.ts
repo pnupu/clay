@@ -45,6 +45,72 @@ export function frameCsp(k: KitState): string {
  * Frame side of the bridge, pure part: validation of the values the page sends, and template filling.
  * Plain ES5 in a string, because it runs inside the frame document. lib/frame.test.ts runs it in a VM.
  */
+/**
+ * BEST EFFORT, not a guarantee. Before any author code runs, the frame closes the known ways to add elements that make
+ * the browser send requests the frame's CSP does not cover: resource hints (<link rel=prerender|prefetch|preload|
+ * modulepreload|preconnect|dns-prefetch>), <meta http-equiv>, <base>, frames, plugins, and scripts added later
+ * (speculation rules). It refuses creating them, strips them from every inserted node and every parsed HTML string, and
+ * removes WebRTC (STUN requests can carry data). Each replaced API is locked (not configurable). Browsers give no
+ * complete block for hint-based requests from a document that runs scripts, so the page's label says that a preview can
+ * make outgoing requests in some browsers; this hardening narrows that, it does not close it.
+ */
+export const HARDEN = `
+(function () {
+  var TAGS = "link,meta,base,iframe,frame,frameset,object,embed,portal,applet,script";
+  var BLOCKED = new RegExp("^(" + TAGS.split(",").join("|") + ")$", "i");
+  var D = Document.prototype, E = Element.prototype, N = Node.prototype;
+  function lock(o, k, v) { try { Object.defineProperty(o, k, { value: v, writable: false, configurable: false }); } catch (e) {} }
+  function lockSetter(o, k, set) { var d = Object.getOwnPropertyDescriptor(o, k); if (!d || !d.set) return; try { Object.defineProperty(o, k, { get: d.get, set: set, configurable: false }); } catch (e) {} }
+  function refuse(t) { throw new DOMException("<" + String(t).toLowerCase() + "> is not allowed in a preview: it could send requests the sandbox does not cover.", "NotSupportedError"); }
+  var qsa = E.querySelectorAll, fqsa = DocumentFragment.prototype.querySelectorAll, remove = E.remove;
+  /** Remove every blocked element from a node (and from the content of templates in it). Returns false when the node itself is blocked. */
+  function clean(node) {
+    if (!node || typeof node !== "object") return true;
+    if (node.nodeType === 1 && BLOCKED.test(node.localName)) return false;
+    var find = node.nodeType === 1 ? qsa : node.nodeType === 11 ? fqsa : null;
+    if (!find) return true;
+    var all = find.call(node, TAGS), i;
+    for (i = 0; i < all.length; i++) remove.call(all[i]);
+    var tpl = find.call(node, "template");
+    for (i = 0; i < tpl.length; i++) clean(tpl[i].content);
+    if (node.nodeType === 1 && node.localName === "template") clean(node.content);
+    return true;
+  }
+  function cleanArgs(args) { for (var i = 0; i < args.length; i++) if (!clean(args[i])) refuse(args[i].localName); return args; }
+  var createEl = D.createElement, createNS = D.createElementNS;
+  lock(D, "createElement", function (t) { if (BLOCKED.test(String(t))) refuse(t); return createEl.apply(this, arguments); });
+  lock(D, "createElementNS", function (ns, t) { if (BLOCKED.test(String(t).split(":").pop())) refuse(t); return createNS.apply(this, arguments); });
+  // Every way to insert a node: the inserted subtree is cleaned first.
+  [[N, ["appendChild", "insertBefore", "replaceChild"]], [E, ["append", "prepend", "before", "after", "replaceWith", "replaceChildren", "insertAdjacentElement"]], [D, ["append", "prepend", "replaceChildren"]], [DocumentFragment.prototype, ["append", "prepend", "replaceChildren"]], [CharacterData.prototype, ["before", "after", "replaceWith"]]].forEach(function (pair) {
+    pair[1].forEach(function (k) { var f = pair[0][k]; if (typeof f === "function") lock(pair[0], k, function () { return f.apply(this, cleanArgs(arguments)); }); });
+  });
+  ["importNode", "adoptNode"].forEach(function (k) { var f = D[k]; if (typeof f === "function") lock(D, k, function (n) { var r = f.apply(this, arguments); if (!clean(r)) refuse(r.localName); return r; }); });
+  // HTML strings are parsed inertly (a fragment, or a template's content), cleaned, and only then inserted.
+  var range = D.createRange, ccf = Range.prototype.createContextualFragment, selectContents = Range.prototype.selectNodeContents, selectNode = Range.prototype.selectNode;
+  var innerSet = Object.getOwnPropertyDescriptor(E, "innerHTML").set;
+  var origReplaceChildren = E.replaceChildren, origReplaceWith = E.replaceWith, origBefore = E.before, origAfter = E.after, origPrepend = E.prepend, origAppend = E.append;
+  function parse(ctx, html, whole) { var r = range.call(document); (whole ? selectNode : selectContents).call(r, ctx); var f = ccf.call(r, String(html)); clean(f); return f; }
+  lock(Range.prototype, "createContextualFragment", function (html) { var f = ccf.call(this, html); clean(f); return f; });
+  lockSetter(E, "innerHTML", function (html) {
+    if (this.localName === "template") { innerSet.call(this, html); clean(this.content); return; }
+    origReplaceChildren.call(this, parse(this, html, false));
+  });
+  if (window.ShadowRoot) { var shadowSet = (Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "innerHTML") || {}).set; if (shadowSet) lockSetter(ShadowRoot.prototype, "innerHTML", function (html) { var t = createEl.call(document, "template"); innerSet.call(t, html); clean(t.content); this.replaceChildren(t.content); }); }
+  lockSetter(E, "outerHTML", function (html) { origReplaceWith.call(this, parse(this, html, true)); });
+  lock(E, "insertAdjacentHTML", function (where, html) {
+    var w = String(where).toLowerCase(), outside = w === "beforebegin" || w === "afterend";
+    var f = parse(outside && this.parentNode ? this.parentNode : this, html, false);
+    if (w === "beforebegin") origBefore.call(this, f); else if (w === "afterbegin") origPrepend.call(this, f); else if (w === "beforeend") origAppend.call(this, f); else if (w === "afterend") origAfter.call(this, f); else throw new DOMException("insertAdjacentHTML: bad position", "SyntaxError");
+  });
+  ["setHTMLUnsafe", "setHTML"].forEach(function (k) { if (E[k]) lock(E, k, function (html) { origReplaceChildren.call(this, parse(this, html, false)); }); if (window.ShadowRoot && ShadowRoot.prototype[k]) lock(ShadowRoot.prototype, k, function () { refuse("shadow html"); }); });
+  if (Document.parseHTMLUnsafe) lock(Document, "parseHTMLUnsafe", function () { refuse("parsed document"); });
+  var parseFrom = DOMParser.prototype.parseFromString;
+  lock(DOMParser.prototype, "parseFromString", function () { var d = parseFrom.apply(this, arguments); if (d && d.documentElement) clean(d.documentElement); return d; });
+  ["write", "writeln", "open"].forEach(function (k) { lock(D, k, function () { refuse("document." + k); }); });
+  ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceTransport"].forEach(function (k) { if (k in window) lock(window, k, undefined); });
+})();
+`;
+
 export const BRIDGE_PURE = `
 function check(controls, v) {
   if (!v || typeof v !== "object") return null;
@@ -179,7 +245,7 @@ ${preview.tailwind ? `<script src="${TAILWIND.url}" integrity="${TAILWIND.integr
 </head>
 <body>
 <div id="clay-root"></div>
-<script>(function () { var cfg = ${inScript(cfg)};${BRIDGE_PURE}${BRIDGE_DOM}
+<script>${HARDEN}(function () { var cfg = ${inScript(cfg)};${BRIDGE_PURE}${BRIDGE_DOM}
 })();</script>
 <script>`;
   };
