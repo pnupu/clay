@@ -25,6 +25,8 @@ const kindOf = (p: AnyPlayground, whose: "yours" | "theirs" = "theirs") => kindL
 /** A visitor's view of an example's kit: the one non-owner projection (lib/report.ts). */
 const forVisitor = (p: Playground) => nonOwnerView(p).kit!;
 const NUMBER = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"];
+/** The example that the steps section shows, when it exists. */
+const SNAP_BACK = "card-snap-back";
 const Arrow = () => <svg className="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path className="m-arrow__stem" d="M1 6h8" /><path className="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5" /></svg>;
 
 /**
@@ -57,10 +59,13 @@ export default async function Home() {
   const examples = orderExamples(playgrounds);
   const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
   // The hero. When the first example (the one the operator features) is a price decision with read prices, the hero is
-  // its ranking on live web data, and the first preview example follows as the second thing a visitor meets. Otherwise
-  // the hero is that preview example, as before.
+  // its ranking on live web data, and a preview example follows in the steps section (`demo`, below). Otherwise the hero
+  // is the first preview example, as before.
   const priceHero = priceHeroOf(examples[0]);
   const hero = examples.find(([, p]) => p.kit) ?? null;
+  // The steps under a price hero show a thing that a person tunes by hand: the card that snaps back, whose controls and
+  // result share a screen, while it is an example; else the first preview example. The hero's own choice is unchanged.
+  const demo = examples.find(([id, p]) => id === SNAP_BACK && p.kit) ?? hero;
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
   // A returning person with playgrounds sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
@@ -128,19 +133,19 @@ export default async function Home() {
               <h2 id="steps-h">A playground takes three steps. <span className="muted">Your agent does two of them.</span></h2>
             </div>
             {/* One live demonstration, not three pictures: the sentence, the real component with its real controls, and
-                the text the agent would write, which changes as the controls move. When the hero already runs this
-                example (no price example is featured), the steps are words only: nothing is shown twice. */}
-            {priceHero && hero ? (
+                the text the agent would write, which changes as the controls move. When the hero itself runs a
+                preview example (no price example is featured), the steps are words only: one live preview a page. */}
+            {priceHero && demo ? (
               <div className="demo live ui">
                 <div className="demo__step demo__s1"><h3>1. Ask for a playground</h3><p>Type the sentence to your agent, with what feels off or what you have to choose. It builds the page from your real code.</p></div>
-                <div className="demo__step demo__s2"><h3>2. Shape it by hand</h3><p>{hero[0] === "card-snap-back" ? "Drag the card and let go, then move a slider." : "Move the controls: the real thing follows at once."} No agent and no network call sits between a move and its result.</p></div>
+                <div className="demo__step demo__s2"><h3>2. Shape it by hand</h3><p>{demo[0] === SNAP_BACK ? "Drag the card and let go, then move a slider." : "Move the controls: the real thing follows at once."} No agent and no network call sits between a move and its result.</p></div>
                 <div className="demo__step demo__s3"><h3>3. Settle the values</h3><p>Your agent reads the values, the range you tried and the finished text, then writes it into your files.</p></div>
                 <div className="shot shot--term demo__typed" role="img" aria-label="A terminal: the sentence a person types, the Clay tool the agent calls, and the link it returns">
                   <p><b>&gt;</b> build me a playground for …</p>
                   <p className="muted">clay · create_playground</p>
-                  <p>/p/{hero[0]}</p>
+                  <p>/p/{demo[0]}</p>
                 </div>
-                <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded connected={connected} />
+                <Kit key={JSON.stringify(demo[1].kit!.kit)} id={demo[0]} title={titleOf(demo[1], demo[0])} state={forVisitor(demo[1])} canWrite={false} leftOut={demo[1].leftOut} byTeam={!demo[1].owner} embedded connected={connected} />
               </div>
             ) : (
               <div className="demo demo--words">
