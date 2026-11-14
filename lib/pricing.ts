@@ -52,7 +52,8 @@ export const GAP_WORDS = {
 
 export function planCost(plan: Plan, a: Assumptions): PlanCost {
   const r: PlanCost = { plan: plan.name, cost: 0, ineligible: null, unknowns: [], assumed: [], lines: [] };
-  const gap = plan.price_gap ? GAP_WORDS[plan.price_gap] : null;
+  // "trimmed" is added as its own unknown below; it does not replace the specific reasons of the base price or the meters.
+  const gap = plan.price_gap && plan.price_gap !== "trimmed" ? GAP_WORDS[plan.price_gap] : null;
   // A slider page shows some number at its start position ("$0 /month"): that is not the plan's price.
   const base = plan.price_gap === "interactive" && !plan.base_price ? null : plan.base_price;
   if (base == null) r.unknowns.push(gap ?? (plan.custom_pricing ? "custom pricing (contact sales)" : "base price not stated"));

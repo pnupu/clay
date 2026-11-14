@@ -220,12 +220,12 @@ const list = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
 export function normalise(raw: RawModel): PricingModel {
   const { model: bounded, trimmed } = boundRaw(raw);
   let model = normaliseUnbounded(bounded);
-  if (trimmed) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_gap: "trimmed" as const })) };
+  if (trimmed) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_gap: p.price_gap ?? ("trimmed" as const) })) };
   // Still too large: the quotes go first, then plans from the end (the read is then trimmed), until it fits; at the end
   // even a single plan is dropped. No throw: a refused read made the collection try more pages, each a paid request.
   const size = () => JSON.stringify(model).length;
   if (size() > PRICE_LIMITS.bytes) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_quote: null, meters: (p.meters ?? []).map((m) => ({ ...m, quote: null })), features: (p.features ?? []).map((f) => ({ ...f, quote: null })) })) };
-  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 0) model = { ...model, plans: model.plans!.slice(0, -1).map((p) => ({ ...p, price_gap: "trimmed" as const })) };
+  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 0) model = { ...model, plans: model.plans!.slice(0, -1).map((p) => ({ ...p, price_gap: p.price_gap ?? ("trimmed" as const) })) };
   return model;
 }
 
@@ -241,8 +241,12 @@ function boundRaw(raw: RawModel): { model: RawModel; trimmed: boolean } {
       if (!mv || typeof mv !== "object") return [k.slice(0, PRICE_LIMITS.short), null];
       const m = mv as Record<string, unknown>;
       const tiersIn = list(m.tiers);
-      if (tiersIn.length > PRICE_LIMITS.tiers) trimmed = true; // its steps are dropped below, never bridged
-      const tiers = tiersIn.length > PRICE_LIMITS.tiers ? [] : tiersIn.map((tv) => { const t = (tv && typeof tv === "object" ? tv : {}) as Record<string, unknown>; return { up_to: num(t.up_to), price: num(t.price), per_units: num(t.per_units) }; });
+      // Several open-ended prices are separate products ("configuration" in normaliseUnbounded): two of them keep that
+      // reading. Otherwise, more steps than Clay keeps are dropped, never bridged, and the read is trimmed.
+      const openEnded = tiersIn.filter((tv) => tv && typeof tv === "object" && (tv as { up_to?: unknown }).up_to == null);
+      const over = tiersIn.length > PRICE_LIMITS.tiers;
+      if (over && openEnded.length <= 1) trimmed = true;
+      const tiers = (over ? (openEnded.length > 1 ? openEnded.slice(0, 2) : []) : tiersIn).map((tv) => { const t = (tv && typeof tv === "object" ? tv : {}) as Record<string, unknown>; return { up_to: num(t.up_to), price: num(t.price), per_units: num(t.per_units) }; });
       return [k.slice(0, PRICE_LIMITS.short), { included: num(m.included), overage_allowed: bool(m.overage_allowed), tiers, quote: q(m.quote), status: pick(m.status, ["priced", "not_available"] as const), unlimited: bool(m.unlimited) }];
     }));
     const features = Object.fromEntries(entries(p.features).slice(0, PRICE_LIMITS.features).map(([k, fv]) => {

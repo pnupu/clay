@@ -63,6 +63,7 @@ export const HARDEN = `
   // Read through the original prototype getters: an element's own "localName" or "hasAttribute" property can be shadowed.
   var nameOf = Object.getOwnPropertyDescriptor(Element.prototype, "localName").get, nsOf = Object.getOwnPropertyDescriptor(Element.prototype, "namespaceURI").get, hasAttr = Element.prototype.hasAttribute, nodeTypeGet = Object.getOwnPropertyDescriptor(Node.prototype, "nodeType").get;
   var typeOf = { call: function (n) { try { return nodeTypeGet.call(n); } catch (e) { return 0; } } };
+  var textSet = Object.getOwnPropertyDescriptor(Node.prototype, "textContent").set;
   function bad(n) { if (!n || typeof n !== "object" || typeOf.call(n) !== 1) return false; var t = nameOf.call(n); return /^(link|base|iframe|frame|frameset|object|embed|portal|applet)$/i.test(t) || (t === "meta" && hasAttr.call(n, "http-equiv")); }
   var D = Document.prototype, E = Element.prototype, N = Node.prototype;
   function lock(o, k, v) { try { Object.defineProperty(o, k, { value: v, writable: false, configurable: false }); } catch (e) {} }
@@ -83,7 +84,7 @@ export const HARDEN = `
     return true;
   }
   /** Clean the inserted nodes only: the argument at "only" (insertBefore's and replaceChild's first), or all of them. */
-  function cleanArgs(args, only) { for (var i = 0; i < args.length; i++) if ((only == null || i === only) && !clean(args[i])) refuse(args[i].localName); return args; }
+  function cleanArgs(args, only) { for (var i = 0; i < args.length; i++) if ((only == null || i === only) && !clean(args[i])) refuse(nameOf.call(args[i])); return args; }
   var createEl = D.createElement, createNS = D.createElementNS;
   lock(D, "createElement", function (t) { if (BLOCKED.test(String(t))) refuse(t); return createEl.apply(this, arguments); });
   lock(D, "createElementNS", function (ns, t) { if (BLOCKED.test(String(t).split(":").pop())) refuse(t); return createNS.apply(this, arguments); });
@@ -108,16 +109,28 @@ export const HARDEN = `
   var SVG = "http://www.w3.org/2000/svg", MATH = "http://www.w3.org/1998/Math/MathML";
   function parse(ctx, html) {
     var t = createEl.call(document, "template"), text = html == null ? "" : String(html);
-    var wrap = ctx && ctx.namespaceURI === SVG ? "svg" : ctx && ctx.namespaceURI === MATH ? "math" : null;
+    var ns = ctx && typeOf.call(ctx) === 1 ? nsOf.call(ctx) : null, local = ns ? nameOf.call(ctx) : "";
+    // foreignObject (and annotation-xml) are HTML integration points: their content is HTML, as natively.
+    var wrap = ns === SVG && local !== "foreignObject" ? "svg" : ns === MATH && local !== "annotation-xml" ? "math" : null;
     innerSet.call(t, wrap ? "<" + wrap + ">" + text + "</" + wrap + ">" : text);
     var f = t.content;
-    if (wrap && f.firstChild) { var r = range.call(document); selectContents.call(r, f.firstChild); f = r.extractContents(); }
+    if (wrap && f.firstChild) {
+      // The wrapper's children, then whatever the parser moved out of foreign content (it follows the wrapper).
+      var w = f.firstChild, out = document.createDocumentFragment(), r = range.call(document);
+      selectContents.call(r, w); out.appendChild(r.extractContents());
+      while (w.nextSibling) out.appendChild(w.nextSibling);
+      f = out;
+    }
     clean(f);
     return f;
   }
+  /** Elements whose content is text, not markup (RAWTEXT and RCDATA): innerHTML sets their text, as natively. */
+  var TEXT_ONLY = /^(style|textarea|title|xmp|noscript|noembed|noframes|plaintext|script|iframe)$/;
   lock(Range.prototype, "createContextualFragment", function (html) { var f = ccf.call(this, html); clean(f); return f; });
   lockSetter(E, "innerHTML", function (html) {
-    if (this.localName === "template") { innerSet.call(this, html); clean(this.content); return; }
+    var own = nameOf.call(this);
+    if (own === "template" && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { innerSet.call(this, html); clean(this.content); return; }
+    if (TEXT_ONLY.test(own) && nsOf.call(this) === "http://www.w3.org/1999/xhtml") { textSet.call(this, html == null ? "" : String(html)); return; }
     origReplaceChildren.call(this, parse(this, html));
   });
   if (window.ShadowRoot) { var shadowSet = (Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "innerHTML") || {}).set; if (shadowSet) lockSetter(ShadowRoot.prototype, "innerHTML", function (html) { var t = createEl.call(document, "template"); innerSet.call(t, html); clean(t.content); this.replaceChildren(t.content); }); }
@@ -131,7 +144,9 @@ export const HARDEN = `
   // result. setHTMLUnsafe is parsed inertly like innerHTML (declarative shadow roots in it are not created).
   [E, window.ShadowRoot && ShadowRoot.prototype].forEach(function (P) {
     if (!P) return;
-    var safe = P.setHTML; if (typeof safe === "function") lock(P, "setHTML", function () { var r = safe.apply(this, arguments); clean(this); return r; });
+    // The sanitizer runs on a detached element (nothing in it is fetched), the guard cleans that, and only then are the
+    // nodes moved in: a sanitizer config that keeps <link> or <base> cannot connect them first.
+    var safe = P.setHTML; if (typeof safe === "function") lock(P, "setHTML", function () { var tmp = createEl.call(document, "div"); safe.apply(tmp, arguments); clean(tmp); var f = document.createDocumentFragment(); while (tmp.firstChild) f.appendChild(tmp.firstChild); this.replaceChildren(f); });
     if (typeof P.setHTMLUnsafe === "function") lock(P, "setHTMLUnsafe", function (html) { var f = parse(this.host || this, html); this.replaceChildren(f); });
   });
   if (Document.parseHTMLUnsafe) lock(Document, "parseHTMLUnsafe", function () { refuse("parsed document"); });

@@ -52,12 +52,6 @@ export const isExample = (p: Owned, id = p.domain?.id): boolean => p.example ?? 
 export const ownerOf = (p: Owned): string | null => p.owner ?? null;
 
 /**
- * Mark or unmark a playground as an example, and choose the featured example: the one the landing page embeds.
- * Only the admin may do either (the example route is admin-only already; this is the same rule where the data changes).
- * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
- * example also unfeatures it. Returns what the playground is now, or the refusal.
- */
-/**
  * The operator approves what they saw when they mark an example. A revision by anyone else (new code, new data sources,
  * new words) takes the mark away, so visitors never run a version nobody approved; the operator marks it again after a
  * look. The operator's own revisions keep the mark. Returns true when the mark was cleared.
@@ -71,6 +65,12 @@ export function unpublishOnRevision(p: Owned & { featured?: boolean; exampleClea
 }
 export const EXAMPLE_CLEARED = "This playground was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Clay deployment looks at it and marks it again.";
 
+/**
+ * Mark or unmark a playground as an example, and choose the featured example: the one the landing page embeds.
+ * Only the admin may do either (the example route is admin-only already; this is the same rule where the data changes).
+ * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
+ * example also unfeatures it. Returns what the playground is now, or the refusal.
+ */
 export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404; error: string } {
   if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
   const p = playgrounds[id];
