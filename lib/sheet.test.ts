@@ -173,6 +173,12 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // The size before a function is read; the sizes inside one are not.
   assert.match(data(".a { font: 10px/1.2 var(--mono) }").join("\n"), /font-size 10px is under 12 px/);
   assert.deepEqual(data(".a { font-size: clamp(8px, 1vw, 10px) } .b { font-size: calc(var(--s) * 1px) }"), []);
+  // A group of brackets of its own, a deep nesting and a function that is never closed: the size is not known, so nothing is said.
+  assert.deepEqual(data(".a { font-size: calc((8px + 1vw) * 1.5) } .b { font-size: calc(1px * (2 + (3 + (4 + min(9px, 1vw))))) } .c { font-size: max(10px, 1vw }"), []);
+  // Styles that fill to more than the limit are not judged: a long toggle text, named 150 times before a small size.
+  const long = { id: "tg", type: "toggle" as const, label: "T", meaning: "m", initial: true, on: "a".repeat(2_000), off: "" };
+  assert.deepEqual(styleProblems({ preview: { html: "", css: `.a { ${"{{tg}}".repeat(150)} } td { font-size: 9px } b { font: {{tg}} }`, data: true }, controls: [long] }), []);
+  assert.equal(styleProblems({ preview: { html: "", css: `.a { ${"{{tg}}".repeat(50)} } td { font-size: 9px }`, data: true }, controls: [long] }).length, 1);
   // url(#grad) names a gradient or a clip path of a chart, not a colour.
   assert.deepEqual(data(".a { fill: url(#abc); stroke: url( '#def'); mask: url(#fed); color: #2a78d6 }"), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.

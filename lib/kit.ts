@@ -206,7 +206,9 @@ const FILLED_MOST = 200_000;
  * - a data view is told about each thing it brings that the frame already has: a typeface, text under 12 px, colours.
  * Advice, not a refusal: the playground is built. Only view.css and the quoted style attributes of view.html are read;
  * what view.js sets is not seen, and neither is a style element inside view.html, a colour by name, a colour function
- * with another function inside it (rgb(var(--r) 1 2)) or a size in em or %.
+ * with another function inside it (rgb(var(--r) 1 2)), the colour of a colour control (the person tunes it), a size in
+ * em or % or a size inside a function (calc, clamp). The styles are read as the page opens, with the start value of
+ * every control; styles that fill to more than FILLED_MOST characters are not judged at all.
  */
 export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "data" | "map"> & { tailwind?: boolean }; web?: unknown[] | null; controls?: Control[] }): string[] {
   const { preview } = kit;
@@ -223,8 +225,8 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   // The styles are read as the page opens: every {{control_id}} is filled with the start value of its control (the
   // start size of a slider, the text of a toggle as it starts), in one pass, as the frame fills them. A colour control
   // and a name that is no control are read as one word: a colour the person tunes is not a colour of the agent's own.
-  // All sources together are filled with at most FILLED_MOST characters (a toggle text can be long); past that, a
-  // placeholder is filled with nothing.
+  // The fill of all sources together stops after FILLED_MOST characters (a toggle text can be long, and view.css can
+  // name it thousands of times); the styles are then not judged (below).
   // Its own pattern, not PLACEHOLDER: that one allows spaces around the name in two places, and a "{{" before a long
   // run of spaces takes it cubic time. Here the name is trimmed afterwards.
   let room = FILLED_MOST;
@@ -236,6 +238,8 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   };
   const plain = (s: string) => `${s.replace(/\{\{([^{}]*)\}\}/g, (_, name: string) => start(name)).replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ")};`;
   const styles = [plain(preview.css), ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => plain(m[1] ?? m[2]))].join("\n");
+  // Past the limit the styles were not filled in full, so they are not judged: no problem is better than a wrong one.
+  if (room <= 0) return out;
   // The declarations, in one pass over the text: what stands before a ";" or a "}" is a declaration ("property: value"),
   // what stands before a "{" is a selector (".font:hover", "#add") and is left out. Every check below reads one
   // declaration at a time and each of its patterns can match a number or a colour only from its first character, so
@@ -255,7 +259,9 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   // first, the inner ones before the outer (three levels), so "font: 10px/1.2 var(--mono)" is still read.
   // (The name of a function is matched only from its first character, or a long word would be read once per character.)
   const outside = (v: string) => [0, 1, 2].reduce((t) => t.replace(/(?<![\w-])[\w-]+\([^()]*\)/g, " "), v);
-  const small = [...new Set(decls.filter((d) => d.prop === "font" || d.prop === "font-size").map((d) => size.exec(outside(d.value))).filter((m) => m != null).map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
+  // A bracket that is left after that (a group of its own, a deeper level, a function that is never closed) means
+  // the size is not known here: nothing is said about that declaration.
+  const small = [...new Set(decls.filter((d) => d.prop === "font" || d.prop === "font-size").map((d) => outside(d.value)).filter((v) => !v.includes("(")).map((v) => size.exec(v)).filter((m) => m != null).map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
   if (small.length) out.push(`view.css or a style attribute of view.html: font-size ${small.join(", ")} is under ${SMALLEST_TEXT} px, the smallest text of a data view. Text that small is a sign of too much text: use .small (13 px), and move the long part into <details>.`);
   // Colours in the values of declarations only: "#add" in a selector is an id, and "#grad" in url(#grad) names a
   // gradient or a clip path of a chart. One colour written in two ways is one colour: #fff, #FFFFFF and #ffffffff.
