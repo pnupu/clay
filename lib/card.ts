@@ -68,10 +68,12 @@ export function cardText(note: string, max = 200): { quote: string } | { blurb: 
 
 /**
  * What the agent left out of a playground, as a clause after "because": "its pricing page states no price." The reason is
- * the agent's own sentence, so a leading "because" and a capital first letter are folded in, and a full stop is added.
+ * the agent's own sentence, so a leading "because" is dropped, a first word that only starts a sentence (Its, The, A, No)
+ * loses its capital, and a full stop is added. A name at the start (Stripe, OpenAI, AWS) keeps its spelling.
  */
+const STARTER = /^(?:Its?|The(?:ir|re|y|se)?|Th(?:is|at|ose)|An?|No(?:t|ne)?|Only|We|Our|Pric(?:es?|ing)|Each|Every|All|Some|On|In|At|For|With|When)\b/;
 export function becauseOf(reason: string): string {
   const text = reason.trim().replace(/^because\s+/i, "");
-  const lowered = /^[A-Z][a-z]/.test(text) && !/^I\b/.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
+  const lowered = STARTER.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
   return /[.!?]$/.test(lowered) ? lowered : `${lowered}.`;
 }

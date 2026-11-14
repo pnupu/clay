@@ -50,7 +50,7 @@ export default async function Home() {
         </p>
       </section>
 
-      {/* The newest example, rendered in the page itself (no frame around it): it takes the height it needs, and on a
+      {/* The featured example (else the newest), rendered in the page itself (no frame around it): it takes the height it needs, and on a
           narrow screen its preview stays in view while the page scrolls. It is read-only here for everyone. */}
       {first && (
         <section className="shell try" id="try" aria-label="Example playground">

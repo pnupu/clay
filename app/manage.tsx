@@ -20,7 +20,7 @@ export default function Manage({ id, example, featured, admin, deletable }: { id
   return (
     <div className="manage">
       {admin && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}/example`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ example: !example }) })}>{example ? "Unmark example" : "Mark as example"}</button>}
-      {admin && example && !featured && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}/example`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ featured: true }) })}>Feature on the landing page</button>}
+      {admin && example && !featured && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}/example`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ example: true, featured: true }) })}>Feature on the landing page</button>}
       {deletable && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}`, { method: "DELETE" }, "Delete this playground? This cannot be undone.")}>Delete</button>}
       {error && <p className="small bad">{error}</p>}
     </div>

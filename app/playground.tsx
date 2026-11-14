@@ -461,7 +461,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               </ul>
               {/* What the agent left out and why, as it said (revise_playground, left_out): a person, or an agent in a later
                   session, can then tell why a vendor they expected is missing. */}
-              {state.leftOut.map((x) => <p className="small muted" key={x.name} data-left-out>Left out: <b>{x.name}</b>, because {becauseOf(x.reason)}</p>)}
+              {state.leftOut.map((x, i) => <p className="small muted" key={i} data-left-out>Left out: <b>{x.name}</b>, because {becauseOf(x.reason)}</p>)}
               {/* Webhook monitors are the operator's: their runs are not counted against a person (app/api/respond.ts). */}
               {!admin ? null : state.publicBaseUrl ? (
                 <button disabled={!!busy} onClick={() => run("Updating monitors", `${api}/watch`, Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
