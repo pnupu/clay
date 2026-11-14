@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkKit, runSignature, cleanValues, explorationWords, initialValues, mergeKitExploration, renderOutputs, type KitState } from "./kit.ts";
-import { BUTTON_EXAMPLE, SPRING_EXAMPLE } from "./reference.ts";
+import { BUTTON_EXAMPLE, MODEL_EXAMPLE, SPRING_EXAMPLE } from "./reference.ts";
 import { mergeSpec, parseSpec, toSpec, type Spec } from "./spec.ts";
 import { newPlayground } from "./store.ts";
 
@@ -186,4 +186,26 @@ test("a revision of words only runs the same preview; a change of code, data or 
   assert.notEqual(runSignature({ ...k, controls: k.controls.map((c) => (c.type === "slider" ? { ...c, max: 48 } : c)) }), runSignature(k));
   assert.notEqual(runSignature({ ...k, inline: { a: 1 } }), runSignature(k));
   assert.notEqual(runSignature({ ...k, brand: { domain: "linear.app" } }), runSignature(k));
+});
+
+test("the worked example with live web facts passes the validator, and data.web is checked like the rest of a spec", () => {
+  const ok = parseSpec(MODEL_EXAMPLE);
+  assert.ok(ok.ok && ok.kind === "preview", ok.ok ? "" : ok.errors.join("\n"));
+  if (!ok.ok || ok.kind !== "preview") return;
+  assert.deepEqual(ok.kit.web?.map((s) => s.id), ["anthropic", "openai"]);
+  assert.deepEqual(ok.warnings, []);
+  const errorsOf = (spec: unknown) => { const r = parseSpec(spec); return r.ok ? [] : r.errors; };
+  const data = (web: unknown) => ({ ...MODEL_EXAMPLE, data: { ...MODEL_EXAMPLE.data, web } });
+  // A source that the preview never reads would be read for nothing; a source that does not exist is a mistake in view.js.
+  assert.match(errorsOf(data([...MODEL_EXAMPLE.data!.web!, { id: "google", url: "https://ai.google.dev/pricing", fields: [{ id: "price", type: "number", describe: "price per million tokens" }] }])).join("\n"), /data\.web\.google: view\.js never reads clay\.data\.web\.google/);
+  assert.match(errorsOf(data([MODEL_EXAMPLE.data!.web![0]])).join("\n"), /clay\.data\.web\.openai reads a web source that does not exist/);
+  // Bounds, before any element is validated.
+  assert.deepEqual(errorsOf(data(Array.from({ length: 5000 }, () => ({})))), ["data.web: at most 6 entries, got 5000. Nothing was checked or created."]);
+  assert.match(errorsOf(data([{ ...MODEL_EXAMPLE.data!.web![0], rows: { describe: "one row per model", fields: Array.from({ length: 300 }, () => ({})) } }, MODEL_EXAMPLE.data!.web![1]]))[0], /data\.web\.0\.rows\.fields: at most 20 entries, got 300/);
+  // A private or non-https page is refused; a price playground cannot carry data.web.
+  assert.match(errorsOf(data([{ ...MODEL_EXAMPLE.data!.web![0], domain: undefined, find: undefined, url: "http://169.254.169.254/latest" }, MODEL_EXAMPLE.data!.web![1]])).join("\n"), /must be a full https/);
+  assert.match(errorsOf({ id: "price-with-web", title: "Which email service should we use?", view: { type: "price_ranking" }, data: { web: MODEL_EXAMPLE.data!.web } }).join("\n"), /data\.web: only a preview view can use it/);
+  // The web spec is part of what decides how the preview runs: changing a source is not a words-only revision.
+  const other = parseSpec(data([{ ...MODEL_EXAMPLE.data!.web![0], find: "another page of the site" }, MODEL_EXAMPLE.data!.web![1]]));
+  assert.ok(other.ok && other.kind === "preview" && runSignature(other.kit) !== runSignature(ok.kit));
 });

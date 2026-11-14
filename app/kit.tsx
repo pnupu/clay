@@ -4,8 +4,10 @@
 // back to the agent. Every move is local: the page posts the values to the frame, and nothing waits for a network call.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fromFrame, limiter } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
+import type { WebSource, WebState, WebValue } from "@/lib/web";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
@@ -17,7 +19,16 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, embedded = false }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean }) {
+export default function Kit({ id, title, state, canWrite, embedded = false, reading = false }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean; reading?: boolean }) {
+  // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
+  // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
+  // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
+  const router = useRouter();
+  useEffect(() => {
+    if (!reading) return;
+    const t = setInterval(() => router.refresh(), 3000);
+    return () => clearInterval(t);
+  }, [reading, router]);
   // The https logo hosts that the frame's img-src allows (lib/frame.ts): the preview can send requests there.
   const logoHosts = (state.brandData?.logos ?? []).filter((l) => {
     try {
@@ -149,6 +160,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false }: { 
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
+      {reading && <p className="small muted" data-building>Reading the web pages this playground is built from. The numbers fill in as each page is read; you do not need to reload.</p>}
 
       <div className={css.grid}>
         {/* The note is a grid item, so that on a narrow screen it can come after the preview: play first, read second. */}
@@ -211,7 +223,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false }: { 
             )}
           </section>
 
-          {(kit.brand || kit.inline) && (
+          {(kit.brand || kit.inline || kit.web?.length) && (
             <section className="card">
               <h2>Where the data comes from</h2>
               <ul className={css.data}>
@@ -227,6 +239,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false }: { 
                     )}
                   </li>
                 )}
+                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} />)}
                 {kit.inline && <li><p className="small">Provided by your agent, not checked: {Object.keys(kit.inline).join(", ")}.</p></li>}
               </ul>
             </section>
@@ -302,5 +315,59 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
         <code>{value as string}</code>
       </div>
     </div>
+  );
+}
+
+/** A value read from a web page. Unknown is said, never shown as a number; text from the page is shown as text only. */
+const shown = (v: WebValue | undefined) => (v == null ? <span className="warn">unknown</span> : v === true ? "yes" : v === false ? "no" : typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 6 }) : v);
+const when = (iso: string) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
+
+/**
+ * One web source in "Where the data comes from": the page (a link), when it was read, every value that was read, what was
+ * quarantined, and what changed since the person settled. So a person can check any number against its page.
+ */
+function WebSourceItem({ source: s, state: st, reading, since }: { source: WebSource; state: WebState | undefined; reading: boolean; since: string | null }) {
+  const read = st?.read;
+  const link = st?.url && /^https:\/\//.test(st.url) ? st.url : null;
+  const host = (() => { try { return new URL(st?.url ?? "").hostname; } catch { return s.domain ?? s.id; } })();
+  const changes = (st?.changes ?? []).filter((c) => !since || c.at > since);
+  const fields = s.fields ?? s.rows!.fields;
+  const fact = (v: WebValue) => (v === true ? "on the page" : v === false ? "not on the page" : v == null ? "unknown" : String(v));
+  return (
+    <li data-web-source={s.id}>
+      <p className="small">
+        <b>{s.id}</b>: {link ? <a href={link} target="_blank" rel="noreferrer">{host} ↗</a> : host}
+        {read ? `, read by Context.dev ${when(read.fetchedAt)}` : reading ? ", being read…" : ", not read"}
+        {st?.lastCheckedAt && read && when(st.lastCheckedAt) !== when(read.fetchedAt) ? `, checked again ${when(st.lastCheckedAt)}` : ""}
+      </p>
+      {!read && !reading && <p className="small warn">This page could not be read{st?.error ? `: ${st.error.slice(0, 200)}` : ""}. Its values are unknown.</p>}
+      {read && st?.error && <p className="small warn">{st.error.slice(0, 200)}</p>}
+      {read && s.fields && (
+        <table className={css.web}>
+          <tbody>
+            {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{f.id}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
+          </tbody>
+        </table>
+      )}
+      {read && s.rows && (
+        <div className={css.webScroll}>
+          <table className={css.web}>
+            <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe}>{f.id}{f.unit ? ` (${f.unit})` : ""}</th>)}</tr></thead>
+            <tbody>
+              {(read.rows ?? []).map((r, i) => <tr key={i}>{fields.map((f) => <td key={f.id}>{shown(r[f.id])}</td>)}</tr>)}
+              {!read.rows?.length && <tr><td colSpan={fields.length}><span className="warn">No row was found on this page.</span></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {read?.truncated && <p className="small warn">The page was too long to read in full. Rows may be missing.</p>}
+      {read?.quarantined.map((q, i) => <p className="small warn" key={i}>Not used: the extraction returned {q.value} for {q.path}, but that number is not in the page text. It is shown as unknown.</p>)}
+      {changes.length > 0 && (
+        <div data-web-changes>
+          <p className="small"><b>{since ? "Changed since you settled" : "Changed since this was built"}</b></p>
+          {changes.slice(0, 12).map((c, i) => <p className="small" key={i}>{c.path}: <s>{fact(c.before)}</s> → <b>{fact(c.after)}</b> <span className="muted">({when(c.at)})</span></p>)}
+        </div>
+      )}
+    </li>
   );
 }

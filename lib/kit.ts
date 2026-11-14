@@ -2,6 +2,8 @@
 // rendered from the control values. A kit comes from an agent: it is untrusted data, and checkKit() is its trust boundary.
 // Pure functions only: no store, no network.
 
+import { checkWeb, type WebSource, type WebState } from "./web.ts";
+
 export const KIT_LIMITS = { controls: 12, outputs: 6, options: 12, palette: 16, label: 60, meaning: 200, unit: 12, text: 2000, html: 20_000, css: 20_000, js: 40_000, template: 4_000, inline: 8_000, steps: 10_000 } as const;
 
 /** The brandError of a preview playground whose brand read has not ended yet. It is a state, not an error: the read stores its result when it ends. */
@@ -21,7 +23,7 @@ export type Control =
   | (Base & { type: "color"; initial: string; palette: string[] | "brand"; free: boolean });
 export type Preview = { html: string; css: string; js: string; tailwind: boolean; height: number };
 export type Output = { id: string; label: string; template: string };
-export type Kit = { notes?: string; controls: Control[]; preview: Preview; outputs: Output[]; brand: { domain: string } | null; inline: Record<string, unknown> | null };
+export type Kit = { notes?: string; controls: Control[]; preview: Preview; outputs: Output[]; brand: { domain: string } | null; inline: Record<string, unknown> | null; /** Live facts from web pages (lib/web.ts). */ web?: WebSource[] | null };
 
 /** Brand facts of one site, read by Context.dev. Every fact keeps where it came from. */
 export type BrandData = { domain: string; title: string; colors: { hex: string; name: string }[]; logos: { url: string; mode: string; type: string }[]; fetchedAt: string; source: "context.dev brand" };
@@ -42,6 +44,8 @@ export type KitState = {
   preview: { status: "unverified" | "ok" | "failed"; error: string | null; at: string | null };
   settled: Settled | null;
   exploration: KitExploration | null;
+  /** Per source of kit.web: what was read, when, and what changed since (lib/web.ts). */
+  web?: Record<string, WebState>;
 };
 
 const ID = /^[a-z][a-z0-9_]{1,29}$/;
@@ -112,7 +116,7 @@ const nestedNames = (c: Control): string[] => (c.type === "toggle" ? [c.on, c.of
  * What decides how a preview runs: its code, its data and its controls without their words (label, meaning, option labels).
  * Two kits with the same signature run the same code with the same values, so a verified preview stays verified.
  */
-export const runSignature = (kit: Kit): string => JSON.stringify([kit.preview, kit.inline, kit.brand, kit.controls.map((c) => ({ ...c, label: "", meaning: "", ...(c.type === "select" ? { options: c.options.map((o) => o.value) } : {}) }))]);
+export const runSignature = (kit: Kit): string => JSON.stringify([kit.preview, kit.inline, kit.brand, kit.web ?? null, kit.controls.map((c) => ({ ...c, label: "", meaning: "", ...(c.type === "select" ? { options: c.options.map((o) => o.value) } : {}) }))]);
 /** A one-line output (a class string) loses the gaps that an empty toggle text leaves. A multi-line output (CSS, JSON) keeps its layout. */
 const tidy = (text: string) => (text.includes("\n") ? text.replace(/[ \t]+$/gm, "").trim() : text.replace(/\s+/g, " ").trim());
 export const renderOutputs = (kit: Kit, values: Values): Record<string, string> => Object.fromEntries(kit.outputs.map((o) => [o.id, tidy(render(o.template, kit.controls, values))]));
@@ -128,6 +132,7 @@ export type RawKit = {
   outputs?: { id: string; label: string; template: string }[];
   brand?: { domain: string };
   inline?: Record<string, unknown>;
+  web?: unknown;
 };
 
 const FIELDS: Record<Control["type"], string[]> = { slider: ["min", "max", "step", "initial", "unit"], toggle: ["initial", "on", "off"], select: ["options", "initial"], color: ["initial", "palette", "free"] };
@@ -253,8 +258,20 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   }
 
   if (raw.inline && JSON.stringify(raw.inline).length > KIT_LIMITS.inline) errors.push(`data.inline: at most ${KIT_LIMITS.inline} characters of JSON.`);
+
+  // ---- data.web: live facts from web pages. The preview reads them in view.js, so every source must be read there.
+  let web: WebSource[] | null = null;
+  if (raw.web != null) {
+    const w = checkWeb(raw.web);
+    if (!w.ok) errors.push(...w.errors);
+    else {
+      web = w.sources;
+      for (const s of web) if (!new RegExp(`clay\\s*\\.\\s*data\\s*\\.\\s*web\\s*(\\.\\s*${s.id}(?![\\w$])|\\[\\s*["']${s.id}["']\\s*\\])`).test(js) && !/clay\s*\.\s*data\s*\.\s*web(?!\s*[.[])/.test(js)) errors.push(`data.web.${s.id}: view.js never reads clay.data.web.${s.id}, so the page would read it for nothing. Use it in view.js (fields: an object; rows: a list; unknown values are null), or remove the source.`);
+    }
+  }
+  for (const m of js.matchAll(/clay\s*\.\s*data\s*\.\s*web\s*\.\s*([A-Za-z_$][\w$]*)/g)) if (!(web ?? []).some((s) => s.id === m[1])) errors.push(`view.js: clay.data.web.${m[1]} reads a web source that does not exist. Sources: ${(web ?? []).map((s) => s.id).join(", ") || "none (add data.web)"}.`);
   if (errors.length) return { ok: false, errors };
-  return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null } };
+  return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
 }
 
 /** Does a report from the page belong to the kit as it is now? A kit stored before revisions were marked accepts every report. */

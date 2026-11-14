@@ -5,9 +5,9 @@ import { z } from "zod";
 import { LIMITS } from "./config";
 import { DOMAIN } from "./domain";
 import { BRAND_PENDING, brandPending, initialValues, renderOutputs } from "./kit";
-import { createPlayground, createPreview, recheckAll, revisePlayground, revisePreview, settled } from "./pipeline";
+import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
-import { BRAND_NOTE, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
+import { BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
 import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, type Playground } from "./store";
 import { canRead, canWrite, currentActor } from "./accounts";
@@ -31,7 +31,9 @@ Build a playground instead of guessing or asking a list of questions when the pe
 
 1. A preview playground, for anything the person must see or feel to judge: a component that "looks off", an animation that "feels dead" or "too slow", spacing, colour, timing. Do not guess new values and edit their code. Read their real file, call kit_reference once (format and two worked examples), then create_playground with view.type "preview": their real code in the preview, a few controls from the kit, and outputs that render the final code. When they name a brand or a site, add data.brand: Clay reads the brand's colours live.
 
-2. A price playground, for "which service, vendor or plan" of a usage-priced product (an API, a SaaS product, a cloud service). Call create_playground with view.type "price_ranking" before you answer from memory or search the web: prices from memory are out of date, and Clay reads the current pricing pages with a source quote for every number.
+A preview can also stand on live web facts: data.web names the facts to read from web pages (prices per model, per GPU, per seat; a limit; a version), Clay reads them with a check that every number is on the page, and your preview code combines them with the person's own numbers (data.inline, from their files). Use this when the answer is "it depends on your numbers" and the facts change: which model for their workload, which GPU, which plan for their team.
+
+2. A price playground, for "which service, vendor or plan" of a usage-priced product (an API, a SaaS product, a cloud service) with plans and usage tiers. Call create_playground with view.type "price_ranking" before you answer from memory or search the web: prices from memory are out of date, and Clay reads the current pricing pages with a source quote for every number.
 
 Give the person the URL. When they come back ("done", "I settled it", "what did I decide", "does it still hold"), call read_playground and carry out the settled result: write the outputs into their code, or report the decision. recheck_playground re-reads prices today. revise_playground repairs a playground or adds what the person now wants to try.`;
 
@@ -47,6 +49,7 @@ view.type "preview": the person must see or feel the real thing (a component's l
 - Controls come only from the kit: slider, toggle, select, color. Choose the 3 to 6 dimensions behind THIS person's complaint. initial is the value in their code now, so the page opens on what they have. Ranges sit around that value. Each control has one meaning.
 - Bind controls with {{control_id}} in view.html and view.css (updated in place on every move), or read clay.values.<id> in view.js. Every control must visibly change the preview or an output at the start values; one that only matters after another control is switched looks broken.
 - Brand: when the person names a brand or a site, add data.brand {"domain"}. Clay reads its colours live; a color control with palette "brand" offers them. Never write brand colours from memory.
+- Live facts: when the comparison needs facts from web pages that the price engine cannot express (which model, which GPU, a per-seat plan, one fact of one page) or needs the person's own numbers multiplied in, add data.web: the pages and the facts to read, as the pages state them. Put the person's own measurements in data.inline and say where they come from. view.js does the arithmetic and shows "unknown" for a null, never 0. Never write prices from memory. Give the person a select for the choice itself, so that the outputs can return it. kit_reference has a worked example. The result of the build lists what was read: check it against what your code joins on before you hand over.
 - Outputs are templates of the final code: the class string, the config object. At hand-back you paste them.
 - notes, when you give one, is for any reader: the playground may be shared or shown as an example. Say what was asked, what the page is built from and what to try; no "your file", and no "press Settle" (the page has the button).
 - The spec is validated before anything is built; each error says how to fix it. The preview code runs only in a browser, so the result says "unverified" until the person opens the page. read_playground then reports that it ran, or the error to repair.
@@ -63,13 +66,17 @@ Then give the person the URL: for a preview, "move the controls until it is righ
 
   read_playground: `Read what the person did in a playground. It reads stored data and does not contact the web. Call it when the person says they are done, and before you act on a result. With no playground_id it lists the playgrounds.
 
-Preview playground: returns settled (the values, and the outputs as code-ready text), the exploration summary, and the preview status. When settled is present, carry it out: write settled.outputs into the person's file exactly as given, then say what you changed. When it is "none", the person has not pressed Settle: ask them to, and do not treat the current values as a decision. When preview.status is "failed", the error text is the browser's: repair the code with revise_playground and ask the person to reload.
+Preview playground: returns settled (the values, and the outputs as code-ready text), the exploration summary, and the preview status. With data.web it also returns data (per source: the values or rows that were read, what is unknown, what was quarantined, what failed and how to repair it), build ("running" while pages are still being read: call again), problems, and web_changes (the facts that changed since the person settled; you judge whether the settled result still holds). When settled is present, carry it out: write settled.outputs into the person's file exactly as given, then say what you changed. When it is "none", the person has not pressed Settle: ask them to, and do not treat the current values as a decision. When preview.status is "failed", the error text is the browser's: repair the code with revise_playground and ask the person to reload.
 
 Price playground: returns the control values now, the cost ranking, the saved decision (vendor, assumptions, tolerance, whether it holds on the data as last read), the exploration summary, the source change events, build (where the reading of the pricing pages stands: "running", "done" or "stalled") and problems (what to repair with revise_playground). While build.status is "running", this call waits up to 20 seconds for the reads; call it again until it says "done", then act on problems. ${HOLDS_RULE} For "does it still hold today", call recheck_playground too.
 
 The exploration summary gives, per control, the range the person tried and the value they settled on. Use it: "tried 4 to 16, settled on 10" tells you their real range and how sure they are. A control they never moved was not examined by them: leave its value in their code as it is.`,
 
-  recheck_playground: `Re-read every pricing page of a price playground now, and report what changed since the last read and whether the saved decision still holds. A preview playground has nothing to re-check.
+  recheck_playground: `Re-read the web pages of a playground now, and report what changed since the last read.
+
+Preview playground with data.web: every source is read again; a fact changes only when two fresh reads agree on it. The result and read_playground give web_changes: the facts that changed since the person settled, with the old and the new value. Clay has no rule for what a change means. You are the judge: take the settled values and the new facts, work out whether the settled result still holds, and tell the person with the numbers; when it does not hold, say what changed and send them back to the playground URL. A preview without data.web has nothing to re-check.
+
+Price playground: every pricing page is read again, and the result says whether the saved decision still holds.
 
 Use it when the person asks if a decision is still valid, or wants current prices before they act. It spends web requests, so do not call it on every turn. It answers within about 20 seconds: with the result, or with status "running" when the pages are still being read. Then tell the person that today's prices are being read, and call read_playground until its build.status is "done": its change_events and saved_decision then hold the result. A change on a real page is reported only when two fresh extractions agree on it, so a reported change is one you can state to the person.
 
@@ -142,22 +149,29 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
 
   /** The result of building or revising a preview playground. */
   const preview = async (id: string, extra: object, warnings: string[]) => {
-    const k = (await load()).playgrounds[id].kit!;
+    const p = (await load()).playgrounds[id];
+    const k = p.kit!;
+    const reading = webReading(p);
     return text({
       playground_id: id,
       url: url(id),
       kind: "preview",
+      ...(k.kit.web?.length ? { build: reading.length ? { status: "running", still_reading: reading } : { status: "done" } } : {}),
       ...extra,
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
-      data: dataReport(k),
-      problems: k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [],
+      data: dataReport(k, reading),
+      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [])],
       warnings,
       next:
-        brandPending(k)
+        reading.length
+          ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
+          : k.kit.web?.length
+            ? "Look at data now: check that the rows and values are what your view.js expects (the names it joins on, the units, the unknown values), and repair with revise_playground if they are not. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground: it returns the settled outputs to write into their files."
+            : brandPending(k)
           ? "The brand's colours are still being read (the web reader was busy), so the brand palette is still empty. Call read_playground now: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground again for the settled outputs."
           : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
-      ...(k.kit.brand ? { note: BRAND_NOTE } : {}),
+      ...(k.kit.web?.length ? { note: WEB_NOTE } : k.kit.brand ? { note: BRAND_NOTE } : {}),
     });
   };
 
@@ -171,7 +185,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       if (parsed.kind === "preview") {
         const r = await createPreview(parsed.domain, parsed.kit);
         if ("refused" in r) return fail(r.refused);
-        await within(r.brand);
+        await within(Promise.all([r.brand, r.web]));
         return preview(r.id, { ...renamed(r.id), ...(r.existed ? again : {}) }, parsed.warnings);
       }
       const r = await createPlayground(parsed.domain, origin);
@@ -215,7 +229,25 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     async ({ playground_id }) => {
       const before = await find(playground_id, true);
       if (typeof before === "string") return fail(before);
-      if (before.kit) return fail(`"${playground_id}" is a preview playground: it has no pricing pages to re-check. Call read_playground for its settled result.`);
+      if (before.kit) {
+        // A preview playground: re-read its web sources. Clay reports what changed; the agent judges what it means.
+        if (!before.kit.kit.web?.length) return fail(`"${playground_id}" is a preview playground without web sources (data.web): it has nothing to re-check. Call read_playground for its settled result.`);
+        const w = await within(recheckWeb(playground_id));
+        const now = (await load()).playgrounds[playground_id];
+        if (!w.done) return text({ playground_id, url: url(playground_id), status: "running", still_reading: webReading(now), next: "The pages are still being re-read. Tell the person that today's facts are being read. Then call read_playground: it waits up to 20 seconds; repeat until build.status is \"done\". Its web_changes are what changed." });
+        return text({
+          playground_id,
+          url: url(playground_id),
+          checked_at: new Date().toISOString(),
+          ...(w.value?.stop ? { stopped: `The re-check stopped early: ${w.value.stop}. Do not retry now; tell the person.` } : {}),
+          changed_now: w.value?.changes.length ?? 0,
+          web_changes: webChanges(now.kit!),
+          data: dataReport(now.kit!, webReading(now)),
+          problems: webProblems(now.kit!, webReading(now)),
+          tell_person: (w.value?.changes.length ?? 0) > 0 ? "The page shows the new values after a reload, with what changed since they settled." : "Nothing changed.",
+          note: WEB_NOTE,
+        });
+      }
       const ids = before.domain.vendors.map((v) => v.id);
       const started = new Date().toISOString();
       const w = await within(recheckAll(playground_id, ids, "manual", origin));
@@ -275,7 +307,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       try {
         if (parsed.kind === "preview") {
           const r = await revisePreview(parsed.domain, parsed.kit);
-          await within(r.brand);
+          await within(Promise.all([r.brand, r.web]));
           const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the person must reload the page before they settle.";
           return preview(playground_id, { settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person }, parsed.warnings);
         }

@@ -4,6 +4,7 @@
 // when the frame URL is opened directly, and (2) allows no network except the pinned Tailwind build and the brand's logos.
 // The only channel to the page is postMessage, and both sides validate every message.
 import type { KitState } from "./kit.ts";
+import { webData } from "./web.ts";
 
 /** The in-browser Tailwind build, pinned by version and content hash (checked against the registry and the CDN on 2026-11-14). */
 export const TAILWIND = { url: "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.5/dist/index.global.js", integrity: "sha384-t+qLIxS5zM/KF99/doWY+dxTsavdvgayaZt8A9ntLsUjEkiXzYl5M3Ij8zVFPL9j" };
@@ -143,7 +144,7 @@ export function frameDocument(k: KitState, values: Record<string, unknown>): str
       controls: controls.map((c) => ({ id: c.id, type: c.type, ...(c.type === "slider" ? { min: c.min, max: c.max } : c.type === "toggle" ? { on: c.on, off: c.off } : c.type === "select" ? { options: c.options.map((o) => o.value) } : {}) })),
       values,
       // The brand object always exists, so a preview written for brand data still runs when the brand could not be read.
-      data: { brand: k.kit.brand ? { domain: k.kit.brand.domain, title: k.brandData?.title ?? "", colors: k.brandData?.colors ?? [], logos: k.brandData?.logos ?? [] } : null, inline: k.kit.inline ?? {} },
+      data: { brand: k.kit.brand ? { domain: k.kit.brand.domain, title: k.brandData?.title ?? "", colors: k.brandData?.colors ?? [], logos: k.brandData?.logos ?? [] } : null, inline: k.kit.inline ?? {}, web: webData(k.kit.web, k.web) },
       html: preview.html,
       css: preview.css,
       jsLine,

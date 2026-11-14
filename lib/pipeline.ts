@@ -5,6 +5,7 @@ import { extractionInstructions, extractionSchema, hasPrices, normalise, pricing
 import { brand, cd, ContextDevError, scrape } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
+import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState } from "./web";
 import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -322,11 +323,118 @@ function readBrandLater(id: string, kit: Kit, since: string): Promise<void> {
  * stores its result when it ends. A playground without data.brand is complete at once. `existed`: the caller already has
  * exactly this playground (a repeated call): nothing was created or read.
  */
-export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null; existed?: boolean } | { refused: string }> {
+export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null; web: Promise<string | null> | null; existed?: boolean } | { refused: string }> {
   const since = new Date().toISOString();
   const r = await insertPlayground(domain, (d) => ({ ...newPlayground(d), kit: { kit, rev: randomUUID(), brandData: null, brandError: kit.brand ? BRAND_PENDING : null, brandSince: kit.brand ? since : null, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } }));
   if ("refused" in r) return r;
-  return { id: r.id, brand: kit.brand && !r.existed ? readBrandLater(r.id, kit, since) : null, existed: r.existed };
+  // A repeated create reads only the web sources that are missing and that nothing reads now.
+  const p = r.existed ? await playground(r.id) : null;
+  const reading = new Set(p && workStatus(p)?.status === "running" ? p.work!.pending : []);
+  const missing = (kit.web ?? []).filter((s) => !p || (!p.kit?.web?.[s.id]?.read && !reading.has(webWorkId(s.id)))).map((s) => s.id);
+  return { id: r.id, brand: kit.brand && !r.existed ? readBrandLater(r.id, kit, since) : null, web: missing.length ? collectWeb(r.id, missing) : null, existed: r.existed };
+}
+
+// ---- data.web: live facts from web pages for a preview playground (lib/web.ts has the validation and the guard).
+
+/** The id of a web source in the tracked work of its playground. */
+const webWorkId = (id: string) => `web:${id}`;
+
+/** One structured read of a page: the facts the source asks for, guarded against the page text of the same capture. */
+async function extractWeb(src: WebSource, url: string): Promise<WebRead> {
+  const r = await scrape(url, { schema: webSchema(src), instructions: webInstructions(src) });
+  if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`.trim());
+  const text = r.markdown.success && r.markdown.data ? r.markdown.data : "";
+  return guard(src, r.json.data, text, { url, fetchedAt: new Date(Date.now() - (r.cache_metadata?.age_ms ?? 0)).toISOString(), truncated: r.json.isTruncated === true });
+}
+
+/** Read one web source: find its page (the spec's URL, else Search on its domain), then extract. An error is stored, not thrown, except a stop (rate limit, cap). */
+async function readWeb(src: WebSource, was: WebState | undefined): Promise<{ state: WebState; stop: string | null }> {
+  const state: WebState = { url: src.url ?? was?.url ?? null, foundVia: src.url ? "spec" : (was?.foundVia ?? null), read: was?.read ?? null, error: null, lastCheckedAt: null, changes: was?.changes ?? [] };
+  let stop: string | null = null;
+  try {
+    if (!state.url) Object.assign(state, { url: (await searchTopUrl(src.find ?? src.id, src.domain!)).url, foundVia: "context.dev search" });
+    if (!state.url) throw new Error(`Search found no page on ${src.domain} for "${src.find}"`);
+    state.read = await extractWeb(src, state.url);
+  } catch (e) {
+    state.error = message(e);
+    if (e instanceof ContextDevError && e.stop) stop = state.error;
+  }
+  state.lastCheckedAt = new Date().toISOString();
+  return { state, stop };
+}
+
+/** Store what was read for one source, unless a revision changed that source meanwhile, and take it off the pending list. */
+const storeWeb = (pg: string, src: WebSource, state: WebState) =>
+  update((s) => {
+    const p = s.playgrounds[pg];
+    const k = p?.kit;
+    if (k && JSON.stringify(k.kit.web?.find((x) => x.id === src.id)) === JSON.stringify(src)) (k.web ??= {})[src.id] = state;
+    sourceArrived(p, webWorkId(src.id));
+  });
+
+/** Read some web sources of a preview playground in parallel, as tracked work. Resolves to the stop error or null. */
+export async function collectWeb(pg: string, ids: string[]): Promise<string | null> {
+  return tracked(pg, "build", ids.map(webWorkId), async () => {
+    const k = (await playground(pg)).kit;
+    const stops = await Promise.all(
+      (k?.kit.web ?? []).filter((s) => ids.includes(s.id)).map(async (src) => {
+        const r = await readWeb(src, k?.web?.[src.id]);
+        await storeWeb(pg, src, r.state);
+        return r.stop;
+      }),
+    );
+    return stops.find((x) => x) ?? null;
+  });
+}
+
+/**
+ * Re-check the web sources of a preview playground. Per source: read the page text and compare its fingerprint; only
+ * when the text changed, extract again; a fact changes only when a second fresh extraction states the same thing
+ * (confirmChanges). The changes are stored on the source and returned.
+ */
+export async function recheckWeb(pg: string): Promise<{ changes: WebChange[]; stop: string | null }> {
+  const k = (await playground(pg)).kit;
+  const sources = k?.kit.web ?? [];
+  const changes: WebChange[] = [];
+  const stop = await tracked(pg, "recheck", sources.map((s) => webWorkId(s.id)), async () => {
+    const stops = await Promise.all(
+      sources.map(async (src) => {
+        const was = k?.web?.[src.id];
+        // A source that was never read is read now; nothing can have changed.
+        if (!was?.read || !was.url) {
+          const r = await readWeb(src, was);
+          await storeWeb(pg, src, r.state);
+          return r.stop;
+        }
+        const state: WebState = { ...was, error: null };
+        let halted: string | null = null;
+        try {
+          const page = await scrape(was.url);
+          if (pageHash(page.markdown.success && page.markdown.data ? page.markdown.data : "") !== was.read.textHash) {
+            const first = await extractWeb(src, was.url);
+            if (!diffWeb(src, was.read, first).length) state.read = first;
+            else {
+              const c = confirmChanges(src, was.read, first, await extractWeb(src, was.url));
+              const at = new Date().toISOString();
+              const found = c.changes.map((x) => ({ ...x, at, source: src.id }));
+              changes.push(...found);
+              state.read = c.read;
+              state.changes = [...found, ...was.changes].slice(0, WEB_LIMITS.changes);
+              if (c.unconfirmed) state.error = `Two reads of this page disagreed on ${c.unconfirmed} fact(s). They keep their earlier values, and the next re-check reads the page again.`;
+            }
+          }
+        } catch (e) {
+          state.error = message(e);
+          if (e instanceof ContextDevError && e.stop) halted = state.error;
+        }
+        state.lastCheckedAt = new Date().toISOString();
+        await storeWeb(pg, src, state);
+        return halted;
+      }),
+    );
+    return stops.find((x) => x) ?? null;
+  });
+  return { changes, stop };
 }
 
 /**
@@ -334,7 +442,7 @@ export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: str
  * unverified again, the settled result is cleared, and the exploration is kept for the controls whose definition did not
  * change. A new brand is read after the kit is stored: `brand` is that read (the tool answers within its deadline).
  */
-export async function revisePreview(domain: Domain, kit: Kit): Promise<{ previewKept: boolean; outputsKept: boolean; settledCleared: boolean; brand: Promise<void> | null }> {
+export async function revisePreview(domain: Domain, kit: Kit): Promise<{ previewKept: boolean; outputsKept: boolean; settledCleared: boolean; brand: Promise<void> | null; web: Promise<string | null> | null }> {
   const since = new Date().toISOString();
   const r = await update((s) => {
     const p = s.playgrounds[domain.id];
@@ -355,13 +463,17 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ preview
     const previewKept = runSignature(p.kit.kit) === runSignature(kit);
     const outputsKept = previewKept && JSON.stringify(p.kit.kit.outputs.map((o) => [o.id, o.template])) === JSON.stringify(kit.outputs.map((o) => [o.id, o.template]));
     const settledCleared = !!p.kit.settled && !outputsKept;
+    // A web source that did not change keeps what was read; a new or changed one is read after this update.
+    const sameSource = (x: WebSource) => JSON.stringify(p.kit!.kit.web?.find((y) => y.id === x.id)) === JSON.stringify(x);
+    const web = Object.fromEntries((kit.web ?? []).filter((x) => sameSource(x) && p.kit!.web?.[x.id]).map((x) => [x.id, p.kit!.web![x.id]]));
+    const webToRead = (kit.web ?? []).filter((x) => !web[x.id]?.read).map((x) => x.id);
     p.domain = domain;
     p.kit = previewKept
-      ? { ...p.kit, kit, ...read, rev: outputsKept ? p.kit.rev : randomUUID(), settled: outputsKept ? p.kit.settled : null }
-      : { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
-    return { previewKept, outputsKept, settledCleared, reread };
+      ? { ...p.kit, kit, ...read, web, rev: outputsKept ? p.kit.rev : randomUUID(), settled: outputsKept ? p.kit.settled : null }
+      : { kit, rev: randomUUID(), ...read, web, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
+    return { previewKept, outputsKept, settledCleared, reread, webToRead };
   });
-  return { previewKept: r.previewKept, outputsKept: r.outputsKept, settledCleared: r.settledCleared, brand: r.reread ? readBrandLater(domain.id, kit, since) : null };
+  return { previewKept: r.previewKept, outputsKept: r.outputsKept, settledCleared: r.settledCleared, brand: r.reread ? readBrandLater(domain.id, kit, since) : null, web: r.webToRead.length ? collectWeb(domain.id, r.webToRead) : null };
 }
 
 /**

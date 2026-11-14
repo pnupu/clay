@@ -6,6 +6,7 @@ import { z } from "zod";
 import { feature, hostname, LIMITS, metric, parseConfig, toConfig, vendor } from "./config.ts";
 import type { Domain } from "./domain.ts";
 import { checkKit, KIT_LIMITS, type Kit } from "./kit.ts";
+import { WEB_LIMITS } from "./web.ts";
 import type { Playground } from "./store.ts";
 
 /** A string with an upper bound. Its error states the limit and the length that was given, so the agent knows by how much to shorten. */
@@ -37,6 +38,21 @@ const control = z.strictObject({
   free: z.boolean().optional().describe("color: true (default) lets the person pick any colour, false only the palette."),
 });
 
+const webField = z.strictObject({
+  id: z.string().max(30).describe("Stable id, for example input_price. Lowercase letters, digits, underscores."),
+  type: z.enum(["number", "text", "boolean"]).describe("number: a number exactly as the page writes it. text: a short text such as a model or plan name. boolean: yes or no."),
+  unit: upTo(WEB_LIMITS.unit).optional().describe("The unit of a number, for example 'USD per 1M tokens'. Shown next to the value."),
+  describe: upTo(WEB_LIMITS.describe).describe("What the page calls this fact, with synonyms and its unit. The extraction finds the value with this text. Ask for the number as the page states it; do your arithmetic in view.js."),
+});
+const webSource = z.strictObject({
+  id: z.string().max(30).describe("Stable id, for example anthropic. It is the name in clay.data.web.<id>."),
+  url: upTo(300).optional().describe("The exact public https page. Give it when you know it: it is more reliable than search."),
+  domain: hostname.optional().describe("The site's own host, for example anthropic.com, when you do not know the page: search finds it with `find`."),
+  find: upTo(WEB_LIMITS.find).optional().describe("Which page of the site to read, for example 'API pricing per million tokens'. Required with domain."),
+  fields: z.array(webField).max(WEB_LIMITS.fields).optional().describe("Single facts of the page (a plan's price, a limit). Give fields or rows."),
+  rows: z.strictObject({ describe: upTo(WEB_LIMITS.describe).describe("What one row is, for example 'one row per model of the API, with its prices'."), fields: z.array(webField).max(WEB_LIMITS.fields).describe("The facts of each row. Make the first text field the row's name: it identifies the row.") }).optional().describe("A table of the page: up to 60 rows."),
+});
+
 const view = z.strictObject({
   type: z.enum(["price_ranking", "preview"]).describe("price_ranking: vendors of one usage-priced product ranked by cost, on prices read from their pricing pages (needs data.price_pages). preview: the real artifact, running code you supply, bound to controls (needs controls and outputs)."),
   html: z.string().optional().describe("preview: the markup of the real thing, copied from the person's code. {{control_id}} is replaced by the control's value and updated in place on every move. No script tags."),
@@ -61,6 +77,7 @@ export const specShape = {
       price_pages: pricePages.optional().describe("For view price_ranking: what to read from the vendors' public pricing pages. Never put prices here; they are read from the pages."),
       brand: z.strictObject({ domain: hostname.describe("The brand's own site, for example linear.app.") }).nullish().describe("For view preview: brand facts of one site, read live by Context.dev: its colours and logos. Use it when the person names a brand. A color control with palette 'brand' offers these colours."),
       inline: z.record(z.string().max(40), z.unknown()).nullish().describe("For view preview: values you supply yourself, read in view.js as clay.data.inline. The page marks them as provided by the agent, not checked."),
+      web: z.array(webSource).max(WEB_LIMITS.sources).nullish().describe("For view preview: live facts from web pages, read by Context.dev when the playground is built and again on recheck_playground. Up to 6 sources. view.js reads clay.data.web.<id>: an object of the fields, or a list of the rows; a value the page does not state, or a number that is not in the page text, is null. Use it when the comparison needs facts that change (prices, limits, versions) and a dimension the price engine lacks. null removes it."),
     })
     .optional()
     .describe("Where the facts come from. Each source keeps its origin on the page."),
@@ -107,6 +124,13 @@ export function oversize(input: unknown): string[] {
   const data = obj(s.data);
   bound("data", data, 6);
   bound("data.inline", data.inline, 40);
+  bound("data.web", data.web, WEB_LIMITS.sources);
+  if (Array.isArray(data.web) && data.web.length <= WEB_LIMITS.sources)
+    for (const [i, s] of data.web.entries()) {
+      bound(`data.web.${i}`, obj(s), 8);
+      bound(`data.web.${i}.fields`, obj(s).fields, WEB_LIMITS.fields);
+      bound(`data.web.${i}.rows.fields`, obj(obj(s).rows).fields, WEB_LIMITS.fields);
+    }
   const pages = obj(data.price_pages);
   bound("data.price_pages", pages, 8);
   bound("data.price_pages.metrics", pages.metrics, LIMITS.metrics[1]);
@@ -148,7 +172,7 @@ function validate(input: unknown): ParsedSpec {
   if (s.view.type === "price_ranking") {
     if (!s.data?.price_pages) errors.push('data.price_pages: the price_ranking view needs it: {"product", "metrics", "features", "vendors"}.');
     for (const k of ["controls", "outputs"] as const) if (s[k]) errors.push(`${k}: the price_ranking view brings its own controls (one slider per metric, one checkbox per feature) and its own hand-back (the saved decision). Remove ${k}.`);
-    for (const k of ["brand", "inline"] as const) if (s.data?.[k]) errors.push(`data.${k}: only a preview view can use it. Remove it, or build a second playground with view.type "preview".`);
+    for (const k of ["brand", "inline", "web"] as const) if (s.data?.[k]) errors.push(`data.${k}: only a preview view can use it. Remove it, or build a second playground with view.type "preview".`);
     for (const k of ["html", "css", "js", "tailwind", "height"] as const) if (s.view[k] !== undefined) errors.push(`view.${k}: only a preview view has ${k}. Remove it.`);
     if (errors.length) return { ok: false, errors };
     const p = parseConfig({ id: s.id, question: s.title, ...s.data!.price_pages });
@@ -156,7 +180,7 @@ function validate(input: unknown): ParsedSpec {
     return { ok: true, kind: "price", domain: { ...p.domain, ...(s.notes ? { note: s.notes } : {}) } };
   }
   if (s.data?.price_pages) errors.push('data.price_pages: a preview view has no price ranking. Remove it, or build a second playground with view.type "price_ranking".');
-  const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand ?? undefined, inline: s.data?.inline ?? undefined });
+  const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand ?? undefined, inline: s.data?.inline ?? undefined, web: s.data?.web ?? undefined });
   if (!k.ok) errors.push(...k.errors);
   if (errors.length || !k.ok) return { ok: false, errors };
   return { ok: true, kind: "preview", domain: { id: s.id, question: s.title, product: "", metrics: [], features: [], vendors: [] }, kit: k.kit, warnings: k.warnings };
@@ -173,7 +197,7 @@ export function toSpec(p: Playground): Spec {
     id: p.domain.id,
     title: p.domain.question,
     ...(kit.notes ? { notes: kit.notes } : {}),
-    ...(kit.brand || kit.inline ? { data: { ...(kit.brand ? { brand: kit.brand } : {}), ...(kit.inline ? { inline: kit.inline } : {}) } } : {}),
+    ...(kit.brand || kit.inline || kit.web ? { data: { ...(kit.brand ? { brand: kit.brand } : {}), ...(kit.inline ? { inline: kit.inline } : {}), ...(kit.web ? { web: kit.web } : {}) } } : {}),
     controls: kit.controls,
     view: { type: "preview", html: kit.preview.html, ...(kit.preview.css ? { css: kit.preview.css } : {}), ...(kit.preview.js ? { js: kit.preview.js } : {}), tailwind: kit.preview.tailwind, height: kit.preview.height },
     outputs: kit.outputs,

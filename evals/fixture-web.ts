@@ -1,9 +1,9 @@
-// A local stand-in for Context.dev (search, scrape and brand) for agent runs that must not spend real requests.
+// A local stand-in for Context.dev (search, scrape, brand, and the data.web facts of preview playgrounds) for agent runs that must not spend real requests.
 // Unlike scripts/fixture-api.ts it answers for ANY playground an agent designs: it reads the metric and feature ids from the
 // extraction schema of the request and invents a fictional price list per vendor URL, the same on every read.
 // The prices are fiction. A playground built on it proves the agent, the page and the hand-back, not the web data.
 // Usage: node evals/fixture-web.ts <port> [fail]     ("fail": every scrape answers 500, for the deliberate-failure proof)
-//   FIXTURE_DELAY_MS=<ms> makes every scrape slow.
+//   FIXTURE_DELAY_MS=<ms> makes every scrape slow. POST /control {"bump": n} changes every number of the data.web pages.
 //   then start the app with CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture CONTEXT_DEV_DAILY_CAP=0
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo, Server } from "node:net";
@@ -72,6 +72,43 @@ function priceList(url: string, schema: unknown) {
   return { text: lines.join("\n"), model };
 }
 
+/** The data.web pages that were read with a schema, so a later text-only read of the same URL serves the same page. */
+const webPages = new Map<string, unknown>();
+/** POST /control {"bump": n} adds n to every number of the data.web pages: the pages "change", for the staying-live proof. */
+let bump = 0;
+
+/**
+ * A fictional page for a data.web source (lib/web.ts): the schema has `rows` (a table) or one {value, quote} object per
+ * field. Numbers are stable per page and field, plus `bump`; every number is in the page text, so the guard keeps it.
+ */
+function webFacts(url: string, schema: unknown) {
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  const name = host.split(".")[0];
+  const kind = (f: unknown) => { const t = dig(f, "type"); return Array.isArray(t) ? String(t[0]) : String(t); };
+  const num = (key: string, i: number) => 5 + (hash(host + key) % 40) + i * (1 + (hash(key) % 7)) + bump;
+  const rowsProps = dig(schema, "properties", "rows", "items", "properties") as Json | undefined;
+  const lines: string[] = [`${host} (fixture page, fictional facts).`];
+  if (rowsProps) {
+    const fields = Object.entries(rowsProps).filter(([id]) => id !== "quote");
+    const rows = [0, 1, 2, 3].map((i) => {
+      const row: Json = {};
+      for (const [id, f] of fields) row[id] = kind(f) === "number" ? num(id, i) : kind(f) === "boolean" ? i % 2 === 0 : `${name} option ${i + 1}`;
+      const quote = fields.map(([id]) => `${id} ${row[id]}`).join(", ");
+      lines.push(quote + ".");
+      return { ...row, quote };
+    });
+    return { text: lines.join("\n"), data: { rows } };
+  }
+  const data: Json = {};
+  for (const [id, f] of Object.entries((dig(schema, "properties") as Json | undefined) ?? {})) {
+    const value = kind(dig(f, "properties", "value")) === "number" ? num(id, 0) : kind(dig(f, "properties", "value")) === "boolean" ? true : `${name} ${id}`;
+    const quote = `${id}: ${value}`;
+    lines.push(quote + ".");
+    data[id] = { value, quote };
+  }
+  return { text: lines.join("\n"), data };
+}
+
 createServer(async (req, res) => {
   const b = await body(req);
   const send = (status: number, data: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(data));
@@ -85,10 +122,27 @@ createServer(async (req, res) => {
     const hex = (n: number) => "#" + ((h * (n + 3) * 2654435761) >>> 8).toString(16).padStart(6, "0").slice(-6);
     return send(failing ? 500 : 200, failing ? { error_code: "FIXTURE_FAILURE", message: "fixture read failed" } : { brand: { title: `${b.domain} (fixture brand)`, colors: [0, 1, 2, 3].map((n) => ({ hex: hex(n), name: `Fixture ${n + 1}` })), logos: [] }, key_metadata: { credits_consumed: 0 } });
   }
+  if (req.url === "/control") {
+    bump = Number(b.bump ?? bump) || 0;
+    return send(200, { bump });
+  }
   if (req.url !== "/web/scrape") return send(404, {});
   if (delay) await new Promise((r) => setTimeout(r, delay));
   if (failing) return send(500, { error_code: "FIXTURE_FAILURE", message: "fixture read failed" });
   const wantsJson = (b.formats as { json?: boolean } | undefined)?.json === true;
+  // A data.web source: its schema has no `plans`. A read without a schema of a page that was read as a web source before
+  // gets the same page text, so a re-check sees the same fingerprint until the facts change.
+  const schema = dig(b, "jsonParams", "schema");
+  const isWeb = wantsJson ? !dig(schema, "properties", "plans") : webPages.has(String(b.url));
+  if (isWeb) {
+    try {
+      if (wantsJson) webPages.set(String(b.url), schema);
+      const facts = webFacts(String(b.url), webPages.get(String(b.url)));
+      return send(200, { url: b.url, request_id: "fixture", cache_metadata: { status: "miss", age_ms: 0 }, key_metadata: { credits_consumed: 0 }, markdown: { requested: true, success: true, data: facts.text }, json: wantsJson ? { requested: true, success: true, data: facts.data } : { requested: false, success: null, data: null } });
+    } catch {
+      return send(400, { error_code: "BAD_URL", message: "not a URL" });
+    }
+  }
   let list: ReturnType<typeof priceList>;
   try {
     list = priceList(String(b.url), dig(b, "jsonParams", "schema"));

@@ -1,6 +1,7 @@
-// The kit reference that the kit_reference tool returns: the format of a preview playground and two worked examples.
+// The kit reference that the kit_reference tool returns: the format of a preview playground and three worked examples.
 // The examples are real specs: lib/spec.test.ts checks that they pass parseSpec(), so the reference cannot drift from the validator.
 import { KIT_LIMITS } from "./kit.ts";
+import { WEB_LIMITS } from "./web.ts";
 import type { Spec } from "./spec.ts";
 
 export const BUTTON_EXAMPLE: Spec = {
@@ -62,6 +63,44 @@ export const SPRING_EXAMPLE: Spec = {
   outputs: [{ id: "spring", label: "const SPRING in src/Card.tsx", template: "{ stiffness: {{stiffness}}, damping: {{damping}}, mass: {{mass}} }" }],
 };
 
+export const MODEL_EXAMPLE: Spec = {
+  id: "agent-model-choice",
+  title: "Which model should the coding agent run on?",
+  notes: "The question was whether the team's coding agent is on the right model. Tokens, time and pass rate per task are the team's own measurements (bench.json); the prices per million tokens are read live from the providers' pricing pages. Set your volume and limits, then choose a model.",
+  data: {
+    inline: {
+      measured: "bench.json: 10 tasks, 2 repeats per model, measured by the team on 2026-11-14",
+      models: [
+        { model: "claude-opus-5-5", pass_rate: 1, median_seconds: 22.1, input_tokens_per_task: 67169, cached_input_tokens_per_task: 60546, output_tokens_per_task: 2360 },
+        { model: "claude-sonnet-5-5", pass_rate: 0.95, median_seconds: 11.1, input_tokens_per_task: 57201, cached_input_tokens_per_task: 51478, output_tokens_per_task: 1690 },
+        { model: "gpt-6-luna", pass_rate: 0.9, median_seconds: 21.6, input_tokens_per_task: 78673, cached_input_tokens_per_task: 68115, output_tokens_per_task: 1032 },
+      ],
+    },
+    web: [
+      { id: "anthropic", domain: "anthropic.com", find: "Claude API pricing per million tokens", rows: { describe: "one row per Claude model of the API", fields: [{ id: "model", type: "text", describe: "model name, for example Claude Opus 5.5" }, { id: "input", type: "number", unit: "USD per 1M tokens", describe: "price of input tokens per million tokens (base input, not batch)" }, { id: "cached_input", type: "number", unit: "USD per 1M tokens", describe: "price of cached input tokens per million (cache read, cache hit)" }, { id: "output", type: "number", unit: "USD per 1M tokens", describe: "price of output tokens per million tokens" }] } },
+      { id: "openai", domain: "openai.com", find: "API pricing per million tokens", rows: { describe: "one row per text model of the API", fields: [{ id: "model", type: "text", describe: "model name, for example GPT-6 Luna" }, { id: "input", type: "number", unit: "USD per 1M tokens", describe: "price of input tokens per million tokens" }, { id: "cached_input", type: "number", unit: "USD per 1M tokens", describe: "price of cached input tokens per million" }, { id: "output", type: "number", unit: "USD per 1M tokens", describe: "price of output tokens per million tokens" }] } },
+    ],
+  },
+  controls: [
+    { id: "tasks", type: "slider", label: "Tasks per month", meaning: "how many agent tasks the team runs per month", min: 100, max: 20000, step: 100, initial: 2000 },
+    { id: "cached_share", type: "slider", label: "Cached input that hits the cache", meaning: "share of the measured cached input tokens that is billed at the cached price", min: 0, max: 100, step: 5, initial: 100, unit: "%" },
+    { id: "max_seconds", type: "slider", label: "Time limit per task", meaning: "longest median time per task the team accepts", min: 5, max: 60, step: 1, initial: 30, unit: "s" },
+    { id: "min_pass", type: "slider", label: "Minimum pass rate", meaning: "lowest pass rate the team accepts", min: 50, max: 100, step: 1, initial: 90, unit: "%" },
+    { id: "model", type: "select", label: "Model to use", meaning: "the model written into agent.config.json", initial: "claude-opus-5-5", options: [{ value: "claude-opus-5-5" }, { value: "claude-sonnet-5-5" }, { value: "gpt-6-luna" }] },
+  ],
+  view: {
+    type: "preview",
+    height: 300,
+    html: '<table><thead><tr><th>Model</th><th>Pass rate</th><th>Median time</th><th>Cost per task</th><th>Per successful task</th><th>Per month</th><th></th></tr></thead><tbody id="rows"></tbody></table>',
+    css: "table { border-collapse: collapse; font: 14px system-ui; margin: 16px; max-width: 100%; } th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; } tr.out td { color: #9ca3af; } tr.chosen td { font-weight: 600; background: #eff6ff; }",
+    js: "const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, \"\");\nconst rows = [...clay.data.web.anthropic, ...clay.data.web.openai];\n// Join a measured model to its price row by name. No row, or a missing price, is unknown: never 0.\nconst price = (model) => rows.find((r) => r.model && norm(r.model) === norm(model)) || null;\nconst usd = (n) => (n == null ? \"unknown\" : \"$\" + n.toFixed(n < 1 ? 3 : 2));\nconst body = document.getElementById(\"rows\");\nclay.onChange((v) => {\n  body.textContent = \"\";\n  for (const m of clay.data.inline.models) {\n    const p = price(m.model);\n    const cached = m.cached_input_tokens_per_task * (v.cached_share / 100);\n    const fresh = m.input_tokens_per_task - cached;\n    // Cached input has its own price. When the page does not state it, the cost is unknown, not cheaper.\n    const known = p && p.input != null && p.output != null && (cached === 0 || p.cached_input != null);\n    const perTask = known ? (fresh * p.input + cached * (p.cached_input || 0) + m.output_tokens_per_task * p.output) / 1e6 : null;\n    const perSuccess = perTask == null || !m.pass_rate ? null : perTask / m.pass_rate;\n    const ok = m.pass_rate * 100 >= v.min_pass && m.median_seconds <= v.max_seconds;\n    const tr = document.createElement(\"tr\");\n    tr.className = (ok ? \"\" : \"out \") + (m.model === v.model ? \"chosen\" : \"\");\n    for (const t of [m.model, Math.round(m.pass_rate * 100) + \"%\", m.median_seconds + \" s\", usd(perTask), usd(perSuccess), usd(perSuccess == null ? null : perSuccess * v.tasks), ok ? \"\" : \"outside your limits\"]) tr.appendChild(document.createElement(\"td\")).textContent = t;\n    body.appendChild(tr);\n  }\n});",
+  },
+  outputs: [
+    { id: "config", label: "\"model\" in agent.config.json", template: '"model": "{{model}}"' },
+    { id: "rule", label: "The rule behind the choice, in words", template: "Use {{model}} while it passes at least {{min_pass}}% of tasks within {{max_seconds}} s, at {{tasks}} tasks per month with {{cached_share}}% of the cached input billed at the cached price." },
+  ],
+};
+
 export const KIT_REFERENCE = `# Clay kit reference: preview playgrounds
 
 A preview playground has four parts. You compose them; Clay validates the composition before it builds anything.
@@ -90,10 +129,20 @@ Good controls: the 3 to 6 dimensions behind THIS person's complaint, not every p
 
 ## 3. Data (each source keeps its origin on the page)
 - data.brand: {domain}. Clay reads the brand's colours and logos live with Context.dev (about 10 to 30 seconds once). Use it whenever the person names a brand or a site; do not write brand colours from memory.
-- data.inline: values you supply. The page shows them as "provided by your agent, not checked".
+- data.inline: values you supply: the person's own numbers (measurements from their files, their current settings). The page shows them as "provided by your agent, not checked", so say in notes or in the preview where they come from (the file, the date).
+- data.web: live facts from web pages, [{id, url | domain + find, fields | rows}], up to ${WEB_LIMITS.sources} sources. Clay reads each page with Context.dev when the playground is built, and again on recheck_playground.
+  - fields: single facts of a page, [{id, type: "number" | "text" | "boolean", unit?, describe}], up to ${WEB_LIMITS.fields}. rows: a table, {describe: what one row is, fields: [...]}, up to ${WEB_LIMITS.rows} rows; make the first text field the row's name.
+  - describe says what the page calls the fact, with synonyms and the unit. Ask for numbers as the page states them (a price per 1M tokens, per hour, per seat) and do the arithmetic in view.js.
+  - view.js reads clay.data.web.<id>: an object of the fields, or a list of the rows. A value is null when the page does not state it, when the page could not be read, or when the number that was extracted is not in the page text (it is quarantined: Clay never passes on a number it cannot find on the page). Handle null in your code: show "unknown" and leave that row out of sums and rankings. Never let null become 0.
+  - Joins: when you join your own names to page rows (a model id from a measurements file to a pricing row), compare normalised names and show a row without a match as unknown. After the build, read the result: it lists the rows that were read, so check that every name you join on is there, and repair the source (the exact url, a better describe) when it is not.
+  - The page lists every source with its link, the read time, every value and what was quarantined, so the person can check any number.
+  - When to use it instead of a price playground (view.type "price_ranking"): when the comparison needs a dimension the price engine does not have (which GPU, which model), when the person's own numbers must be multiplied in (tokens per task, hours per job, seats), or when the question needs one or two facts of a page. The price engine is for "which vendor or plan of one usage-priced product" with plans, included quantities and overage.
+  - Staying live: recheck_playground reads the pages again and reports the facts that changed (two fresh reads must agree). read_playground returns web_changes: what changed since the person settled. You judge whether the settled result still holds, with the settled values and the new facts, and tell the person or send them back to the page.
 
 ## 4. Outputs: what comes back to you
 outputs: [{id, label, template}]. The template is the final text with {{control_id}} placeholders: the class string, the config object, the CSS rule, in the exact form of the person's file. In an output, the text of a toggle (on, off) or of a select option may itself contain {{other_control}}, and it is filled too: a piece of markup that is there or not, with a colour inside it, comes back complete. Never leave a marker word in an output for you to replace later: the person sees the outputs, and they must be the final code. The page shows the outputs live as "What goes back to your agent". When the person presses Settle, read_playground returns them rendered. Paste them; do not re-derive them from the values.
+
+Outputs can hold only control values, not what view.js computes. So when the person must choose among things the preview compares (a model, a GPU, a plan), give them a select for the choice and return it, with the numbers they set, as a config line and as a rule in words that you can carry out.
 
 ## The loop
 1. Read the person's real file. 2. create_playground. Fix every validation error it lists and call again. 3. Give the person the URL: "move the controls until it is right, then press Settle". The preview code is unverified until the page is opened. 4. When they say they are done, read_playground: it returns settled.outputs, the path they took per control, and the preview status. If the preview failed, the error is there: repair with revise_playground and ask them to reload. 5. Write the settled outputs into their file.
@@ -101,6 +150,10 @@ outputs: [{id, label, template}]. The template is the final text with {{control_
 ## Worked example 1: a Tailwind button, colours from the brand
 The person: "this signup button looks off, our brand is acme.com". Their file has <button className="bg-[#3b82f6] rounded-[4px] px-[12px] py-2 text-sm text-white font-normal">Sign up</button>.
 ${JSON.stringify(BUTTON_EXAMPLE, null, 1)}
+
+## Worked example 3: live web facts times the person's own measurements
+The person: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured." Their agent.config.json has "model": "claude-opus-5-5". Per-token prices alone do not answer this: each model uses a different number of tokens per task and passes a different share of tasks. So the measurements go in data.inline, the prices come live from data.web, and view.js multiplies them.
+${JSON.stringify(MODEL_EXAMPLE, null, 1)}
 
 ## Worked example 2: spring physics, tuned by feel
 The person: "the card snap-back feels dead". Their file has const SPRING = { stiffness: 120, damping: 26, mass: 1 }.
