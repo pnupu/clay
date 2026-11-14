@@ -16,7 +16,7 @@ export default async function Connect() {
     <main className="shell narrow">
       <p className="eyebrow">Connect your agent</p>
       <h1>Let your own agent build playgrounds for you</h1>
-      <p className="lede">Clay is an MCP server. Add it to Claude Code or Codex once. Then ask your agent for help, and it gives you a link to a playground that only you can open.</p>
+      <p className="lede">Your agent builds a playground for you, and you try it here: only you can open it. Add Clay to Claude Code or Codex once (it connects as an MCP server), then ask your agent for help.</p>
       {me.kind === "visitor" ? (
         <section className="card">
           <h2>Sign up to get your agent key</h2>
@@ -39,7 +39,7 @@ export default async function Connect() {
         <h2>Limits per person</h2>
         <ul className="plain">
           <li>{userPlaygroundCap() || "No limit on"} playgrounds. Delete old ones on the home page.</li>
-          <li>{userDailyCap() || "No limit on"} web requests per day, for building and re-checking playgrounds. Moving the controls on a page needs no request.</li>
+          <li>{userDailyCap() || "No limit on"} web requests per day, for reading prices, brands and web pages (a brand counts as 2). The count resets at 00:00 UTC. Moving the controls needs none, and a preview playground without web data needs none.</li>
         </ul>
       </section>
     </main>

@@ -38,8 +38,31 @@ export default async function Home() {
   const examples = orderExamples(playgrounds);
   const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
   const first = examples[0]?.[0];
+  // A returning person with playgrounds sees them first; everyone else meets them after the examples.
+  const yoursFirst = me.kind === "user" && yours.length > 0;
+  const yoursSection = me.kind === "visitor" ? null : (
+    <section className="shell" id="yours" aria-label="Your playgrounds">
+          <h2>{me.kind === "admin" ? "All playgrounds" : "Your playgrounds"}</h2>
+          {yours.length ? (
+            <ul className="mine">
+              {yours.map(([id, p]) => (
+                <li key={id} className="card">
+                  <div>
+                    <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
+                    <p className="small muted">{kindOf(p)} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
+                  </div>
+                  <Manage id={id} title={titleOf(p, id)} example={isExample(p, id)} featured={p.featured === true} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="card">None yet. <Link href="/connect">Connect your agent</Link>, then ask it for help with a decision.</p>
+          )}
+        </section>
+  );
   return (
     <main className="landing">
+      {yoursFirst && yoursSection}
       <section className="hero shell">
         <p className="eyebrow">Clay</p>
         <h1>Find out what you want by trying it.</h1>
@@ -102,31 +125,12 @@ export default async function Home() {
         )}
       </section>
 
-      {me.kind !== "visitor" && (
-        <section className="shell" id="yours" aria-label="Your playgrounds">
-          <h2>{me.kind === "admin" ? "All playgrounds" : "Your playgrounds"}</h2>
-          {yours.length ? (
-            <ul className="mine">
-              {yours.map(([id, p]) => (
-                <li key={id} className="card">
-                  <div>
-                    <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
-                    <p className="small muted">{kindOf(p)} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
-                  </div>
-                  <Manage id={id} example={isExample(p, id)} featured={p.featured === true} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="card">None yet. <Link href="/connect">Connect your agent</Link>, then ask it for help with a decision.</p>
-          )}
-        </section>
-      )}
+      {!yoursFirst && yoursSection}
 
       <section className="shell connect-cta">
         <div className="card">
           <h2>Connect your agent</h2>
-          <p>Clay is an MCP server. You bring your own agent and your own model subscription; Clay needs no AI key of its own. {me.kind === "visitor" ? "Sign up, get your agent key, and add Clay with one command." : "Get your agent key and add Clay with one command."}</p>
+          <p>Your own agent builds playgrounds for you, on your own model subscription; Clay needs no AI key of its own. It connects to your agent as an MCP server. {me.kind === "visitor" ? "Sign up, get your agent key, and add Clay with one command." : "Get your agent key and add Clay with one command."}</p>
           <Link className="button primary" href="/connect">Connect your agent</Link>
         </div>
       </section>

@@ -115,7 +115,7 @@ export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Acto
   return cap > 0 && own >= cap ? `You have reached the limit of ${cap} playgrounds per person. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.` : null;
 }
 // No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").
-export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC, and the playgrounds still work: moving the controls needs no web request`;
+export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC. Until then the playgrounds still work, because moving the controls needs no web request, and your agent can still build preview playgrounds that use no web data`;
 
 // Agent keys: "clay_" and 32 random bytes. Only the SHA-256 hash is stored; the key is shown once.
 const KEY_PREFIX = "clay_";

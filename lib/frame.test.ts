@@ -14,6 +14,9 @@ const state = (over: Partial<KitState> = {}): KitState => {
 
 test("page side of the bridge: only the two known message shapes pass, and the kept text is bounded", () => {
   assert.deepEqual(fromFrame({ clay: 1, type: "ready" }), { type: "ready" });
+  // The content height: a bounded number, nothing else.
+  assert.deepEqual(fromFrame({ clay: 1, type: "height", height: 520.4 }), { type: "height", height: 520 });
+  for (const height of [0, -5, 4001, Infinity, NaN, "520", null]) assert.equal(fromFrame({ clay: 1, type: "height", height }), null);
   assert.deepEqual(fromFrame({ clay: 1, type: "ready", extra: "x".repeat(1e6) }), { type: "ready" });
   assert.deepEqual(fromFrame({ clay: 1, type: "error", message: "boom" }), { type: "error", message: "boom" });
   assert.equal((fromFrame({ clay: 1, type: "error", message: "x".repeat(100_000) }) as { message: string }).message.length, 500);

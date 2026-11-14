@@ -47,7 +47,7 @@ codex mcp add clay --url https://<host>/api/mcp --bearer-token-env-var CLAY_AGEN
 - Claude Code asks once per Clay tool whether to allow it; the person allows it.
 - `codex exec` cannot ask, so Clay's tools are refused until `default_tools_approval_mode = "approve"` is under `[mcp_servers.clay]` in `~/.codex/config.toml`. It can only read files unless run with `-s workspace-write`; for a later turn the flag goes before `resume`: `codex exec -s workspace-write resume --last "I'm done."`.
 - Another MCP client: Streamable HTTP at `https://<host>/api/mcp` with the header `Authorization: Bearer <agent key>`.
-- The first request should name Clay ("Use Clay to …"): Codex's default model does not pick it on its own yet.
+- Optional tip for any agent: a request that starts with "Use Clay to …" makes the choice explicit.
 - A lost key: create a new one on `/connect` (the old one stops working); in Claude Code remove Clay and add it again, in Codex change the export. Remove Clay with `claude mcp remove clay` or `codex mcp remove clay`. When Clay is in more than one Claude Code scope (an earlier add without `--scope user`), `claude mcp remove clay` refuses and lists them; remove each with `--scope local` (in that folder) and `--scope user`.
 
 `/connect` shows these commands with the person's key filled in, each with a Copy button, and three example requests (look, feel, price).
@@ -269,8 +269,11 @@ The price engine answers "which vendor or plan of one usage-priced product". It 
 
 From a clean home (no operator configuration), a real signed-up test person, a personal key and the exact command from `/connect`:
 
-- Claude Code 2.1.321, default model (Claude Opus 5.5): 8 of 8 first requests from a clean home with a personal key, including the person settling in their own browser session and the agent reading the result back.
-- Codex CLI 0.167.0, default model (gpt-6.1-sol): Clay works when the request names it (3 of 3: build, settle, read-back). Unprompted, the default model built a playground in 0 of 7 requests that should have had one; it edited the code or answered from its own web search. With `codex exec`, add `default_tools_approval_mode = "approve"` and pass `-s workspace-write`.
+- Claude Code 2.1.321, default model (Claude Opus 5.5): 6 of 8 first requests from a clean home with a personal key (8 of 8 in an earlier round). In every case that needed a playground the agent built one. One failure was our test harness; in the other the agent's slider did not reach the largest number the person had mentioned.
+- Claude Code with Claude Sonnet 5.5: 7 of 8. In the failed case the agent wrote the settled values into the file but also restructured the code on its own.
+- Codex CLI 0.167.0, default model (gpt-6.1-sol): 8 of 8, unprompted. With `codex exec`, add `default_tools_approval_mode = "approve"` and pass `-s workspace-write`.
+
+Each line is 8 fixed vague requests, one run each, with a simulated person settling in their own browser session, on a local server with fixture web data. The same measurement confirmed that `--scope user` makes Clay available in other folders.
 
 Measured with `evals/` on 2026-11-14 against a local server of `master`:
 

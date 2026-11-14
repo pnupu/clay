@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ClerkProvider, UserButton } from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
+import Account from "./account";
 import { clerkOn, viewer } from "@/app/api/respond";
 import "./globals.css";
 import "./site.css";
@@ -16,10 +17,10 @@ async function Header() {
     <header className="site">
       <Link href="/" className="brand">Clay</Link>
       <nav>
-        <Link href="/#examples">Examples</Link>
-        {me.kind !== "visitor" && <Link href="/#yours">Your playgrounds</Link>}
-        <Link href="/connect">Connect your agent</Link>
-        {me.kind === "user" ? <UserButton /> : me.kind === "visitor" && clerkOn() ? <Link href="/sign-in" className="button">Sign in</Link> : null}
+        <Link href="/#examples" className="wide-only">Examples</Link>
+        {me.kind !== "visitor" && <Link href="/#yours"><span className="wide-only">Your playgrounds</span><span className="narrow-only">Yours</span></Link>}
+        <Link href="/connect"><span className="wide-only">Connect your agent</span><span className="narrow-only">Connect</span></Link>
+        {me.kind === "user" ? <Account /> : me.kind === "visitor" && clerkOn() ? <Link href="/sign-in" className="button">Sign in</Link> : null}
       </nav>
     </header>
   );

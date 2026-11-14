@@ -44,7 +44,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
   const block = (id: string, text: string, needsKey = true) => (
     <div className="command copyable">
       <pre className="code" data-command={id}>{text}</pre>
-      <button className="small-btn" onClick={() => copy(id, text)} disabled={needsKey && !key}>{label(id)}</button>
+      <button className="small-btn" onClick={() => copy(id, text)} disabled={needsKey && !key} title={needsKey && !key ? "Create a key first: the command needs it" : undefined}>{label(id)}</button>
     </div>
   );
 
@@ -57,16 +57,17 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
             <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it.</p>
             <div className="command copyable">
               <pre className="code" data-testid="agent-key">{key}</pre>
-              <button className="small-btn" onClick={() => copy("key", key)}>{label("key")}</button>
+              <button className="small-btn primary" onClick={() => copy("key", key)}>{label("key")}</button>
             </div>
           </>
         ) : since ? (
-          <p>You have a key, created {new Date(since).toUTCString()}. Clay cannot show it again, so the commands below show a placeholder. To see them with a key filled in, create a new one (the old one then stops working).</p>
+          <p>You have a key, created on {new Date(since).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}. Clay cannot show it again, so the commands below show a placeholder and cannot be copied. To fill them in, create a new key (the old one then stops working).</p>
         ) : (
           <p>You have no key yet. Create one: the commands below then show it filled in.</p>
         )}
         <p className="row wrap">
-          <button className="primary" disabled={busy} onClick={() => call("POST")}>{since ? "Create a new key" : "Create my agent key"}</button>
+          {/* Right after a key is shown, the next step is to copy it, not to replace it: this button is then a plain one. */}
+          <button className={key ? undefined : "primary"} disabled={busy} onClick={() => call("POST")}>{since ? "Create a new key" : "Create my agent key"}</button>
           {since && <button disabled={busy} onClick={() => call("DELETE")}>Revoke key</button>}
         </p>
         {error && <p className="alert">{error}</p>}
@@ -95,7 +96,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
 
       <section className="card">
         <h2>3. Ask your agent</h2>
-        <p>Start your first request with <strong>“Use Clay to …”</strong>. Codex does not pick Clay on its own yet; with the name, every agent does. Paste one of these, or write your own:</p>
+        <p>Ask in your own words, or paste one of these. Tip: starting with <strong>“Use Clay to …”</strong> makes sure any agent uses Clay.</p>
         {EXAMPLES.map((e) => (
           <div key={e.kind}>
             <h3>{e.kind}</h3>

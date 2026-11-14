@@ -60,6 +60,19 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
+  /** The height of the preview's content, as the frame reports it (lib/frame.ts, bounded). Null until the first report. */
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  /**
+   * The frame follows its content, up to a share of the screen: 65% where the preview stays in view above the controls
+   * (narrow screens), 80% elsewhere. Taller content scrolls inside the frame.
+   */
+  const [screenH, setScreenH] = useState<number | null>(null);
+  useEffect(() => {
+    const on = () => setScreenH(window.innerHeight * (window.matchMedia("(max-width: 800px)").matches ? 0.65 : 0.8));
+    on();
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
   /** The frame is created in the browser only, after this page listens: no message and no load event of it is missed. */
   const inBrowser = useSyncExternalStore(noSubscription, () => true, () => false);
   const ready = useRef(false);
@@ -78,6 +91,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
       if (!m) return;
       // The first error stands: it is the cause, the later ones usually follow from it.
       if (m.type === "error") return setFrame((f) => (f.status === "failed" ? f : { status: "failed", error: m.message }));
+      if (m.type === "height") return setContentHeight(m.height);
       ready.current = true;
       send(latest.current);
       setFrame((f) => (f.status === "loading" ? { status: "ok", error: null } : f));
@@ -206,7 +220,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
               </p>
             )}
             <div className={css.mat}>
-              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: kit.preview.height }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
+              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: contentHeight && screenH ? Math.max(120, Math.min(contentHeight, Math.round(screenH))) : kit.preview.height }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
           <p className={`small muted ${css.caption}`}>
@@ -214,7 +228,6 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
                 {logoHosts > 0
                   ? "It can load images from the brand's logo hosts, and an image address can carry the values you set here, so those hosts can see them and your IP address."
                   : "It cannot send what you set here to other sites."}
-                {state.kit.preview.tailwind ? " Your browser loads the Tailwind build from jsDelivr." : ""}
           </p>
 
           <section className="card">
@@ -300,6 +313,34 @@ function Exact({ c, value, onChange }: { c: Extract<Control, { type: "slider" }>
   );
 }
 
+/** "#abc" or "#aabbcc" (any case) as "#aabbcc"; anything else is not a colour. */
+const asHex = (raw: string): string | null => {
+  const t = raw.trim().replace(/^([0-9a-f]{3}|[0-9a-f]{6})$/i, "#$1");
+  if (/^#[0-9a-f]{6}$/i.test(t)) return t.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(t)) return ("#" + t.slice(1).split("").map((x) => x + x).join("")).toLowerCase();
+  return null;
+};
+
+/** A typed colour. Text that is not a colour keeps the previous colour, and a note says so; nothing turns black silently. */
+function HexBox({ label, value, onChange }: { label: string; value: string; onChange: (v: unknown) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const commit = () => {
+    if (text == null) return;
+    const hex = asHex(text);
+    if (hex) onChange(hex);
+    setNote(hex ? null : `“${text.trim().slice(0, 20)}” is not a colour. Use #rrggbb, for example #2563eb. The colour stays ${value}.`);
+    setText(null);
+  };
+  return (
+    <>
+      <input className={css.hex} type="text" spellCheck={false} autoCapitalize="off" value={text ?? value} aria-label={`${label}, colour code`} aria-invalid={note ? true : undefined}
+        onChange={(e) => { setText(e.target.value); setNote(null); }} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} />
+      {note && <span className="small warn" role="status" style={{ flexBasis: "100%" }}>{note}</span>}
+    </>
+  );
+}
+
 function Field({ c, value, palette, names, onChange }: { c: Control; value: Value; palette: string[]; names: { hex: string; name: string }[]; onChange: (v: unknown) => void }) {
   if (c.type === "slider") {
     return (
@@ -335,7 +376,7 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
       <div className={css.swatches} role="group" aria-label={c.label}>
         {palette.map((hex) => <button key={hex} data-color={hex} style={{ background: hex }} aria-pressed={value === hex} aria-label={`${names.find((n) => n.hex === hex)?.name || "Colour"} ${hex}${hex === c.initial ? ", the start colour" : ""}`} title={`${names.find((n) => n.hex === hex)?.name ?? ""} ${hex}${hex === c.initial ? " (start)" : ""}`.trim()} onClick={() => onChange(hex)} />)}
         {c.free && <input type="color" value={value as string} onChange={(e) => onChange(e.target.value)} aria-label={`${c.label}, any colour`} />}
-        <code>{value as string}</code>
+        {c.free ? <HexBox label={c.label} value={value as string} onChange={onChange} /> : <code>{value as string}</code>}
       </div>
     </div>
   );

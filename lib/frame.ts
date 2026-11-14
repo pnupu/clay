@@ -130,7 +130,24 @@ window.clay = Object.freeze({
   onChange: function (fn) { if (typeof fn === "function") { listeners.push(fn); call(fn); } }
 });
 draw();
-window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });`;
+window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
+// The height of the content, so the page can size the frame to it. At most one report per second, and only on a change:
+// an animation that resizes on every frame cannot flood the page (it counts the messages and stops a preview at 30 in 10 s).
+var lastH = 0, lastT = 0, later = null;
+function contentHeight() {
+  var h = 0, kids = root.children;
+  for (var i = 0; i < kids.length; i++) { var r = kids[i].getBoundingClientRect(); h = Math.max(h, r.bottom + window.scrollY + (parseFloat(getComputedStyle(kids[i]).marginBottom) || 0)); }
+  return Math.ceil(h);
+}
+function reportHeight() {
+  var h = contentHeight(), now = Date.now();
+  if (Math.abs(h - lastH) < 2) return;
+  if (now - lastT < 1000) { if (!later) later = setTimeout(function () { later = null; reportHeight(); }, 1000 - (now - lastT)); return; }
+  lastH = h; lastT = now;
+  post({ type: "height", height: h });
+}
+if (window.ResizeObserver) new ResizeObserver(reportHeight).observe(root);
+window.addEventListener("load", reportHeight);`;
 
 /** JSON inside a script element: no "<" (so no closing tag, no comment opener) and no raw line separators. */
 const inScript = (x: unknown) => JSON.stringify(x).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, (c) => (c.charCodeAt(0) === 0x2028 ? "\\u2028" : "\\u2029"));
@@ -173,11 +190,14 @@ ${preview.tailwind ? `<script src="${TAILWIND.url}" integrity="${TAILWIND.integr
 
 // ---- Page side of the bridge.
 
-export type FrameMessage = { type: "ready" } | { type: "error"; message: string };
+export type FrameMessage = { type: "ready" } | { type: "error"; message: string } | { type: "height"; height: number };
+/** The largest content height the page accepts from a frame, in CSS pixels. */
+export const MAX_FRAME_HEIGHT = 4000;
 
 /**
- * Validate a message from the frame. Only the two known shapes pass; only `type` and `message` are read, and the message
- * is cut to 500 characters, so the size of what the page keeps is bounded whatever the frame sends.
+ * Validate a message from the frame. Only the three known shapes pass; only `type`, `message` and `height` are read, the
+ * message is cut to 500 characters and the height must be a number from 1 to MAX_FRAME_HEIGHT, so what the page keeps is
+ * bounded whatever the frame sends.
  * The caller checks the source window and the origin ("null": the frame's origin is opaque).
  */
 export function fromFrame(data: unknown): FrameMessage | null {
@@ -186,6 +206,8 @@ export function fromFrame(data: unknown): FrameMessage | null {
   if (d.clay !== 1) return null;
   if (d.type === "ready") return { type: "ready" };
   if (d.type === "error" && typeof d.message === "string") return { type: "error", message: d.message.slice(0, 500) };
+  const h = (d as { height?: unknown }).height;
+  if (d.type === "height" && typeof h === "number" && Number.isFinite(h) && h >= 1 && h <= MAX_FRAME_HEIGHT) return { type: "height", height: Math.round(h) };
   return null;
 }
 
