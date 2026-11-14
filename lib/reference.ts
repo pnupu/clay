@@ -69,12 +69,12 @@ export const MODEL_EXAMPLE: Spec = {
   notes: "The question was whether the team's coding agent is on the right model. Tokens, time and pass rate per task are the team's own measurements (bench.json); the prices per million tokens are read live from the providers' pricing pages. Set your volume and limits, then choose a model.",
   data: {
     inline: {
-      measured: "bench.json: 10 easy and 12 hard tasks, 2 repeats per model, measured by the team on 2026-11-14",
+      measured: "bench.json: 12 hard tasks, 2 repeats per model, measured by the team on 2026-11-14. Every model passed all 20 runs of the 10 easy tasks, so those are left out: tokens, time and pass rate are per hard task.",
       limits: "Each pass rate is from 24 runs: a gap of one or two tasks between two models is within the noise.",
       models: [
-        { model: "claude-opus-5-5", easy_pass_rate: 1, hard_pass_rate: 1, median_seconds: 22.1, input_tokens_per_task: 67169, cached_input_tokens_per_task: 60546, output_tokens_per_task: 2360 },
-        { model: "claude-sonnet-5-5", easy_pass_rate: 1, hard_pass_rate: 0.96, median_seconds: 11.1, input_tokens_per_task: 57201, cached_input_tokens_per_task: 51478, output_tokens_per_task: 1690 },
-        { model: "gpt-6-luna", easy_pass_rate: 1, hard_pass_rate: 0.71, median_seconds: 21.6, input_tokens_per_task: 78673, cached_input_tokens_per_task: 68115, output_tokens_per_task: 1032 },
+        { model: "claude-opus-5-5", hard_pass_rate: 1, median_seconds: 22.1, input_tokens_per_task: 67169, cached_input_tokens_per_task: 60546, output_tokens_per_task: 2360 },
+        { model: "claude-sonnet-5-5", hard_pass_rate: 0.96, median_seconds: 11.1, input_tokens_per_task: 57201, cached_input_tokens_per_task: 51478, output_tokens_per_task: 1690 },
+        { model: "gpt-6-luna", hard_pass_rate: 0.71, median_seconds: 21.6, input_tokens_per_task: 78673, cached_input_tokens_per_task: 68115, output_tokens_per_task: 1032 },
       ],
     },
     web: [
@@ -83,7 +83,7 @@ export const MODEL_EXAMPLE: Spec = {
     ],
   },
   controls: [
-    { id: "tasks", type: "slider", label: "Tasks per month", meaning: "how many agent tasks the team runs per month", min: 100, max: 20000, step: 100, initial: 2000 },
+    { id: "tasks", type: "slider", label: "Hard tasks per month", meaning: "how many hard agent tasks the team runs per month", min: 100, max: 20000, step: 100, initial: 2000 },
     { id: "cached_share", type: "slider", label: "Cached input that hits the cache", meaning: "share of the measured cached input tokens that is billed at the cached price", min: 0, max: 100, step: 5, initial: 100, unit: "%" },
     { id: "max_seconds", type: "slider", label: "Time limit per task", meaning: "longest median time per task the team accepts", min: 5, max: 60, step: 1, initial: 30, unit: "s" },
     { id: "min_pass", type: "slider", label: "Minimum pass rate on the hard tasks", meaning: "lowest pass rate on the hard tasks the team accepts", min: 50, max: 100, step: 1, initial: 90, unit: "%" },
@@ -92,7 +92,7 @@ export const MODEL_EXAMPLE: Spec = {
   view: {
     type: "preview",
     height: 340,
-    html: '<table><thead><tr><th>Model</th><th>Pass rate, hard tasks</th><th>Median time</th><th>Cost per task</th><th>Per passed task</th><th>Per month</th><th></th></tr></thead><tbody id="rows"></tbody></table><p id="rule"></p>',
+    html: '<table><thead><tr><th>Model</th><th>Pass rate, hard tasks</th><th>Median time</th><th>Cost per hard task</th><th>Per passed hard task</th><th>Per month</th><th></th></tr></thead><tbody id="rows"></tbody></table><p id="rule"></p>',
     css: "table { border-collapse: collapse; font: 14px system-ui; margin: 16px; max-width: 100%; } th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; } tr.out td { color: #9ca3af; } tr.chosen td { font-weight: 600; background: #eff6ff; } #rule { font: 13px system-ui; color: #4b5563; margin: 0 16px 16px; }",
     js: `const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
 const rows = [...clay.data.web.anthropic, ...clay.data.web.openai];
@@ -109,9 +109,9 @@ clay.onChange((v) => {
     // Cached input has its own price. When the page does not state it, the cost is unknown, not cheaper.
     const known = p && p.input != null && p.output != null && (cached === 0 || p.cached_input != null);
     const perTask = known ? (fresh * p.input + cached * (p.cached_input || 0) + m.output_tokens_per_task * p.output) / 1e6 : null;
-    // The limit is tested on the hard tasks: every model passes the easy ones, so a blended rate would hide the difference.
+    // The limit is tested on the hard tasks: every model passes the easy ones, so a rate blended with them would hide the difference.
     const ok = m.hard_pass_rate * 100 >= v.min_pass && m.median_seconds <= v.max_seconds;
-    // A failed task is paid for too, so models are compared on the cost per passed task.
+    // A failed task is paid for too, so models are compared on the cost per passed task. Cost and pass rate are of the same tasks.
     const perPassed = perTask == null || !m.hard_pass_rate ? null : perTask / m.hard_pass_rate;
     return { m, ok, perTask, perPassed };
   });
@@ -125,12 +125,13 @@ clay.onChange((v) => {
     body.appendChild(tr);
   }
   // The rule behind the mark and what the numbers cannot support, in words on the page.
-  rule.textContent = "Marked: the lowest cost per passed task among the models that pass at least " + v.min_pass + "% of the hard tasks within " + v.max_seconds + " s. " + clay.data.inline.limits;
+  const how = "the lowest cost per passed hard task among the models that pass at least " + v.min_pass + "% of the hard tasks within " + v.max_seconds + " s; a model with an unknown price is left out";
+  rule.textContent = (pick ? "Marked: " + how + ". " : "No model is marked. The mark goes to " + how + ". ") + clay.data.inline.limits;
 });`,
   },
   outputs: [
     { id: "config", label: "\"model\" in agent.config.json", template: '"model": "{{model}}"' },
-    { id: "rule", label: "The rule behind the choice, in words", template: "Use {{model}} while it passes at least {{min_pass}}% of the hard tasks within {{max_seconds}} s, at {{tasks}} tasks per month with {{cached_share}}% of the cached input billed at the cached price." },
+    { id: "rule", label: "The rule behind the choice, in words", template: "Use {{model}} while it passes at least {{min_pass}}% of the hard tasks within {{max_seconds}} s, at {{tasks}} hard tasks per month with {{cached_share}}% of the cached input billed at the cached price." },
   ],
 };
 
@@ -187,7 +188,7 @@ The person: "this signup button looks off, our brand is acme.com". Their file ha
 ${JSON.stringify(BUTTON_EXAMPLE, null, 1)}
 
 ## Worked example 3: live web facts times the person's own measurements
-The person: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured." Their agent.config.json has "model": "claude-opus-5-5". Per-token prices alone do not answer this: each model uses a different number of tokens per task and passes a different share of tasks. So the measurements go in data.inline, the prices come live from data.web, and view.js multiplies them. The page marks a pick, so it follows the rules for a pick: the limit is tested on the hard tasks (every model passes the easy ones), models are compared on the cost per passed task, the share of cached input is a control because it moves the cost a lot, and the rule and the size of the sample are written under the table.
+The person: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured." Their agent.config.json has "model": "claude-opus-5-5". Per-token prices alone do not answer this: each model uses a different number of tokens per task and passes a different share of tasks. So the measurements go in data.inline, the prices come live from data.web, and view.js multiplies them. The page marks a pick, so it follows the rules for a pick: the limit is tested on the hard tasks (every model passes the easy ones), models are compared on the cost per passed task with cost and pass rate from the same tasks, the share of cached input is a control because it moves the cost a lot, and the rule and the size of the sample are written under the table.
 ${JSON.stringify(MODEL_EXAMPLE, null, 1)}
 
 ## Worked example 2: spring physics, tuned by feel
