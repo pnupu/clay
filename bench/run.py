@@ -216,7 +216,7 @@ def classify(timed_out, exit_code, parsed, stderr):
 
 # Long texts of a run record and how much of each is kept: (field, keep the head or the tail, characters).
 # An error_text taken from stderr keeps its tail instead: the error is at the end of stderr.
-CUTS = (("error_text", "head", 1000), ("check_output", "tail", 300), ("check_fail_line", "head", 400))
+CUTS = (("error_text", "head", 1000), ("check_output", "tail", 300), ("check_fail_line", "head", 400), ("failure_kind", "head", 60))
 STDERR_TAIL = 500
 
 
@@ -230,9 +230,8 @@ def cut(rec):
     for field, side, n in CUTS:
         if field == "error_text" and out.get("error_text_from") == "stderr":
             side, n = "tail", STDERR_TAIL
-        out[field] = cut_text(out.get(field), side, n) if field in out else None
-        if field not in rec:
-            del out[field]
+        if field in out:
+            out[field] = cut_text(out[field], side, n)
     return out
 
 
@@ -298,7 +297,7 @@ def failure_kind(rec):
         return "no-change (gave up)"
     line = rec.get("check_fail_line") or ""
     if line.startswith("FAIL "):
-        return line[5:].split(":", 1)[0][:60]
+        return line[5:].split(":", 1)[0]  # cut() caps it, after the scrub
     return "wrong-output (check crashed)"
 
 
@@ -349,7 +348,8 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
             "repeat": repeat, "passed": passed, "wall_seconds": wall, "timeout_s": task["timeout_s"],
             "exit_code": p.returncode, "error_class": err_class,
             # Uncut texts here; write_record() cuts them (CUTS), after scrubbing for the committed copy, so a cut
-            # cannot leave half a path. The private copy is cut too; the full texts are in the transcripts.
+            # cannot leave half a path. The private copy is cut the same way (the CLI's full output is in the
+            # transcripts; the hidden check's output is kept only as this cut tail).
             "error_text": parsed.get("cli_error") or (stderr.strip() if p.returncode else None),
             "error_text_from": "cli" if parsed.get("cli_error") else ("stderr" if p.returncode else None),
             "check_output": None if passed else check_out.strip(),
@@ -458,7 +458,7 @@ def main():
                    "input_tokens": None, "output_tokens": None}
         with lock:
             if rec["error_class"] == "rate_or_usage_limit" and (ag, m) not in stopped:
-                stopped[(ag, m)] = rec["error_text"] or ""
+                stopped[(ag, m)] = rec
             write_record(rec)
             print(f"{t:17} {ag}:{m:22} r{r} {'PASS' if rec['passed'] else 'fail'} {rec['wall_seconds'] or 0:7.1f}s "
                   f"{rec['error_class']} in={rec['input_tokens']} out={rec['output_tokens']}", flush=True)
@@ -469,10 +469,11 @@ def main():
     manifest.update({"finished_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                      "agent_runs": len(done), "planned_runs": len(plan), "reused_records": reused, "reused_from": a.reuse,
                      "stopped_subjects": {f"{ag}:{m}": txt for (ag, m), txt in stopped.items()}})
-    def cut_stopped(m):  # after scrub_obj for the committed copy, as for the run records
-        return {**m, "stopped_subjects": {k: cut_text(v, "head", 1000) for k, v in m["stopped_subjects"].items()}}
-    json.dump(cut_stopped(scrub_obj(manifest)), open(os.path.join(out_dir, "manifest.json"), "w"), indent=2)
-    json.dump(cut_stopped(manifest), open(os.path.join(private, "manifest.local.json"), "w"), indent=2)
+    # The error that stopped a subject, cut exactly as in its run record: after the scrub for the committed copy.
+    public = {**scrub_obj(manifest), "stopped_subjects": {k: cut(scrub_obj(r)).get("error_text") for k, r in manifest["stopped_subjects"].items()}}
+    local = {**manifest, "stopped_subjects": {k: cut(r).get("error_text") for k, r in manifest["stopped_subjects"].items()}}
+    json.dump(public, open(os.path.join(out_dir, "manifest.json"), "w"), indent=2)
+    json.dump(local, open(os.path.join(private, "manifest.local.json"), "w"), indent=2)
     print(f"done: {len(done)} runs -> {runs_path}")
 
 

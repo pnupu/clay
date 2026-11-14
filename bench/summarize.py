@@ -173,7 +173,7 @@ def markdown(rows, per_task, manifests, recs):
     bad = [r for r in recs if r["error_class"] != "none"]
     out += ["", "## Runs with an error class other than none", ""]
     out += [f"- `{r['task']}` {r['model']} r{r['repeat']}: {r['error_class']} after {r['wall_seconds']} s"
-            + (f" — `{(r.get('error_text') or '')[:300]}`" if r.get("error_text") else "") for r in bad] or ["None."]
+            + (f" — `{(r['error_text'][-300:] if r.get('error_text_from') == 'stderr' else r['error_text'][:300])}`" if r.get("error_text") else "") for r in bad] or ["None."]
     extra = [r for r in rows if r["helper_models"]]
     if extra:
         out += ["", "## Helper models", "", "The CLI also called these models inside some runs; their tokens are included in the totals:", ""]
