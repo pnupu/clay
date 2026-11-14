@@ -1,0 +1,11 @@
+/* Clay's own components (the playground, its controls and outputs), on the tokens that Taste Skill dealt (app/tokens.ts).
+   Loaded on every page: the website pages run a live playground in the hero. Class names here never match the kit's. */
+:root {
+  --c-ink: var(--p-ink); --c-muted: var(--p-muted); --c-page: var(--p-bg); --c-sunk: var(--p-surface);
+  --c-pane: #eceBe8; --c-line: color-mix(in oklab, var(--p-ink) 13%, transparent); --c-line-2: color-mix(in oklab, var(--p-ink) 28%, transparent);
+  --c-action: var(--p-action); --c-action-ink: var(--p-action-ink);
+  --ok: #1d5e2a; --warn: #7a4a00; --bad: #9c241c; --ok-bg: #d3e2cf; --bad-bg: #ecd3cf;
+  /* The names the playground components already use. */
+  --ink-2: var(--p-muted); --axis: var(--c-line-2); --mat: var(--p-surface); --accent: var(--p-action); --page: var(--p-bg);
+}
+.k-value { display: none; }

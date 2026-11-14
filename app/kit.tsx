@@ -187,10 +187,12 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   const copy = (key: string, text: string) => navigator.clipboard?.writeText(text).then(() => setCopied(key), () => {});
 
   const Shell = embedded ? "div" : "main";
-  const Title = embedded ? "h2" : "h1";
+  const Title = embedded ? "p" : "h1";
+  // Inside another page (the landing page's hero) the parts are named by labels: that page owns the headings.
+  const Head = embedded ? "p" : "h2";
   return (
-    <Shell className={embedded ? css.embedded : "shell"}>
-      <header className="top">
+    <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"}>
+      <header className="top k-head">
         <div>
           <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · a playground built by your agent</> : "An example · built by someone's own agent"}</p>
           <Title className={css.title}>{title}</Title>
@@ -201,20 +203,20 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
 
       <div className={css.grid}>
         {/* The note is a grid item, so that on a narrow screen it can come after the preview: play first, read second. */}
-        {kit.notes && <p className={css.notes}>{kit.notes}</p>}
-        <section className="card controls">
-          <h2>Controls</h2>
+        {kit.notes && <p className={`${css.notes} k-notes`}>{kit.notes}</p>}
+        <section className="pane controls k-controls">
+          <Head className="k-label">Controls</Head>
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
           <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. {canWrite ? "A short summary of what you tried is kept for your agent." : "Nothing you try here is saved."}</p>
         </section>
 
-        <div className={css.main}>
+        <div className={`${css.main} k-main`}>
           {/* The stage: the person's real component on a neutral mat, as a design tool shows an artboard. On a narrow screen it
               comes first and stays in view while the controls below it are moved (kit.module.css). */}
-          <section className={`card ${css.stage}`} aria-label="Preview">
+          <section className={`pane ${css.stage} k-stage`} aria-label="Preview">
             <div className={css.stageHead}>
-              <h2>Preview</h2>
+              <Head className="k-label">Preview</Head>
             </div>
             {frame.status === "failed" && (
               <p className={`alert ${css.failed}`} role="alert">
@@ -225,15 +227,20 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: Math.max(120, Math.min(contentHeight ?? kit.preview.height, Math.round(screenH ?? Infinity))) }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
-          <p className={`small muted ${css.caption}`}>
+          {/* What the sandbox guarantees, and what it does not, said in one line that opens to the full statement. On the
+              playground's own page it is open from the start. */}
+          <details className={`small muted ${css.caption} k-caption`} open={!embedded}>
+            <summary>A sandboxed preview, not sealed from the network</summary>
+            <p>
                 {/* What the sandbox guarantees, and what it does not: browsers give no complete block for outgoing requests from code that runs (README, "The preview sandbox"). */}
                 {builtByViewer ? "Built by your agent." : "Built by the playground's author with their agent."} It runs in a sandbox: it cannot read this page, your Clay account or session, or other sites&apos; data, and it cannot open windows or submit forms.
                 {" "}It is not sealed from the network: in some browsers its code can make outgoing requests, so the values you set here and the data shown in the preview could be sent to a server {builtByViewer ? "that code names" : "its author chose"}, with your IP address.
                 {logoHosts > 0 ? " The brand's logo hosts can also receive them in image addresses." : ""}
           </p>
+          </details>
 
-          <section className="card">
-            <h2>{canWrite ? "What goes back to your agent" : "If this were yours, your agent would now write this into the code"}</h2>
+          <section className="pane k-out">
+            <Head className="k-label">{canWrite ? "What goes back to your agent" : "If this were yours, your agent would now write this into the code"}</Head>
             {kit.outputs.map((o) => (
               <div className={css.output} key={o.id}>
                 <div className={css.outputHead}>
@@ -260,8 +267,8 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           </section>
 
           {(kit.brand || kit.inline || kit.web?.length || leftOut.length > 0) && (
-            <section className={`card ${css.dataCard}`}>
-              <h2>Where the data comes from</h2>
+            <section className={`pane ${css.dataCard} k-data`}>
+              <Head className="k-label">Where the data comes from</Head>
               <ul className={css.data}>
                 {kit.brand && (
                   <li>
@@ -386,6 +393,7 @@ function Field({ c, value, palette, names, onChange }: { c: Control; value: Valu
       <div className={`${css.field} ${css.slider}`} data-control={c.id} title={c.meaning}>
         <label htmlFor={c.id}>{c.label}</label>
         <Exact c={c} value={value as number} onChange={onChange} />
+        <output className="k-value" htmlFor={c.id} aria-hidden="true">{value as number}</output>
         <span className="small muted">{c.unit ?? ""}</span>
         <input id={c.id} type="range" min={c.min} max={c.max} step={c.step} value={value as number} onChange={(e) => onChange(Number(e.target.value))} />
       </div>

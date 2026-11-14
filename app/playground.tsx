@@ -234,7 +234,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   };
   /** What a Select means, said at the selected row: where to save it, or that an example saves nothing. */
   const selectedNext: ReactNode = !canWrite ? null : unsaved ? (
-    <p className="small select-next" data-select-next>Not saved yet. <button className="link" onClick={toSave}>Save this choice ↓</button></p>
+    <p className="small select-next" data-select-next>Not saved yet. <button className="linkbtn" onClick={toSave}>Save this choice ↓</button></p>
   ) : null;
   /**
    * When a number box (a metric or the tolerance) corrected a typed value: the tap on Save that left the box, and so
@@ -276,29 +276,29 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
       {work?.status === "done" && work.stop && missing.length > 0 && <p className="alert">The reading of the pricing pages stopped early: {work.stop}</p>}
 
       {collected.length === 0 && reading ? (
-        <section className="card" data-building>
+        <section className="pane" data-building>
           <h2>Reading the pricing pages…</h2>
           <p>Your agent is building this comparison from the public pricing pages of {domain.vendors.map((v) => v.name).join(", ")}. Each vendor appears here as soon as its page is read, usually within a minute. You do not need to reload.</p>
         </section>
       ) : collected.length === 0 ? (
-        <section className="card empty">
+        <section className="pane empty">
           <h2>No data yet</h2>
           <p>Collect reads each vendor&apos;s public pricing page with Context.dev (search to find the page, then structured extraction). It takes about 10 seconds and uses about 6 credits per vendor.</p>
         </section>
       ) : (
-        <div className="grid">
+        <div className="pgrid">
           {/* Narrow screens only (globals.css): the saved decision's verdict in one line near the top. On a phone the full
               panel comes after the ranking and the chart, long after the "Saved choice" badge in the ranking. */}
           {decision && savedStand && (
             <p className={`verdict-bar ${savedStand.holds ? "ok" : "bad"}`} data-verdict-bar>
               {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values: {why(savedStand, canWrite, decision.chosen)}.{" "}
               {/* A button, not a hash link: the screen is also embedded in the landing page, whose URL must not change. */}
-              <button className="link" onClick={() => standingPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Details</button>
+              <button className="linkbtn" onClick={() => standingPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Details</button>
             </p>
           )}
           {/* Narrow screens only (globals.css): the answer in one line, in view while the controls are moved. */}
           {ranking.ranked[0] && <p className="answer-bar" aria-hidden="true">Cheapest: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month</p>}
-          <section className="card controls">
+          <section className="pane controls">
             <h2>Your situation</h2>
             {metrics.map((m) => (
               <div className="control" key={m.id}>
@@ -319,12 +319,12 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           </section>
 
           <section className="results">
-            <div className="card">
+            <div className="pane">
               <h2>Monthly cost under these assumptions</h2>
               {decision && triedStand && (
                 <p className="small" data-trying style={{ border: "1px solid var(--warn)", borderRadius: 8, padding: "8px 12px", margin: "0 0 10px" }}>
                   <b>{canWrite ? "You are trying other values than you saved:" : "You are trying other values than the saved ones:"}</b> {triedWords}. At these values {standSentence(triedStand, nameOf(decision.chosen)!, nameOf(triedStand.cheapest), true, h.humanize, canWrite)} {canWrite ? "Your saved decision is unchanged." : "The saved decision is unchanged."}{" "}
-                  <button className="link" onClick={loadSaved}>{canWrite ? "Back to my saved values" : "Back to the saved values"}</button>
+                  <button className="linkbtn" onClick={loadSaved}>{canWrite ? "Back to my saved values" : "Back to the saved values"}</button>
                 </p>
               )}
               {ranking.ranked[0] && (
@@ -356,7 +356,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               ))}
             </div>
 
-            <div className="card">
+            <div className="pane">
               <div className="chart-head">
                 <h2>Where the cheapest vendor changes</h2>
                 <label className="muted small">
@@ -373,7 +373,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                 <ul className="cross">
                   {cross.map((c, ci) => (
                     <li key={`${ci}:${c.at}`}>
-                      At <button className="link" onClick={() => setUsage({ ...usage, [axisDef.id]: c.at })}>{num(c.at)} {axisDef.unit}</button> the cheapest changes from <b>{c.from ? sources[c.from]?.name : "none"}</b> to <b>{c.to ? sources[c.to]?.name : "none"}</b>.
+                      At <button className="linkbtn" onClick={() => setUsage({ ...usage, [axisDef.id]: c.at })}>{num(c.at)} {axisDef.unit}</button> the cheapest changes from <b>{c.from ? sources[c.from]?.name : "none"}</b> to <b>{c.to ? sources[c.to]?.name : "none"}</b>.
                     </li>
                   ))}
                 </ul>
@@ -382,7 +382,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           </section>
 
           <aside className="side">
-            <section className="card standing" ref={standingPanel} data-standing>
+            <section className="pane standing" ref={standingPanel} data-standing>
               <h2>Standing decision</h2>
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
@@ -410,7 +410,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               <History events={state.events} sources={sources} decision={decision} own={canWrite} now={now} nameOf={nameOf} />
             </section>
 
-            <section className="card">
+            <section className="pane">
               <h2>Sources</h2>
               <ul className="sources">
                 {Object.values(sources).map((s) => (
@@ -418,7 +418,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                     <span className="dot" style={{ background: h.color(s.id) }} />
                     <div>
                       <a href={s.url ?? "#"} target="_blank" rel="noreferrer">{s.name}</a>
-                      {s.demo && <span className="badge">Demo</span>}
+                      {s.demo && <span className="tag">Demo</span>}
                       <p className="small muted">
                         {s.snapshot ? `Extracted ${ago(s.snapshot.fetchedAt, now)} by ${s.snapshot.extractor === "context.dev" ? `Context.dev in ${(s.snapshot.latencyMs / 1000).toFixed(1)} s` : "the app (localhost)"}` : "Not read"} · last checked {ago(s.lastCheckedAt, now)}
                         {s.monitor ? " · webhook monitor on" : ""}
@@ -544,7 +544,7 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
       <div className="vendor-head" style={{ flexWrap: "wrap", rowGap: 2 }}>
         <span className="dot" style={{ background: color(v.id) }} />
         <span className="name">{place ? `${place}. ` : ""}{src?.name}</span>
-        {src?.demo && <span className="badge">Demo</span>}
+        {src?.demo && <span className="tag">Demo</span>}
         <span className="plan" title={p?.plan}>{p ? <>{products ? "product" : "plan"}: <b>{p.plan}</b></> : <span className="muted">no eligible plan</span>}</span>
         {/* The cost and its button are one unit: on a narrow screen they take a line of their own (globals.css). */}
         <span className="buy">
@@ -671,7 +671,7 @@ function History({ events, sources, decision, own, now, nameOf }: { events: Publ
             <li key={e.id} className={now - Date.parse(e.at) < 30000 ? "new" : undefined}>
               <p className="what">{changeSentence(src?.name ?? e.sourceId, e.changes, (id) => (/^[A-Z][a-z]/.test(label(id)) ? lower(label(id)) : label(id)))}</p>
               <p className="effect" data-effect>{effectSentence(e.verdict, earlier, { current: current(e), own, chosenId: decision?.chosen ?? "", chosen: nameOf(decision?.chosen ?? null) ?? "the chosen vendor", nameOf })}</p>
-              <p className="small muted when">{ago(e.at, now)} · {sourceWords(e.trigger, !!src?.demo)}{src?.demo && <span className="badge">Demo</span>}</p>
+              <p className="small muted when">{ago(e.at, now)} · {sourceWords(e.trigger, !!src?.demo)}{src?.demo && <span className="tag">Demo</span>}</p>
               <details>
                 <summary className="small muted">The exact {e.changes.length === 1 ? "fact" : `${e.changes.length} facts`}</summary>
                 {e.changes.slice(0, 12).map((c, ci) => (
@@ -698,8 +698,8 @@ function DemoEditor({ page, busy, onPublish }: { page: PricingModel | null; busy
     </label>
   );
   return (
-    <section className="card demo">
-      <h2>Demo source <span className="badge">Demo</span></h2>
+    <section className="pane demo">
+      <h2>Demo source <span className="tag">Demo</span></h2>
       <p className="small">Northwind Auth is a fictional vendor. Its <a href="/demo-vendor/pricing" target="_blank" rel="noreferrer">pricing page</a> is served by this app, so you can change a price and watch the standing decision react. Publishing re-checks the source at once, through the same read, diff and verdict as the real sources; on a public deployment Context.dev reads the page, which takes 10 to 40 seconds.</p>
       {field("base", "Base price, $ per month", 1)}
       {field("mauIncluded", "Users included", 1000)}
@@ -758,7 +758,7 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
       <div className="plot" ref={plot}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ height: H }} role="img" aria-label={`Monthly cost per vendor along ${lower(axis.label)}`}
           onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover(inv(((e.clientX - r.left) / r.width) * W)); }} onMouseLeave={() => setHover(null)}>
-          {yt.map((y, i) => <g key={`${i}:${y}`}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="grid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
+          {yt.map((y, i) => <g key={`${i}:${y}`}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="pgrid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
           {xt.map((x, i) => <text key={i} x={sx(x)} y={H - 8} textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"} className="tick">{short(x)} {i === 2 && (W >= 420 || axis.unit.length <= 6) ? axis.unit : ""}</text>)}
           {cross.filter((c) => c.at > lo && c.at < hi).map((c, i) => <line key={`${i}:${c.at}`} x1={sx(c.at)} x2={sx(c.at)} y1={T} y2={H - B} className="cross-line" />)}
           {v >= lo && v <= hi && <line x1={sx(v)} x2={sx(v)} y1={T} y2={H - B} className="here" />}

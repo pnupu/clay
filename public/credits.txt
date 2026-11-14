@@ -1,0 +1,13 @@
+Clay: credits
+
+Design system
+- Taste Skill 2.5.1 (tasteskill.dev), MIT licence. Its kit files are served from /assets (system.css, system.js,
+  ui/, motion/, layout/, backgrounds/, icons/icon.css, moments/). Source: https://www.tasteskill.dev/docs
+
+Typefaces (self-hosted in /fonts, downloaded from Google Fonts)
+- Gabarito, by Naipe Foundry. SIL Open Font Licence 1.1. https://fonts.google.com/specimen/Gabarito
+- Figtree, by Erik Kennedy. SIL Open Font Licence 1.1. https://fonts.google.com/specimen/Figtree
+- DM Mono, by Colophon Foundry. SIL Open Font Licence 1.1. https://fonts.google.com/specimen/DM+Mono
+
+Photographs and icons
+- None. Every picture on the site is Clay's own interface, running or set as live text.

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ClerkProvider } from "@clerk/nextjs";
-import Account from "./account";
+import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
-import "./globals.css";
-import "./site.css";
+import "@/app/globals.css";
+import "@/app/site.css";
 
 export const metadata: Metadata = {
   title: "Clay",

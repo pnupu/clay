@@ -1,4 +1,4 @@
-.grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.pgrid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
 .main { display: grid; gap: 16px; min-width: 0; }
 .notes { grid-column: 1 / -1; max-width: 70ch; color: var(--ink-2); margin: -10px 0 0; text-wrap: pretty; }
 .field { margin-bottom: 16px; }
@@ -47,9 +47,9 @@
 }
 /* Narrow screens: the preview comes first and stays in view while the person scrolls and moves the controls under it. */
 @media (max-width: 800px) {
-  .grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .pgrid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .main { display: contents; }
-  .grid > :global(.controls) { position: static; }
+  .pgrid > :global(.controls) { position: static; }
   .stage { position: sticky; top: 0; z-index: 5; box-shadow: 0 8px 18px rgb(0 0 0 / 0.16); }
   .stageHead { display: none; }
   .mat { padding: 6px; }

@@ -1,0 +1,100 @@
+/* Page CSS of the website pages: only what sits inside a visual and the kit lacks (Taste Skill, SKILL.md step 5). */
+
+/* The hero's collage holds one set, the live example: Clay's own UI. Its parts stand as the collage's pieces. */
+.live .k-root { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto auto; align-content: center; gap: 12px; font: 14px/1.4 var(--font-text); color: var(--p-ink); }
+.live .k-root > div, .live .k-main { display: contents; }
+.live .k-notes, .live .k-data, .live .k-head p:not(.eyebrow) { display: none; }
+.live :is(.k-stage, .k-controls, .k-out) { margin: 0; min-width: 0; background: var(--c-pane); border: 1px solid var(--c-line); border-radius: var(--r-md); overflow: hidden; }
+.live .k-label { font: 500 13px/1.3 var(--font-text); letter-spacing: 0; margin: 0 0 var(--s-2); color: var(--p-muted); }
+.live .k-head { grid-area: 1 / 1; margin: 0; align-self: center; }
+.live .k-head .eyebrow { margin: 0; font: 500 13px/1.3 var(--font-text); letter-spacing: 0; text-transform: none; color: var(--p-ink); }
+.live .k-caption { grid-area: 1 / 2; justify-self: end; align-self: center; position: relative; margin: 0; font-size: 13px; color: var(--p-ink); }
+.live .k-caption summary { cursor: pointer; text-decoration: underline; text-decoration-color: var(--c-line-2); text-underline-offset: 3px; list-style: none; }
+.live .k-caption summary::-webkit-details-marker { display: none; }
+.live .k-caption[open] p { position: absolute; z-index: 5; right: 0; top: calc(100% + 8px); width: min(420px, 80vw); margin: 0; padding: 12px 14px; background: var(--p-bg); border: 1px solid var(--c-line-2); border-radius: var(--r-md); }
+.live .k-stage { grid-area: 2 / 1 / 3 / -1; display: flex; flex-direction: column; padding: 0; position: static; box-shadow: none; }
+.live .k-stage > div:first-child { display: none; }
+.live .k-stage > div:last-child { flex: 1; min-height: 0; padding: 0; background: #fff; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+.live .k-stage iframe { flex: none; width: 100%; display: block; border: 0; border-radius: 0; box-shadow: none; }
+.live .k-controls { grid-area: 3 / 1; padding: 14px 16px; position: static; }
+.live .k-controls > p:last-child { display: none; }
+.live .k-out { grid-area: 3 / 2; padding: 14px 16px; }
+.live .k-out > div:nth-of-type(n + 2) { display: none; }
+.live .k-out pre { font: 13px/1.5 var(--font-mono); background: var(--p-surface); border-radius: var(--r-sm); padding: 8px 10px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.6em; overflow: hidden; }
+.live .k-out [data-example] { margin: 10px 0 0; font-size: 13px; color: var(--p-ink); }
+.live .k-out [data-example] a { text-decoration: underline; text-underline-offset: 2px; }
+.live .small { font-size: 13px; } .live .muted { color: var(--p-muted); }
+.live .k-root button { font: 500 13px/1 var(--font-text); min-height: 32px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--c-line-2); background: transparent; color: var(--p-ink); cursor: pointer; }
+.live .k-root button:disabled { opacity: .55; cursor: default; }
+.live [data-control] { margin: 0 0 8px; }
+.live [data-control] label, .live label.check { font-size: 14px; color: var(--p-ink); }
+.live input[type="range"] { accent-color: var(--p-action); width: 100%; height: 24px; margin: 0; }
+/* In the hero the value is text and the two small buttons are left out: the exact-value box, Copy and the reset are on the example's own page. */
+.live input[type="number"], .live .k-root button { display: none; }
+.live .k-value { display: block; font: 500 14px/1 var(--font-mono); text-align: right; }
+.live label.check { display: flex; gap: 8px; align-items: center; min-height: 28px; }
+.live label.check input { accent-color: var(--p-action); width: 16px; height: 16px; margin: 0; }
+@media (max-width: 1023px) {
+  .live .k-controls { grid-column: 1 / -1; }
+  .live .k-out { display: none; }
+}
+@media (max-width: 639px) {
+  .live .k-root { grid-template-rows: auto minmax(0, 1fr) auto auto; align-content: stretch; gap: 8px; }
+  .live .k-head { grid-column: 1 / -1; }
+  .live .k-caption { grid-area: 4 / 1 / 5 / -1; justify-self: start; }
+  .live .k-caption summary { min-height: 44px; display: flex; align-items: center; }
+  .live .k-caption[open] p { right: auto; left: 0; top: auto; bottom: calc(100% + 4px); }
+  .live .k-controls { padding: 10px 12px 2px; }
+  .live .k-controls > button, .live .k-controls .k-label, .live .k-controls [data-control]:nth-of-type(n + 2), .live .k-controls label.check { display: none; }
+  .live [data-control] { margin: 0; }
+  .live input[type="range"] { height: 44px; }
+}
+/* One button size on the page: the hero's button keeps the system's height. */
+html[data-type] .hero--triptych .hero__cta .btn { height: var(--btn-h); font-size: var(--t-body); padding-inline: var(--s-5); }
+
+/* The small live pictures inside the step cards and the decision frame: text set as the product sets it. */
+.shot { height: 100%; padding: var(--s-5); display: flex; flex-direction: column; justify-content: center; gap: var(--s-3); font: 14px/1.5 var(--font-mono); color: var(--p-ink); background: var(--c-pane); }
+.shot p { margin: 0; overflow-wrap: anywhere; } .shot .muted { color: var(--p-muted); } .shot b { font-weight: 500; color: var(--p-action); }
+.shot pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100%; overflow: hidden; }
+.shot--sliders { font-family: var(--font-text); gap: var(--s-4); }
+.shot--sliders > div { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: baseline; }
+.shot--sliders b { font: 500 14px/1 var(--font-mono); color: var(--p-ink); }
+.shot--sliders i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--p-action) var(--at), var(--c-line-2) var(--at)); position: relative; }
+.shot--sliders i::after { content: ""; position: absolute; left: var(--at); top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--p-bg); border: 2px solid var(--p-action); }
+#steps .panel { --p-h: 264px; }
+.asked { margin-top: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); min-width: 0; }
+.asked > * { min-width: 0; }
+.asked .mo-mq .mo-mq__track { color: var(--ink); }
+.shot--file { height: auto; width: 100%; justify-content: flex-start; font-size: 15px; padding: var(--s-6); gap: var(--s-4); border-radius: var(--r-md); border: 1px solid var(--c-line); }
+.shot__path { font-weight: 500; } .shot__ask { margin-top: var(--s-5) !important; }
+.decisions__file { align-self: stretch; }
+.decisions__text { align-self: stretch; }
+.decisions__text .stats { margin-top: auto; }
+.shot__answer { color: var(--ok); }
+.decisions__text { display: flex; flex-direction: column; gap: var(--s-7); }
+.gallery > li { align-items: baseline; padding-block: 13px; }
+#examples .section-head { max-width: none; }
+.gallery .rows__name { font-size: 18px; }
+.gallery__live { align-self: stretch; overflow: hidden; background: #fff; padding: 0; display: block; }
+.gallery__live iframe { width: 100%; height: 100%; min-height: 260px; border: 0; display: block; }
+@media (min-width: 1024px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } .decisions__text { gap: var(--s-6); } }
+@media (min-width: 640px) and (max-width: 1279px) {
+  #steps, #examples { --h: 2; }
+  .gallery > li { padding-block: 22px; }
+}
+@media (max-width: 1023px) {
+  .decisions__file, .gallery__live { margin-top: var(--s-7); min-height: 320px; }
+  .shot--file { padding: var(--s-5); font-size: 14px; }
+}
+@media (min-width: 640px) and (max-width: 1023px) { .gallery__live { min-height: 480px; } }
+@media (max-width: 639px) {
+  #examples, #decisions { --h: 2; --hm: 2; height: auto; min-height: calc(2 * 100lvh); }
+  #examples .fill, #decisions .fill { flex: none; }
+  #steps .panel { --p-h: 176px; }
+  #steps { --hm: 2; }
+}
+.section--list { height: auto !important; min-height: 100svh; }
+.mine .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+/* The sentence a person types, set as they type it. */
+.say { display: block; margin: var(--s-3) 0; font: 500 17px/1.4 var(--font-mono); letter-spacing: -0.01em; color: var(--ink); }
+@media (min-width: 640px) and (max-width: 1023px) { .live .k-root { align-content: start; } }

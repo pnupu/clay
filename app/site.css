@@ -37,12 +37,12 @@ header.site nav a.button { padding: 4px 12px; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
 .gallery .title, .mine .title { font-size: 17px; font-weight: 600; display: block; margin: 4px 0; text-wrap: balance; }
 /* A gallery card is one target: the title link covers the card. */
-.gallery .card { position: relative; display: flex; flex-direction: column; gap: 6px; }
-.gallery .card:hover { border-color: var(--ink-2); }
-.gallery .card:has(.title:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gallery .pane { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.gallery .pane:hover { border-color: var(--ink-2); }
+.gallery .pane:has(.title:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .gallery .title::after { content: ""; position: absolute; inset: 0; }
 .gallery .title:focus-visible { outline: none; }
-.gallery .card p { margin: 0; }
+.gallery .pane p { margin: 0; }
 .gallery blockquote { margin: 2px 0 0; font-size: 17px; line-height: 1.35; color: var(--ink); text-wrap: pretty; }
 .gallery .blurb { color: var(--ink-2); text-wrap: pretty; }
 .gallery blockquote + .title, .gallery .blurb + .title { font-size: 15px; font-weight: 600; margin: 0; }
@@ -50,7 +50,7 @@ header.site nav a.button { padding: 4px 12px; }
 .mine li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .mine p { margin: 2px 0 0; }
 .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.connect-cta .card { display: grid; gap: 8px; justify-items: start; padding: 24px; }
+.connect-cta .pane { display: grid; gap: 8px; justify-items: start; padding: 24px; }
 .connect-cta p { max-width: 64ch; margin: 0 0 4px; }
 .landing footer { padding-top: 24px !important; padding-bottom: 40px !important; }
 @media (max-width: 800px) {

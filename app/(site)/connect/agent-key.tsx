@@ -75,7 +75,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
 
   return (
     <>
-      <section className="card">
+      <section className="pane">
         <h2>1. Your agent key</h2>
         {key ? (
           <>
@@ -103,7 +103,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         {error && <p className="alert">{error}</p>}
       </section>
 
-      <section className="card">
+      <section className="pane">
         <h2>2. Add Clay to your agent</h2>
         <h3>Claude Code</h3>
         {block("claude", claude.text, true, claude.real)}
@@ -124,7 +124,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         <p className="small">Any MCP client that speaks Streamable HTTP: URL <code>{endpoint}</code>, header <code>Authorization: Bearer {shown}</code>.{key && !visible ? " The key is hidden here: press “Show key” above to read it, or copy it from the key block." : ""}</p>
       </section>
 
-      <section className="card">
+      <section className="pane">
         <h2>3. Ask for a playground</h2>
         <p>Type <strong>“build me a playground for …”</strong> to your agent, with what you want to try, tune or decide in your own words. For example:</p>
         {EXAMPLES.map((e) => (
@@ -138,7 +138,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         <p>What happens: your agent answers with a link. Open it and move the controls until it looks, feels or costs right. Then press Settle (or save your decision) and tell your agent you are done. It reads what you chose and carries it out.</p>
       </section>
 
-      <section className="card">
+      <section className="pane">
         <details>
           <summary><strong>Optional: let your agent offer a playground on its own</strong></summary>
           <p>When you do not ask for a playground, Claude Code mostly edits the file or looks the price up itself. To make it build one on its own when you are vague, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
@@ -147,7 +147,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         </details>
       </section>
 
-      <section className="card">
+      <section className="pane">
         <h2>Later</h2>
         <ul className="plain">
           <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__clay__recheck</code>). Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds. Each run spends web requests from your daily allowance.</li>
