@@ -139,8 +139,10 @@ export function dailyCap(raw: string | undefined, fallback = 300): number {
 }
 /** Count one Context.dev request (`units` of it) against the daily cap. Returns the new budget, or null when it would go over the cap of that UTC day. */
 export function spend(b: Budget | null, day: string, cap: number, units = 1): Budget | null {
-  const used = b?.day === day ? b.used : 0;
-  return used + units > cap ? null : { day, used: used + units };
+  // Work that started before midnight on a slow instance must not replace the newer day's counter: it counts on that day.
+  const on = b && b.day > day ? b.day : day;
+  const used = b?.day === on ? b.used : 0;
+  return used + units > cap ? null : { day: on, used: used + units };
 }
 
 /** The public https origin of this deployment, or null on localhost. Vercel sets VERCEL_PROJECT_PRODUCTION_URL (a host name). */

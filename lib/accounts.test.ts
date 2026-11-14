@@ -175,3 +175,9 @@ test("examples: only the admin marks and features; one example is featured at a 
   // A field of the wrong type is refused, also beside a valid one.
   assert.equal((markExample(s, "card", { example: "false", featured: false }, admin) as { status: number }).status, 400);
 });
+
+test("budget: an older day never replaces a newer day's counter", () => {
+  assert.deepEqual(spend({ day: "2026-11-15", used: 2 }, "2026-11-14", 5), { day: "2026-11-15", used: 3 });
+  assert.equal(spend({ day: "2026-11-15", used: 2 }, "2026-11-14", 2), null);
+  assert.deepEqual(spend({ day: "2026-11-14", used: 9 }, "2026-11-15", 2), { day: "2026-11-15", used: 1 });
+});
