@@ -5,6 +5,7 @@ import { choiceHandback, namedInProse, creation, directAnswer, fileMatches, last
 import { dimensions, finalProblems, readFacts, withoutWebNumbers } from "./adapter.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES } from "./requests.ts";
+import { linkSeconds } from "./subjects.ts";
 
 const dim = (id: string, min: number, max: number, initial: number, label = id, unit = "units") => ({ id, label, unit, min, max, initial });
 const call = (tool: string, input: Record<string, unknown> = {}, result: unknown = {}, isError = false): Call => ({ tool, mcp: true, input, result: typeof result === "string" ? result : JSON.stringify(result), isError });
@@ -274,4 +275,17 @@ test("data cases: the facts carry sources, an unknown is not a number, the choic
   assert.deepEqual(readFacts(read), { choices: ["claude-sonnet-5-5"], anyUnknown: true });
   assert.deepEqual(readFacts(JSON.stringify({ settled: "none: ...", data: [{ source: "web", status: "read", unknown: [] }] })), { choices: [], anyUnknown: false });
   assert.deepEqual(readFacts("not json"), { choices: [], anyUnknown: false });
+});
+
+test("time to the link: from the start of the leg to the first create result that holds a URL", () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 10, 14, 8, 0, s)).toISOString();
+  const use = (s: number, id: string, name: string) => JSON.stringify({ type: "assistant", timestamp: at(s), message: { content: [{ type: "tool_use", id, name, input: {} }] } });
+  const result = (s: number, id: string, text: string, is_error = false) => JSON.stringify({ type: "user", timestamp: at(s), message: { content: [{ type: "tool_result", tool_use_id: id, is_error, content: [{ type: "text", text }] }] } });
+  const built = JSON.stringify({ playground_id: "signup-button", url: "http://127.0.0.1:1/p/signup-button" });
+  // The leg lasted 40 s and its last message is at second 50, so it started at second 10. A refused create and a
+  // kit_reference result do not count; the second create returns the URL at second 34.
+  const leg = [use(12, "a", "mcp__clay__kit_reference"), result(13, "a", built), use(20, "b", "mcp__clay__create_playground"), result(21, "b", "The spec is not valid. Nothing was created.", true), use(33, "c", "mcp__clay__create_playground"), result(34, "c", built), JSON.stringify({ type: "assistant", timestamp: at(50), message: { content: [{ type: "text", text: "Here it is." }] } }), JSON.stringify({ type: "result", duration_ms: 40_000 })].join("\n");
+  assert.equal(linkSeconds(leg), 24);
+  assert.equal(linkSeconds(leg.split("\n").filter((l) => !l.includes('"c"')).join("\n")), null); // no create succeeded
+  assert.equal(linkSeconds(leg.replace(/"timestamp":"[^"]*",/g, "")), null); // a transcript without timestamps
 });

@@ -245,7 +245,7 @@ export const BRAND_NOTE = "The brand title and colour names are text copied from
 export function previewStatus(k: KitState) {
   const s = k.preview;
   if (s.status === "ok") return { status: "ok", detail: `The preview loaded and ran without an error when the page was opened (${s.at}).` };
-  if (s.status === "failed") return { status: "failed", error: cut(s.error ?? "unknown error", 500), fix: "The person sees 'preview failed'. Repair view.html, view.css or view.js with revise_playground (send the whole view), then ask the person to reload the page." };
+  if (s.status === "failed") return { status: "failed", error: cut(s.error ?? "unknown error", 500), fix: "The person sees 'preview failed'. Repair view.html, view.css or view.js with revise_playground (send only the view field you repair), then ask the person to reload the page." };
   return { status: "unverified", detail: "The preview code has not run yet: it runs only in a browser. It is verified when the playground page is opened once by its owner. Call read_playground after that to see whether it ran." };
 }
 
@@ -294,7 +294,7 @@ export const webReading = (p: Playground): string[] => (workStatus(p)?.status ==
 export function dataReport(k: KitState, reading: string[] = []) {
   return [
     ...webReport(k, reading),
-    ...(k.kit.brand ? [{ source: "brand", domain: k.kit.brand.domain, read_by: "Context.dev", read_at: k.brandData?.fetchedAt ?? null, ...(k.brandData ? { untrusted_web_title: cut(k.brandData.title, 60), colors: k.brandData.colors.map((c) => `${c.hex} ${cut(c.name, 30)}`.trim()), logos: k.brandData.logos.length } : brandPending(k) ? { status: "still being read", next: "The web reader was busy. Call read_playground again: it waits up to 20 seconds for the brand. Keep calling it until the colours or an error are here (usually well under a minute); do not give the person the url before that, because a palette 'brand' shows only the control's initial colour until the brand arrives." } : { error: k.brandError === BRAND_PENDING ? "The brand read was cut off before it ended." : cut(k.brandError ?? "not read", 200), effect: "clay.data.brand has no colours and no logos; a palette 'brand' shows only the control's initial colour." }) }] : []),
+    ...(k.kit.brand ? [{ source: "brand", domain: k.kit.brand.domain, read_by: "Context.dev", read_at: k.brandData?.fetchedAt ?? null, ...(k.brandData ? { untrusted_web_title: cut(k.brandData.title, 60), colors: k.brandData.colors.map((c) => `${c.hex} ${cut(c.name, 30)}`.trim()), logos: k.brandData.logos.length } : brandPending(k) ? { status: "still being read", next: "Call read_playground again: it waits up to 20 seconds for the brand. Keep calling it until the colours or an error are here (usually well under a minute). The person may have the url already: a palette 'brand' shows only the control's initial colour until the brand arrives, and the page then loads the colours by itself." } : { error: k.brandError === BRAND_PENDING ? "The brand read was cut off before it ended." : cut(k.brandError ?? "not read", 200), effect: "clay.data.brand has no colours and no logos; a palette 'brand' shows only the control's initial colour." }) }] : []),
     ...(k.kit.inline ? [{ source: "inline", keys: Object.keys(k.kit.inline), shown_as: "provided by your agent, not checked" }] : []),
   ];
 }

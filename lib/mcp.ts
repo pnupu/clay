@@ -8,7 +8,7 @@ import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutput
 import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
 import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
-import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
+import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type SpecChange } from "./spec";
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
 import { EXAMPLE_CLEARED, canRead, canWrite, currentActor, publishedRefusal, StorageRefused } from "./accounts";
@@ -20,12 +20,25 @@ import { decisionRecord, guardDecision, priceGaps, recheckFile, recheckVerdict }
  * well inside that, and says "running" when the reads go on.
  */
 const WAIT_MS = Number(process.env.CLAY_TOOL_WAIT_MS ?? 20_000);
-
+/**
+ * How long a create or a revise waits for its own web reads (pricing pages, data.web) before it answers. The person waits
+ * for the URL, and the page fills in by itself, so the call answers at once: a read that is already done or cached still
+ * answers "done" in one call, and every other build says "running" up to 17 seconds sooner. read_playground and
+ * recheck_playground keep WAIT_MS; so does a preview whose only read is the brand (a second call would cost more).
+ */
+const FIRST_WAIT_MS = Math.min(WAIT_MS, Number(process.env.CLAY_FIRST_WAIT_MS ?? 3_000));
 
 /** The largest request the MCP endpoint reads: one spec at its size limit plus the JSON-RPC envelope. */
 export const MAX_MCP_BYTES = MAX_SPEC_BYTES + 20_000;
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 1) }] });
 const fail = (message: string) => ({ ...text(message), isError: true });
+/** The start of every `next` of a build result: the person gets the link first; checks and repairs follow (lib/texts.ts). */
+const LINK_NOW = "Give the person the url now, in a visible reply before your next tool call (after a revise: ask them to reload)";
+/**
+ * The first thing a create result says. An agent that reads only `next` tends to poll first and to give the link in its
+ * last message; the person then waits for the whole build without a page to look at.
+ */
+const tellNow = (url: string) => ({ tell_person_now: `The person cannot see this result or your reasoning. Before your next tool call, write them a visible reply with the url ${url} and one line on what is still being read or checked. Do not wait for the build, a check or a repair: the page works already.` });
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
@@ -49,11 +62,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     const stored = (await load()).playgrounds[id]?.leftOut ?? [];
     return stored.length ? { left_out: stored.map((x) => ({ name: x.name, reason: x.reason })) } : {};
   };
-  /** Wait for web reads at most WAIT_MS. `done: false` means they go on in the background. */
-  const within = async <T>(work: Promise<T> | null): Promise<{ done: true; value: T | null } | { done: false }> => {
+  /** Wait for web reads at most `ms`. `done: false` means they go on in the background. */
+  const within = async <T>(work: Promise<T> | null, ms = WAIT_MS): Promise<{ done: true; value: T | null } | { done: false }> => {
     if (!work) return { done: true, value: null };
     background(work.catch(() => {}));
-    return Promise.race([work.then((value) => ({ done: true as const, value })), new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), WAIT_MS))]);
+    return Promise.race([work.then((value) => ({ done: true as const, value })), new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), ms))]);
   };
   // Ownership: the caller sees their own playgrounds (the admin sees all) and may read the examples (lib/accounts.ts).
   const list = async () => Object.values((await load()).playgrounds).filter((p) => canWrite(currentActor(), p)).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
@@ -79,16 +92,16 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     return text({
       playground_id: id,
       url: url(id),
-      build,
       ...extra,
+      build,
       ...(stop ? { stopped: `Reading stopped early: ${stop}. Do not retry now; tell the person.` } : {}),
       ...report,
       vendors: report.vendors.map((v) => (!detail || detail.includes(v.vendor) ? v : { vendor: v.vendor, pricing_page: v.pricing_page, plans_read: v.plans.length, unchanged: true })),
       kind: "price",
       next:
         build.status === "running"
-          ? "The pricing pages are still being read. 1. Tell the person now, in a sentence, that the comparison is being built from the live pricing pages, and give them the url: it works already and each vendor appears as its page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Then fix what problems lists with revise_playground, and tell the person the page is ready and what you changed."
-          : "If problems lists a build error or starts with BROKEN BUILD, fix it with revise_playground first. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
+          ? `The pricing pages are still being read. 1. ${LINK_NOW}, with a sentence that the comparison is being built from the live pricing pages: the url works already and each vendor appears as its page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is "done". 3. Then fix what problems lists with revise_playground, and tell the person the page is ready and what you changed.`
+          : `${LINK_NOW}: ask them to explore and to save a decision on the page. If problems lists a build error or starts with BROKEN BUILD, say in the same line that you are repairing it, fix it with revise_playground and ask them to reload. Call read_playground when they say they are done.`,
       note: WEB_TEXT_NOTE,
     });
   };
@@ -102,8 +115,8 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       playground_id: id,
       url: url(id),
       kind: "preview",
-      ...(k.kit.web?.length ? { build: reading.length ? { status: "running", still_reading: reading } : { status: "done" } } : {}),
       ...extra,
+      ...(k.kit.web?.length ? { build: reading.length ? { status: "running", still_reading: reading } : { status: "done" } } : {}),
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k, reading),
@@ -111,12 +124,12 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       warnings: warnings.filter((x) => x !== markupWarning(k.kit)),
       next:
         reading.length
-          ? "The web sources are still being read. 1. Tell the person now, in a sentence, that the page is being built from live web pages, and give them the url: it works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown."
-          : k.kit.web?.length
-            ? "Look at data now: check that the rows and values are what your view.js expects (the names it joins on, the units, the unknown values), and repair with revise_playground if they are not. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground: it returns the settled outputs to write into their files."
-            : brandPending(k)
-          ? "The brand's colours are still being read (the web reader was busy), so the brand palette is still empty. Call read_playground now: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem. Then give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, call read_playground again for the settled outputs."
-          : "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
+          ? `The web sources are still being read. 1. ${LINK_NOW}, with a sentence that the page is being built from live web pages: the url works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is "done". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown.`
+          : brandPending(k)
+            ? `The brand's colours are still being read, so the brand palette is still empty; the page loads the colours by itself when they arrive. ${LINK_NOW}, with that in one line, and say: move the controls until it is right, then press Settle. Then call read_playground: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem.${k.kit.web?.length ? " Look at data too: check that the rows and values are what your view.js expects, and repair with revise_playground if they are not." : ""} When they say they are done, call read_playground again for the settled outputs.`
+            : k.kit.web?.length
+              ? `${LINK_NOW}, and say: move the controls until it is right, then press Settle. Then look at data: check that the rows and values are what your view.js expects (the names it joins on, the units, the unknown values); if they are not, repair with revise_playground and ask the person to reload. When they say they are done, call read_playground: it returns the settled outputs to write into their files.`
+              : `${LINK_NOW}, and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.`,
       ...(k.kit.web?.length || k.kit.brand ? { note: [k.kit.web?.length ? WEB_NOTE : "", k.kit.brand ? BRAND_NOTE : ""].filter(Boolean).join(" ") } : {}),
     });
   };
@@ -136,13 +149,13 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       if (parsed.kind === "preview") {
         const r = await createPreview(parsed.domain, parsed.kit);
         if ("refused" in r) return fail(r.refused);
-        await within(Promise.all([r.brand, r.web]));
-        return preview(r.id, { ...renamed(r.id), ...(r.existed ? again : {}), ...(await leftOut(r.id, parsed.leftOut)) }, parsed.warnings);
+        await within(Promise.all([r.brand, r.web]), r.web ? FIRST_WAIT_MS : WAIT_MS);
+        return preview(r.id, { ...tellNow(url(r.id)), ...renamed(r.id), ...(r.existed ? again : {}), ...(await leftOut(r.id, parsed.leftOut)) }, parsed.warnings);
       }
       const r = await createPlayground(parsed.domain, origin);
       if ("refused" in r) return fail(r.refused);
-      const w = await within(r.work);
-      return built(r.id, { ...renamed(r.id), ...(r.existed ? again : {}), ...(await leftOut(r.id, parsed.leftOut)) }, w.done ? w.value : null);
+      const w = await within(r.work, FIRST_WAIT_MS);
+      return built(r.id, { ...tellNow(url(r.id)), ...renamed(r.id), ...(r.existed ? again : {}), ...(await leftOut(r.id, parsed.leftOut)) }, w.done ? w.value : null);
     } catch (e) {
       return fail(`The playground could not be built: ${message(e)}`);
     }
@@ -261,7 +274,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         notes: specShape.notes,
         data: specShape.data,
         controls: specShape.controls.describe("The full new list of controls of a preview playground. It replaces the current list."),
-        view: specShape.view.optional().describe("The full new view. It replaces the current view; the view type cannot change."),
+        view: specShape.view.partial().optional().describe("Only the view fields that change: html, css, js, tailwind, height. The fields you leave out stay as they are. type may be left out; it cannot change."),
         outputs: specShape.outputs.describe("The full new list of outputs of a preview playground. It replaces the current list."),
         left_out: specShape.left_out,
       },
@@ -271,19 +284,19 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       if (typeof p === "string") return fail(p);
       if (playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
       const was = toSpec(p);
-      if (change.view && change.view.type !== was.view.type) return fail(`Nothing was changed. "${playground_id}" has view.type "${was.view.type}", and the view type of a playground cannot change. Build a separate playground with create_playground.`);
-      const parsed = parseSpec(mergeSpec(was, change as Partial<Spec>));
+      if (change.view?.type && change.view.type !== was.view.type) return fail(`Nothing was changed. "${playground_id}" has view.type "${was.view.type}", and the view type of a playground cannot change. Build a separate playground with create_playground.`);
+      const parsed = parseSpec(mergeSpec(was, change as SpecChange));
       if (!parsed.ok) return fail(`The revised playground would not be valid. Nothing was changed. Fix these and call revise_playground again:\n- ${parsed.errors.join("\n- ")}`);
       const tell_person = "Ask the person to reload the page to see the revised playground.";
       try {
         if (parsed.kind === "preview") {
           const r = await revisePreview(parsed.domain, parsed.kit);
-          await within(Promise.all([r.brand, r.web]));
+          await within(Promise.all([r.brand, r.web]), r.web ? FIRST_WAIT_MS : WAIT_MS);
           const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the person must reload the page before they settle.";
           return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings);
         }
         const r = await revisePlayground(parsed.domain, origin);
-        const w = await within(r.work);
+        const w = await within(r.work, FIRST_WAIT_MS);
         return built(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, w.done ? w.value : null, r.recollected);
       } catch (e) {
         return fail(`The playground could not be revised: ${message(e)}`);
