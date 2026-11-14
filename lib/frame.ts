@@ -56,8 +56,11 @@ export function frameCsp(k: KitState): string {
  */
 export const HARDEN = `
 (function () {
-  var TAGS = "link,meta,base,iframe,frame,frameset,object,embed,portal,applet,script";
-  var BLOCKED = new RegExp("^(" + TAGS.split(",").join("|") + ")$", "i");
+  // Created by script: refused. In inserted or parsed content: stripped (a parsed or cloned script never runs, and a meta
+  // without http-equiv does nothing, so the frame's own charset and viewport metas survive "head.innerHTML += ...").
+  var BLOCKED = /^(link|meta|base|iframe|frame|frameset|object|embed|portal|applet|script)$/i;
+  var TAGS = "link,meta[http-equiv],base,iframe,frame,frameset,object,embed,portal,applet";
+  function bad(n) { return n.nodeType === 1 && (/^(link|base|iframe|frame|frameset|object|embed|portal|applet)$/i.test(n.localName) || (n.localName === "meta" && n.hasAttribute("http-equiv"))); }
   var D = Document.prototype, E = Element.prototype, N = Node.prototype;
   function lock(o, k, v) { try { Object.defineProperty(o, k, { value: v, writable: false, configurable: false }); } catch (e) {} }
   function lockSetter(o, k, set) { var d = Object.getOwnPropertyDescriptor(o, k); if (!d || !d.set) return; try { Object.defineProperty(o, k, { get: d.get, set: set, configurable: false }); } catch (e) {} }
@@ -66,7 +69,7 @@ export const HARDEN = `
   /** Remove every blocked element from a node (and from the content of templates in it). Returns false when the node itself is blocked. */
   function clean(node) {
     if (!node || typeof node !== "object") return true;
-    if (node.nodeType === 1 && BLOCKED.test(node.localName)) return false;
+    if (bad(node)) return false;
     var find = node.nodeType === 1 ? qsa : node.nodeType === 11 ? fqsa : null;
     if (!find) return true;
     var all = find.call(node, TAGS), i;
@@ -76,20 +79,27 @@ export const HARDEN = `
     if (node.nodeType === 1 && node.localName === "template") clean(node.content);
     return true;
   }
-  function cleanArgs(args) { for (var i = 0; i < args.length; i++) if (!clean(args[i])) refuse(args[i].localName); return args; }
+  /** Clean the inserted nodes only: the argument at "only" (insertBefore's and replaceChild's first), or all of them. */
+  function cleanArgs(args, only) { for (var i = 0; i < args.length; i++) if ((only == null || i === only) && !clean(args[i])) refuse(args[i].localName); return args; }
   var createEl = D.createElement, createNS = D.createElementNS;
   lock(D, "createElement", function (t) { if (BLOCKED.test(String(t))) refuse(t); return createEl.apply(this, arguments); });
   lock(D, "createElementNS", function (ns, t) { if (BLOCKED.test(String(t).split(":").pop())) refuse(t); return createNS.apply(this, arguments); });
   // Every way to insert a node: the inserted subtree is cleaned first.
-  [[N, ["appendChild", "insertBefore", "replaceChild"]], [E, ["append", "prepend", "before", "after", "replaceWith", "replaceChildren", "insertAdjacentElement"]], [D, ["append", "prepend", "replaceChildren"]], [DocumentFragment.prototype, ["append", "prepend", "replaceChildren"]], [CharacterData.prototype, ["before", "after", "replaceWith"]]].forEach(function (pair) {
+  [[N, ["appendChild"]], [E, ["append", "prepend", "before", "after", "replaceWith", "replaceChildren"]], [D, ["append", "prepend", "replaceChildren"]], [DocumentFragment.prototype, ["append", "prepend", "replaceChildren"]], [CharacterData.prototype, ["before", "after", "replaceWith"]]].forEach(function (pair) {
     pair[1].forEach(function (k) { var f = pair[0][k]; if (typeof f === "function") lock(pair[0], k, function () { return f.apply(this, cleanArgs(arguments)); }); });
   });
+  [[N, "insertBefore", 0], [N, "replaceChild", 0], [E, "insertAdjacentElement", 1], [E, "moveBefore", 0], [D, "moveBefore", 0], [DocumentFragment.prototype, "moveBefore", 0], [Range.prototype, "insertNode", 0], [Range.prototype, "surroundContents", 0]].forEach(function (t) {
+    var f = t[0][t[1]]; if (typeof f === "function") lock(t[0], t[1], function () { return f.apply(this, cleanArgs(arguments, t[2])); });
+  });
+  var exec = D.execCommand;
+  if (typeof exec === "function") lock(D, "execCommand", function (cmd) { if (/^insertHTML$/i.test(String(cmd))) refuse("execCommand insertHTML"); return exec.apply(this, arguments); });
+  if (window.customElements) { var define = customElements.define; lock(customElements, "define", function (name, ctor, options) { if (options && options.extends && BLOCKED.test(String(options.extends))) refuse(options.extends); return define.apply(this, arguments); }); }
   ["importNode", "adoptNode"].forEach(function (k) { var f = D[k]; if (typeof f === "function") lock(D, k, function (n) { var r = f.apply(this, arguments); if (!clean(r)) refuse(r.localName); return r; }); });
   // HTML strings are parsed inertly (a fragment, or a template's content), cleaned, and only then inserted.
   var range = D.createRange, ccf = Range.prototype.createContextualFragment, selectContents = Range.prototype.selectNodeContents, selectNode = Range.prototype.selectNode;
   var innerSet = Object.getOwnPropertyDescriptor(E, "innerHTML").set;
   var origReplaceChildren = E.replaceChildren, origReplaceWith = E.replaceWith, origBefore = E.before, origAfter = E.after, origPrepend = E.prepend, origAppend = E.append;
-  function parse(ctx, html, whole) { var r = range.call(document); (whole ? selectNode : selectContents).call(r, ctx); var f = ccf.call(r, String(html)); clean(f); return f; }
+  function parse(ctx, html, whole) { var r = range.call(document); (whole ? selectNode : selectContents).call(r, ctx); var f = ccf.call(r, html == null ? "" : String(html)); clean(f); return f; }
   lock(Range.prototype, "createContextualFragment", function (html) { var f = ccf.call(this, html); clean(f); return f; });
   lockSetter(E, "innerHTML", function (html) {
     if (this.localName === "template") { innerSet.call(this, html); clean(this.content); return; }
@@ -108,6 +118,9 @@ export const HARDEN = `
   lock(DOMParser.prototype, "parseFromString", function () { var d = parseFrom.apply(this, arguments); if (d && d.documentElement) clean(d.documentElement); return d; });
   ["write", "writeln", "open"].forEach(function (k) { lock(D, k, function () { refuse("document." + k); }); });
   ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceTransport"].forEach(function (k) { if (k in window) lock(window, k, undefined); });
+  // A backstop for any insertion route not listed above: added blocked elements are removed (possibly after a request
+  // started, which is why the routes above come first). The observer was made before author code and is not reachable.
+  new MutationObserver(function (ms) { for (var i = 0; i < ms.length; i++) for (var j = 0; j < ms[i].addedNodes.length; j++) { var n = ms[i].addedNodes[j]; if (bad(n)) remove.call(n); else clean(n); } }).observe(document.documentElement, { childList: true, subtree: true });
 })();
 `;
 

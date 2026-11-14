@@ -26,7 +26,7 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, embedded = false, reading = false, leftOut = [] }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[] }) {
+export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, reading = false, leftOut = [] }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[] }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
@@ -227,8 +227,8 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
           </section>
           <p className={`small muted ${css.caption}`}>
                 {/* What the sandbox guarantees, and what it does not: browsers give no complete block for outgoing requests from code that runs (README, "The preview sandbox"). */}
-                {canWrite ? "Built by your agent." : "Built by the playground's author with their agent."} It runs in a sandbox: it cannot read this page, your Clay account or session, or other sites&apos; data, and it cannot open windows or submit forms.
-                {" "}It is not sealed from the network: in some browsers its code can make outgoing requests, so the values you set here and the data shown in the preview could be sent to a server {canWrite ? "that code names" : "its author chose"}, with your IP address.
+                {builtByViewer ? "Built by your agent." : "Built by the playground's author with their agent."} It runs in a sandbox: it cannot read this page, your Clay account or session, or other sites&apos; data, and it cannot open windows or submit forms.
+                {" "}It is not sealed from the network: in some browsers its code can make outgoing requests, so the values you set here and the data shown in the preview could be sent to a server {builtByViewer ? "that code names" : "its author chose"}, with your IP address.
                 {logoHosts > 0 ? " The brand's logo hosts can also receive them in image addresses." : ""}
           </p>
 

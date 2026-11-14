@@ -244,10 +244,11 @@ test("outputs: a spec whose outputs could expand past the limit is refused; a st
 test("view.html: elements that can send requests outside the sandbox are refused, with what to use instead", async () => {
   const { checkKit: check } = await import("./kit.ts");
   const kit = (html: string) => check({ controls: [{ id: "size", type: "slider", label: "Size", meaning: "font size of the text in px", min: 8, max: 20, initial: 12 }], view: { type: "preview", html }, outputs: [{ id: "result", label: "Result", template: "{{size}}px" }] } as never);
-  for (const html of ['<p>{{size}}</p><link rel="prerender" href="https://x.example/?s={{size}}">', '<META http-equiv="refresh" content="0;url=https://x.example">{{size}}', '<base href="https://x.example/">{{size}}', '<iframe src="https://x.example"></iframe>{{size}}', '< link rel=preload href=x>{{size}}']) {
+  for (const html of ['<p>{{size}}</p><link rel="prerender" href="https://x.example/?s={{size}}">', '<META http-equiv="refresh" content="0;url=https://x.example">{{size}}', '<base href="https://x.example/">{{size}}', '<iframe src="https://x.example"></iframe>{{size}}', '<LINK rel=preload href=x>{{size}}']) {
     const r = check === undefined ? null : kit(html);
     assert.equal(r!.ok, false, html);
     assert.match((r as { errors: string[] }).errors.join(" "), /not allowed in a preview.*view\.css or style attributes/);
   }
   assert.equal(kit('<p style="font-size:{{size}}px">Linked text, meta data, a base layer</p>').ok, true); // words are fine, only tags are refused
+  assert.equal(kit("<base-button>{{size}}</base-button><link-card></link-card><meta-chip>x < meta y</meta-chip>").ok, true); // custom elements and text are fine
 });

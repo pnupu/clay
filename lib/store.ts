@@ -140,7 +140,9 @@ export function dailyCap(raw: string | undefined, fallback = 300): number {
 /** Count one Context.dev request (`units` of it) against the daily cap. Returns the new budget, or null when it would go over the cap of that UTC day. */
 export function spend(b: Budget | null, day: string, cap: number, units = 1): Budget | null {
   // Work that started before midnight on a slow instance must not replace the newer day's counter: it counts on that day.
-  const on = b && b.day > day ? b.day : day;
+  // Only a day just ahead (another instance passed midnight a moment earlier); a stored day further ahead is a wrong
+  // clock, not a reason to pile today's requests onto a future day.
+  const on = b && b.day > day && Date.parse(b.day) - Date.parse(day) <= 86_400_000 ? b.day : day;
   const used = b?.day === on ? b.used : 0;
   return used + units > cap ? null : { day: on, used: used + units };
 }

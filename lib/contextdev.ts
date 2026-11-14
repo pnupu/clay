@@ -92,6 +92,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   const reserve = async (): Promise<string | null> => {
   const day = new Date().toISOString().slice(0, 10);
   if (!((daily > 0 || personal > 0) && method !== "DELETE")) return null;
+  let charged: string | null = null;
   const refusal = await update((s) => {
     const b = daily > 0 ? spend(s.budget, day, daily, units) : s.budget;
     if (!b && daily > 0) return "global";
@@ -99,11 +100,12 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
     if (user && personal > 0 && !u) return "user";
     s.budget = b;
     if (user && u) s.users[user] = { ...(s.users[user] ?? { keyHash: null, keyCreatedAt: null }), usage: u };
+    charged = b?.day ?? u?.day ?? day;
     return null;
   });
   if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
   if (refusal === "user") throw new ContextDevError(429, "USER_DAILY_CAP", userCapMessage(personal));
-  return day;
+  return charged;
   };
   /** Give back a reservation whose request was NOT sent (the local request cap refused it). A sent request is never given back. */
   const release = (day: string | null) =>

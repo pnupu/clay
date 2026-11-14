@@ -211,12 +211,25 @@ export const PRICE_LIMITS = { plans: 20, meters: 5, tiers: 12, features: 6, name
 const cutText = (t: unknown, n: number): string | null => (typeof t === "string" ? t.slice(0, n) : t == null ? null : String(t).slice(0, n));
 
 export function normalise(raw: RawModel): PricingModel {
-  const model = normaliseUnbounded(boundRaw(raw));
-  const size = JSON.stringify(model).length;
-  if (size > PRICE_LIMITS.bytes) throw new Error(`The extraction of this pricing page is too large to keep (${size} characters; the limit is ${PRICE_LIMITS.bytes}). The previous read is kept. Give the exact pricing_url of the plans page, or fewer metrics and features.`);
+  // Still too large after the cuts: the quotes go first, then plans from the end, until it fits. No throw: a refused read
+  // made the collection try more pages, each a paid request.
+  let model = normaliseUnbounded(boundRaw(raw));
+  const size = () => JSON.stringify(model).length;
+  if (size() > PRICE_LIMITS.bytes) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_quote: null, meters: (p.meters ?? []).map((m) => ({ ...m, quote: null })), features: (p.features ?? []).map((f) => ({ ...f, quote: null })) })) };
+  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 1) model = { ...model, plans: model.plans!.slice(0, -1) };
   return model;
 }
 
+/**
+ * At most PRICE_LIMITS.tiers tiers, keeping what the rules need: several open-ended prices (separate products) stay
+ * several, so normaliseUnbounded() still sees a mixed read; graduated tiers keep their final open-ended step.
+ */
+function cutTiers<T extends { up_to?: unknown }>(tiers: T[]): T[] {
+  if (tiers.length <= PRICE_LIMITS.tiers) return tiers;
+  const open = tiers.filter((t) => t.up_to == null);
+  if (open.length > 1) return open.slice(0, PRICE_LIMITS.tiers);
+  return [...tiers.filter((t) => t.up_to != null).slice(0, PRICE_LIMITS.tiers - open.length), ...open];
+}
 /** Cut the counts and texts of a raw extraction to PRICE_LIMITS. */
 function boundRaw(raw: RawModel): RawModel {
   const q = (t: unknown) => cutText(t, PRICE_LIMITS.quote);
@@ -228,7 +241,7 @@ function boundRaw(raw: RawModel): RawModel {
       ...p,
       name: cutText(p.name, PRICE_LIMITS.name) ?? "",
       price_quote: q(p.price_quote),
-      meters: Object.fromEntries(Object.entries(p.meters ?? {}).slice(0, PRICE_LIMITS.meters).map(([k, m]) => [k, m ? { ...m, quote: q(m.quote), tiers: (m.tiers ?? []).slice(0, PRICE_LIMITS.tiers) } : m])),
+      meters: Object.fromEntries(Object.entries(p.meters ?? {}).slice(0, PRICE_LIMITS.meters).map(([k, m]) => [k, m ? { ...m, quote: q(m.quote), tiers: cutTiers(m.tiers ?? []) } : m])),
       features: Object.fromEntries(Object.entries(p.features ?? {}).slice(0, PRICE_LIMITS.features).map(([k, f]) => [k, f ? { ...f, quote: q(f.quote) } : f])),
     })),
   } as RawModel;

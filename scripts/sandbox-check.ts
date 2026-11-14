@@ -74,8 +74,12 @@ const tries = {
   "outerHTML prefetch": () => { const d = document.createElement("div"); document.body.appendChild(d); d.outerHTML = '<link rel="prefetch" href="' + T + '/outer-prefetch">'; return has("outer-prefetch"); },
   "DOMParser prefetch": () => { const doc = new DOMParser().parseFromString('<link rel="prefetch" href="' + T + '/parsed-prefetch">', "text/html"); const l = doc.querySelector("link"); if (l) document.head.appendChild(document.importNode(l, true)); return has("parsed-prefetch"); },
   "template clone prerender": () => { const t = document.createElement("template"); t.innerHTML = '<link rel="prerender" href="' + T + '/template-prerender">'; document.head.appendChild(t.content.cloneNode(true)); return has("template-prerender"); },
+  "Range.insertNode of a foreign-document link": () => { const l = document.implementation.createDocument("http://www.w3.org/1999/xhtml", "link", null).documentElement; l.setAttribute("rel", "prefetch"); l.setAttribute("href", T + "/range-prefetch"); const r = document.createRange(); r.selectNodeContents(document.head); r.insertNode(l); return has("range-prefetch"); },
+  "custom element extending link": () => { customElements.define("x-hint", class extends HTMLLinkElement {}, { extends: "link" }); return true; },
   "speculation rules": () => { const sc = document.createElement("script"); sc.type = "speculationrules"; sc.textContent = JSON.stringify({ prefetch: [{ source: "list", urls: [T + "/speculation"] }] }); document.head.appendChild(sc); return true; },
 };
+document.head.innerHTML += "<style>p { margin: 0 }</style>";
+out["head.innerHTML keeps the viewport meta (not a hint)"] = document.querySelector('meta[name="viewport"]') ? "blocked nothing it should keep" : "ALLOWED removal of the viewport meta";
 for (const [k, f] of Object.entries(tries)) { try { out[k] = f() ? "ALLOWED inserted" : "blocked (stripped)"; } catch (e) { out[k] = "blocked " + e.name; } }
 document.getElementById("report").textContent = JSON.stringify(out);
 `;
