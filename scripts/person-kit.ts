@@ -1,5 +1,5 @@
-// Acts as the person on a preview playground in a headless browser: moves kit controls, settles, takes a screenshot.
-// Usage: [OWNER_KEY_FILE=<file>] node scripts/person-kit.ts <playground url> <steps json> <screenshot path>
+// Acts as the person on a preview lab in a headless browser: moves kit controls, settles, takes a screenshot.
+// Usage: [OWNER_KEY_FILE=<file>] node scripts/person-kit.ts <lab url> <steps json> <screenshot path>
 // Steps: {"set": {"<control id>": [values...]}, "probe": "<selector in the preview>", "drag": {"selector", "dx"}, "settle": true}.
 // A value is a number (slider), a boolean (toggle), an option value (select) or "#rrggbb" (color). "probe" prints the class
 // and the computed style of one element of the real artifact in the preview frame.

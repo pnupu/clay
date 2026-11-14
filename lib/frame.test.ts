@@ -106,7 +106,7 @@ test("a map preview may load the pinned map library and tiles from this app's ti
 
 test("the tile path of a map frame is on the host the browser asked for, and a header cannot add to the policy", () => {
   assert.equal(requestOrigin("http://localhost:3000/p/x/frame", "127.0.0.1:3000", null), "http://127.0.0.1:3000");
-  assert.equal(requestOrigin("http://internal:3000/p/x/frame", "Clay-Steel-Nu.vercel.app", "https"), "https://clay-steel-nu.vercel.app");
+  assert.equal(requestOrigin("http://internal:3000/p/x/frame", "Sorvi.vercel.app", "https"), "https://sorvi.vercel.app");
   assert.equal(requestOrigin("https://clay.example/p/x/frame", null, null), "https://clay.example");
   // Anything but a host name with a port falls back to the request's own origin.
   for (const bad of ["evil.example; script-src *", "a b", "evil.example/path", "user@evil.example", "evil.example:99999999", "", "'self'", "*.example"]) assert.equal(requestOrigin("https://clay.example/p/x/frame", bad, "https"), "https://clay.example", bad);

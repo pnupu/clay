@@ -1,5 +1,5 @@
-// The fixed request set that defines "Clay just works". Each request is what a person would type: vague, in their own
-// words, with no mention of Clay, playgrounds, controls or tool names. Change a request only with a note in the report,
+// The fixed request set that defines "Sorvi just works". Each request is what a person would type: vague, in their own
+// words, with no mention of Sorvi, playgrounds, controls or tool names. Change a request only with a note in the report,
 // because pass rates are compared across runs.
 
 /** A number the person gave. `about` finds the dimension among the playground's controls (id, label and unit). */

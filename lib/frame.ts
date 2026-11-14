@@ -1,4 +1,4 @@
-// The sandboxed frame of a preview playground, and the bridge between it and the page.
+// The sandboxed frame of a preview lab, and the bridge between it and the page.
 // The preview code comes from an agent and is shown to every visitor: it is untrusted. It runs only in the document built
 // here, which is served with a Content-Security-Policy that (1) gives it an opaque origin and scripts only (`sandbox`), also
 // when the frame URL is opened directly, and (2) allows no network except the pinned Tailwind build, the brand's logos
@@ -32,7 +32,7 @@ export const LEAFLET = {
  * keyless raster host looked at, CARTO's basemaps, needs an API key in the page since its current terms
  * (https://carto.com/basemaps, read on the same day). The policy allows fetching through one's own server when the
  * Referer stays accurate and the application is named, so the tile route sends this site's address as Referer and a
- * User-Agent that names Clay, asks for nothing but single tiles a person looks at, and lets browsers and the CDN keep
+ * User-Agent that names Sorvi, asks for nothing but single tiles a person looks at, and lets browsers and the CDN keep
  * each tile for seven days (the policy's minimum for a cache). The attribution it asks for, "(c) OpenStreetMap
  * contributors", is on every map (clay.map() adds it; plain text, because the frame opens no link) and linked on the
  * page around the preview. A side effect: the tile host sees this app's server, not the visitor.

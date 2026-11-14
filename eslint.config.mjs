@@ -22,7 +22,7 @@ const eslintConfig = defineConfig([
   // load on purpose (app/(site)/layout.tsx), so links there are plain <a> elements.
   { files: ["app/(site)/**"], rules: { "@next/next/no-html-link-for-pages": "off", "@next/next/no-sync-scripts": "off" } },
   // Eval fixtures are components of an imaginary app that agents are asked to change. Their links (/signup, /login) are
-  // not Clay's pages; since the catch-all page for unknown addresses (app/(app)/[...rest]) the rule would match them.
+  // not Sorvi's pages; since the catch-all page for unknown addresses (app/(app)/[...rest]) the rule would match them.
   { files: ["evals/files/**"], rules: { "@next/next/no-html-link-for-pages": "off" } },
 ]);
 

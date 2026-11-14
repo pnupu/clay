@@ -1,4 +1,4 @@
-// The trust boundary for playgrounds created at runtime. A config comes from an agent or an HTTP caller: it is untrusted data.
+// The trust boundary for labs created at runtime. A config comes from an agent or an HTTP caller: it is untrusted data.
 // Everything is checked here (sizes, types, id formats, https only), and nothing else in the app accepts a Domain from outside.
 import { z } from "zod";
 import { extractionInstructions, INSTRUCTIONS_LIMIT, type Domain } from "./domain.ts";
@@ -34,7 +34,7 @@ export const vendor = z.strictObject({
 });
 
 export const configShape = {
-  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the playground and the last part of its URL, for example email-api-for-acme."),
+  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the lab and the last part of its URL, for example email-api-for-acme."),
   question: text(10, 200).describe("The decision, as a question in the person's words."),
   product: text(3, 120).describe("What is being priced, in a few words, for example 'transactional email API'. Part of the extraction instructions."),
   notes: text(0, 600).optional().describe("Optional extra guidance for the extraction, for example how to tell two similar metrics apart or which product line of the page to read. Keep it short: product and notes together must fit in about 500 characters, and a longer text is refused."),
@@ -91,7 +91,7 @@ export function parseConfig(input: unknown): { ok: true; domain: Domain } | { ok
   return { ok: true, domain };
 }
 
-/** The config that parseConfig() would turn into this Domain. Used to revise a playground. */
+/** The config that parseConfig() would turn into this Domain. Used to revise a lab. */
 export function toConfig(d: Domain): PlaygroundConfig {
   return { id: d.id, question: d.question, product: d.product, notes: d.notes, metrics: d.metrics, features: d.features, vendors: d.vendors.filter((v) => !v.demo).map((v) => ({ id: v.id, name: v.name, domain: v.domain, ...(v.url ? { pricing_url: v.url } : {}) })) };
 }

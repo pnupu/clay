@@ -8,7 +8,7 @@ import { readJson } from "@/app/api/body";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-/** The playgrounds this caller may open: the examples, their own, or all for the admin. */
+/** The labs this caller may open: the examples, their own, or all for the admin. */
 export const GET = async (req: Request) => {
   const { actor, bad } = await identify(req.headers, req);
   const badAnswer = badKey(bad, req);
@@ -16,7 +16,7 @@ export const GET = async (req: Request) => {
   return Response.json(Object.values((await load()).playgrounds).filter((p) => canRead(actor, p)).map((p) => ({ id: p.domain.id, question: p.domain.question, createdAt: p.createdAt, vendors: p.domain.vendors.map((v) => v.name) })));
 };
 
-/** Create a playground from a spec (the HTTP form of the agent's create_playground tool). The spec is validated in lib/spec.ts. */
+/** Create a lab from a spec (the HTTP form of the agent's create_playground tool). The spec is validated in lib/spec.ts. */
 export async function POST(req: Request) {
   const no = await refused(req);
   if (no) return no;

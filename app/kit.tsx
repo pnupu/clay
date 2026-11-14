@@ -1,6 +1,6 @@
 "use client";
 
-// The screen of a preview playground: kit controls, the sandboxed preview of the real artifact, and the outputs that go
+// The screen of a preview lab: kit controls, the sandboxed preview of the real artifact, and the outputs that go
 // back to the agent. Every move is local: the page posts the values to the frame, and nothing waits for a network call.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
@@ -14,7 +14,7 @@ import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
 /**
- * Where the person has the controls, per playground and kit revision, kept in this tab's memory. The screen is mounted
+ * Where the person has the controls, per lab and kit revision, kept in this tab's memory. The screen is mounted
  * again when web data or the brand arrives (the preview must load again with the data); the person may be moving
  * controls at that moment, and must find them where they left them.
  */
@@ -22,12 +22,12 @@ const held = new Map<string, Values>();
 type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
 
 /**
- * `canWrite`: this viewer owns the playground (or is the admin). Anyone else is looking at an example: every control, the
+ * `canWrite`: this viewer owns the lab (or is the admin). Anyone else is looking at an example: every control, the
  * preview and the outputs work for them in their browser, and nothing is settled, reported or saved. Their wording differs:
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version, connected = false }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
+export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version, connected = false }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's lab). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Sorvi team made itself (a lab without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's lab: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string; /** The viewer is past connecting an agent (lib/accounts.ts, agentConnected): an example does not ask them to connect one. */ connected?: boolean }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
@@ -141,7 +141,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   };
   const stopped = frame.status === "failed" && /^The preview was stopped/.test(frame.error ?? "");
 
-  // What happened is stored for the agent, only from the browser of someone who may write the playground: "ok" once the preview has run 1.5 s without an error, else the error.
+  // What happened is stored for the agent, only from the browser of someone who may write the lab: "ok" once the preview has run 1.5 s without an error, else the error.
   const reports = useRef(0);
   useEffect(() => {
     if (!canWrite || version || frame.status === "loading" || reports.current >= 3) return;
@@ -229,12 +229,12 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"} data-tall={tall || undefined}>
       <header className="top k-head">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · {builtByViewer ? "a playground built by your agent" : "a playground built by its author's agent"}</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Sorvi</Link> · {builtByViewer ? "a lab built by your agent" : "a lab built by its author's agent"}</> : (byTeam ? "An example by the Sorvi team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
           <Title className={css.title}>{title}</Title>
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
-      {reading && <p className="small muted" data-building>Reading the web pages this playground is built from. The numbers fill in as each page is read; you do not need to reload.</p>}
+      {reading && <p className="small muted" data-building>Reading the web pages this lab is built from. The numbers fill in as each page is read; you do not need to reload.</p>}
 
       <div className={css.grid}>
         {/* The note is a grid item, so that on a narrow screen it can come after the preview: play first, read second. */}
@@ -244,7 +244,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
           {unseenChange && <button className={`primary ${css.jump}`} data-preview-changed onClick={() => stage.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>The preview changed. Show it</button>}
-          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. {kit.preview.map ? "No agent is in the loop; the map loads its tiles through Clay as you move it." : "No agent and no network call is in the loop."} {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
+          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. {kit.preview.map ? "No agent is in the loop; the map loads its tiles through Sorvi as you move it." : "No agent and no network call is in the loop."} {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
         </section>
 
         <div className={`${css.main} k-main`}>
@@ -281,7 +281,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               <div className={css.settle}>
                 <button className="primary" disabled={busy || isSettled} onClick={settle}>{isSettled ? "Settled" : settled ? "Settle again on these values" : "Settle on these values"}</button>
                 {isSettled ? (
-                  <span className="small ok" data-settled>{builtByViewer ? <>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</> : "✓ Settled. The author's agent reads these outputs when it next reads this playground."}</span>
+                  <span className="small ok" data-settled>{builtByViewer ? <>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.{kit.web?.length ? ` It also keeps this decision in your repository (${recordPath(id)}), and any later session re-checks it from there.` : ""}</> : "✓ Settled. The author's agent reads these outputs when it next reads this lab."}</span>
                 ) : settled ? (
                   <span className="small warn">The controls differ from what you settled.</span>
                 ) : (
@@ -301,7 +301,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                   </div>
                   {triedNow && (
                     <p className="small" data-settle-try role="status">
-                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}
+                      Nothing is saved: this is an example. On your own lab your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${shownValue(c, values[c.id])}`).join(", ")}. {connected ? "Ask your agent to build your own." : <Link href="/connect" prefetch={false}>Connect your own agent</Link>}
                     </p>
                   )}
                 </div>
@@ -338,7 +338,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           be inside the frame: a sandboxed frame opens no link), and it says who sees what. For everyone, the owner included. */}
       {kit.preview.map && (
         <p className="small muted k-about" data-map-note>
-          Map tiles: <a href={TILES.licence} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Clay fetches them from {new URL(TILES.upstream).host} for you: Clay sees the area you look at, and the tile server sees Clay, not your internet address.
+          Map tiles: <a href={TILES.licence} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Sorvi fetches them from {new URL(TILES.upstream).host} for you: Sorvi sees the area you look at, and the tile server sees Sorvi, not your internet address.
         </p>
       )}
       {/* What a preview can and cannot do (sandboxed, not sealed from the network) is stated on /privacy. A person looking
@@ -512,7 +512,7 @@ const FOLD_OVER = 8;
 const words = (id: string) => id.replace(/_/g, " ").replace(/^[a-z]/, (c) => c.toUpperCase());
 const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
 
-/** The values a person opened, by playground and source, kept in this tab's memory. */
+/** The values a person opened, by lab and source, kept in this tab's memory. */
 const opened = new Set<string>();
 
 /**
@@ -537,7 +537,7 @@ function Values({ id, summary, children }: { id: string; summary: string | null;
  * A long table shows first the rows that the preview's own names match (`names`), and the rest on request. A row whose
  * name the read did not find cannot be matched to anything: it is listed last, as such, and counted in a line of its own.
  */
-function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /** The playground's id. */ pg: string; source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
+function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /** The lab's id. */ pg: string; source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
   const [all, setAll] = useState(false);
   const read = st?.read;
   const link = st?.url && /^https:\/\//.test(st.url) ? st.url : null;
@@ -552,7 +552,7 @@ function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /*
   const nameless = key ? rows.filter((r) => r[key] == null) : [];
   const used = key ? named.filter((r) => rowNamed(r[key], names)) : [];
   const foldable = rows.length > FOLD_OVER;
-  // Folded: the rows this playground names, or the first few when it names none. The other rows stay in the page, hidden.
+  // Folded: the rows this lab names, or the first few when it names none. The other rows stay in the page, hidden.
   const first = used.length ? used : (named.length ? named : nameless).slice(0, 5);
   const ordered = [...named, ...nameless];
   const isShown = (r: (typeof rows)[number]) => !foldable || all || first.includes(r);
@@ -594,7 +594,7 @@ function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /*
           </div>
           {foldable && (
             <p className={`small muted ${css.rowsNote}`} data-rows-note>
-              {all ? `All ${rows.length} rows read from ${site}.` : used.length ? `Shown: ${used.length === 1 ? "the 1 row that matches" : `the ${used.length} rows that match`} the names this playground uses, of ${rows.length} read.` : `Shown: the first ${first.length} of ${rows.length} rows read.`}{" "}
+              {all ? `All ${rows.length} rows read from ${site}.` : used.length ? `Shown: ${used.length === 1 ? "the 1 row that matches" : `the ${used.length} rows that match`} the names this lab uses, of ${rows.length} read.` : `Shown: the first ${first.length} of ${rows.length} rows read.`}{" "}
               <button className="small-btn" aria-expanded={all} aria-controls={tableId} onClick={() => setAll(!all)}>{all ? "Show fewer rows" : `Show all ${rows.length} rows read from ${site}`}</button>
             </p>
           )}

@@ -1,7 +1,7 @@
-// A started playground: the person gets a working link in the first seconds, before the agent has researched or written
+// A started lab: the person gets a working link in the first seconds, before the agent has researched or written
 // the spec. start_playground stores it (title and one line on what the agent is doing), the page at its link shows that
-// line, and create_playground with its id replaces it with the built playground at the same URL (lib/store.ts,
-// insertPlayground). Abandoned ones do not pile up: a started playground counts toward its person's playground cap, and
+// line, and create_playground with its id replaces it with the built lab at the same URL (lib/store.ts,
+// insertPlayground). Abandoned ones do not pile up: a started lab counts toward its person's lab cap, and
 // one that no create has filled is dropped 24 hours after its last line (lib/store.ts, STARTED_TTL_MS).
 import { createHash } from "node:crypto";
 import { currentUserId, StorageRefused } from "./accounts.ts";
@@ -23,13 +23,13 @@ export function idOf(title: string): string {
     id += (id ? "-" : "") + w;
   }
   id = id || words.join("-").slice(0, 34);
-  return /^[a-z][a-z0-9-]{2,}$/.test(id) ? id : `playground-${id}`.replace(/-$/, "").slice(0, 34);
+  return /^[a-z][a-z0-9-]{2,}$/.test(id) ? id : `lab-${id}`.replace(/-$/, "").slice(0, 34);
 }
 
 /**
  * What an open page asks for every few seconds: a short hash of what the page renders from the spec (the title, the
- * controls, the view), and the started line while the playground is not built. It changes when a create fills a started
- * playground and on every revision; web reads that arrive do not change it (the pages follow those themselves).
+ * controls, the view), and the started line while the lab is not built. It changes when a create fills a started
+ * lab and on every revision; web reads that arrive do not change it (the pages follow those themselves).
  */
 export const pageRev = (p: Pick<Playground, "domain" | "kit" | "started">): string =>
   createHash("sha256").update(JSON.stringify([p.domain, p.kit?.kit ?? null, !!p.started])).digest("hex").slice(0, 16);
@@ -45,14 +45,14 @@ export type Started = { id: string; title: string; workingOn: string; at: string
 const view = (id: string, p: Playground): Started => ({ id, title: p.domain.question, workingOn: p.started!.workingOn, at: p.started!.at });
 
 /**
- * Start a playground, or change the line of one that is started. All in ONE store update, like a create: the allowance
- * is checked, a free id is taken and the playground is stored together.
- * - With `id`: the caller's own started playground gets the new line (and title, when given). One that is built already
- *   is left as it is (`built`): a late line must never put a built playground back to "started".
- * - Without `id`: a new started playground. A repeated start with the same title (the first answer was lost) returns the
+ * Start a lab, or change the line of one that is started. All in ONE store update, like a create: the allowance
+ * is checked, a free id is taken and the lab is stored together.
+ * - With `id`: the caller's own started lab gets the new line (and title, when given). One that is built already
+ *   is left as it is (`built`): a late line must never put a built lab back to "started".
+ * - Without `id`: a new started lab. A repeated start with the same title (the first answer was lost) returns the
  *   one that exists.
  * Ownership is the same owner, as for a repeated create: the admin may write everything and must not be handed, or
- * change, somebody else's started playground.
+ * change, somebody else's started lab.
  */
 export async function startPlayground(input: { title?: string; workingOn: string; id?: string }, now = () => new Date().toISOString()): Promise<{ started: Started; existed?: boolean } | { built: string } | { missing: string } | { refused: string }> {
   return update((s) => {
@@ -83,5 +83,5 @@ export async function startPlayground(input: { title?: string; workingOn: string
   });
 }
 
-/** The answer of every write on a started playground except the create that fills it. */
-export const notBuilt = (id: string) => `Playground "${id}" is started and not built yet: there is nothing to change or re-check. Build it with create_playground, with "${id}" as the id of the spec.`;
+/** The answer of every write on a started lab except the create that fills it. */
+export const notBuilt = (id: string) => `Lab "${id}" is started and not built yet: there is nothing to change or re-check. Build it with create_playground, with "${id}" as the id of the spec.`;

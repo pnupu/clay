@@ -1,5 +1,5 @@
 // Proof that the checker can fail: it opens fixture pages with known defects and must fail each for the right reason.
-// No agent and no Clay server are needed. Run: node evals/selftest.ts
+// No agent and no Sorvi server are needed. Run: node evals/selftest.ts
 import { createServer } from "node:http";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";

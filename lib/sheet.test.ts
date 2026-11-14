@@ -23,14 +23,14 @@ test("view.data makes a data view: the kit keeps the mark, a spec made from it h
   const stored = (s: Spec) => ({ domain: parsed(s).domain, kit: state(s) }) as unknown as Playground;
   assert.equal(toSpec(stored(MODEL_EXAMPLE)).view.data, true);
   assert.equal("data" in toSpec(stored(BUTTON_EXAMPLE)).view, false);
-  // Clay's styles and Tailwind's reset do not go together, and a price playground has no preview to style.
+  // Sorvi's styles and Tailwind's reset do not go together, and a price lab has no preview to style.
   const both = parseSpec({ ...BUTTON_EXAMPLE, view: { ...BUTTON_EXAMPLE.view, data: true } });
   assert.ok(!both.ok && both.errors.some((e) => /view\.data and view\.tailwind do not go together/.test(e)));
   const price = parseSpec({ id: "mail-price", title: "Which email service should we use?", view: { type: "price_ranking", data: true }, data: { price_pages: { product: "transactional email API", metrics: [{ id: "emails", label: "Emails per month", unit: "emails", describe: "emails sent per month", min: 1000, max: 100000, initial: 10000 }], vendors: [{ id: "one", name: "One", domain: "one.example.org" }, { id: "two", name: "Two", domain: "two.example.org" }] } } });
   assert.ok(!price.ok && price.errors.some((e) => /view\.data: only a preview view has data/.test(e)));
 });
 
-test("the frame of a data view brings Clay's styles and typeface; no other frame does, and the policy is the same", () => {
+test("the frame of a data view brings Sorvi's styles and typeface; no other frame does, and the policy is the same", () => {
   const font = "data:font/woff2;base64,AAAA";
   const doc = frameDocument(state(MODEL_EXAMPLE), {}, "", font);
   assert.ok(doc.includes(dataSheet(font)));
@@ -109,7 +109,7 @@ test("the look of a page is checked in a time that grows with its length: a view
   }
 });
 
-test("a page of data in styles of its own is a problem for the agent that builds it; a data view with Clay's parts has none", () => {
+test("a page of data in styles of its own is a problem for the agent that builds it; a data view with Sorvi's parts has none", () => {
   assert.deepEqual(parsed(MODEL_EXAMPLE).warnings, []);
   // Web facts without view.data: told to become a data view. A map with web facts is not a table.
   const plain = parsed(model({ data: undefined, css: "table { font: 14px system-ui; }" }));
@@ -123,12 +123,12 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // A data view that brings a typeface, small text and colours is told about each, with what it found.
   const own = parsed(model({ css: "#rows td { font-family: Inter; font-size: 11px; } .a { color: #111827; background: #EFF6FF; border-color: rgb(1, 2, 3); } #add { font-size: 13px }", html: `${MODEL_EXAMPLE.view.html}<p style="font-size: 10.5px; color: #9ca3af">x</p>` })).warnings;
   assert.equal(own.length, 3);
-  assert.match(own[0], /a data view \(view\.data\) has Clay's typeface/);
+  assert.match(own[0], /a data view \(view\.data\) has Sorvi's typeface/);
   assert.match(own[1], /font-size 11px, 10\.5px is under 12 px/);
   assert.match(own[2], /4 colours of its own \(#111827, #eff6ff, rgb\(1,2,3\), #9ca3af\)/);
   // The size in the font shorthand and a size in rem are read too.
   const data = (css: string) => styleProblems({ preview: { html: "", css, data: true } });
-  assert.match(data("td { font: 500 10px/1.2 sans-serif }").join("\n"), /Clay's typeface[\s\S]*font-size 10px is under 12 px/);
+  assert.match(data("td { font: 500 10px/1.2 sans-serif }").join("\n"), /Sorvi's typeface[\s\S]*font-size 10px is under 12 px/);
   assert.match(data(".x { font-size: .65rem }")[0], /font-size \.65rem is under 12 px/);
   // The variables, a size of 12 px or more and up to two colours of its own (a brand colour, a series) are fine. An id
   // in a selector is not a colour, also in a list of selectors over two lines, and one colour written in three ways is one.
@@ -167,8 +167,8 @@ test("a page of data in styles of its own is a problem for the agent that builds
   assert.match(look[0], /font-size 9px is under 12 px/);
   assert.match(look[1], /3 colours of its own \(#111111, #222222, #333333\)/);
   // A name that is no control is read as one word: the declaration around it stays whole.
-  assert.match(data(".a { font-family: {{face}} }")[0], /Clay's typeface/);
-  assert.match(data(".a { font: 600 10px/{{lh}} Arial }").join("\n"), /Clay's typeface[\s\S]*font-size 10px is under 12 px/);
+  assert.match(data(".a { font-family: {{face}} }")[0], /Sorvi's typeface/);
+  assert.match(data(".a { font: 600 10px/{{lh}} Arial }").join("\n"), /Sorvi's typeface[\s\S]*font-size 10px is under 12 px/);
   assert.deepEqual(data(".a { font-size: {{size}}px; color: {{ink}} }"), []);
   // The size before a function is read; the sizes inside one are not.
   assert.match(data(".a { font: 10px/1.2 var(--mono) }").join("\n"), /font-size 10px is under 12 px/);
@@ -181,6 +181,6 @@ test("a page of data in styles of its own is a problem for the agent that builds
   assert.equal(styleProblems({ preview: { html: "", css: `.a { ${"{{tg}}".repeat(50)} } td { font-size: 9px }`, data: true }, controls: [long] }).length, 1);
   // url(#grad) names a gradient or a clip path of a chart, not a colour.
   assert.deepEqual(data(".a { fill: url(#abc); stroke: url( '#def'); mask: url(#fed); color: #2a78d6 }"), []);
-  // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
+  // "font: inherit" takes Sorvi's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });

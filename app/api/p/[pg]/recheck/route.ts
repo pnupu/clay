@@ -9,7 +9,7 @@ export const maxDuration = 300;
 /**
  * "Re-check now": one source ({id}) or all. Same function the webhook and the agent tool call.
  * With {"verdict": true} the answer is for a script that has no page (the scheduled re-check of a person's repository,
- * public/clay-recheck.yml): every source is read again, and the answer starts with the verdict fields of the
+ * public/sorvi-recheck.yml): every source is read again, and the answer starts with the verdict fields of the
  * agent's recheck_playground, built by the same functions (lib/record.ts). The guard above it is the same: the owner's
  * agent key or session, the caps of that person.
  */
@@ -36,7 +36,7 @@ async function withVerdict(req: Request, pg: string, before: Playground, trigger
   // The start of this check: the verdict counts only pages that were read, and captured, in it (fullRead in lib/record.ts).
   const began = new Date().toISOString();
   if (before.kit) {
-    if (!before.kit.kit.web?.length) return Response.json({ ...head, verdict: "Nothing to re-check: this playground reads no web page." });
+    if (!before.kit.kit.web?.length) return Response.json({ ...head, verdict: "Nothing to re-check: this lab reads no web page." });
     const w = await recheckWeb(pg);
     const now = (await load()).playgrounds[pg];
     const checked_at = new Date().toISOString();

@@ -67,7 +67,7 @@ export function cardText(note: string, max = 200): { quote: string } | { blurb: 
 }
 
 /**
- * Why the agent left something out of a playground, as the page shows it after the name and a dash: "SendGrid — its
+ * Why the agent left something out of a lab, as the page shows it after the name and a dash: "SendGrid — its
  * pricing page states no price." The reason is the agent's own text and stays as written (no word is re-cased, so a name
  * keeps its spelling); only a full stop is added when the text does not end a sentence.
  */
@@ -77,12 +77,12 @@ export function reasonOf(reason: string): string {
 }
 
 /**
- * The label of a playground on a card, from what it is built on: a preview with web sources or a brand is about live web
- * data, a plain preview is the real thing tuned by hand, a price playground keeps its own label. `whose` words the
+ * The label of a lab on a card, from what it is built on: a preview with web sources or a brand is about live web
+ * data, a plain preview is the real thing tuned by hand, a price lab keeps its own label. `whose` words the
  * person's own data: "your numbers" in a person's own list, "their numbers" on an example card.
  */
 export function kindLabel(p: { price: boolean; preview: boolean; web: number; brand: boolean; inline: boolean }, whose: "yours" | "theirs" = "theirs"): string {
-  if (!p.preview) return p.price ? "Price decision" : "Playground";
+  if (!p.preview) return p.price ? "Price decision" : "Lab";
   const numbers = p.inline ? ` × ${whose === "yours" ? "your" : "their"} numbers` : "";
   if (p.web > 0) return `Live web data${p.brand ? " and brand colours" : ""}${numbers}`;
   if (p.brand) return "Real brand colours";
@@ -156,6 +156,6 @@ export function rowNamed(name: unknown, names: JoinNames): boolean {
   return names.runs.some((run) => run.length <= words.length && run.every((w, j) => words[words.length - run.length + j] === w));
 }
 
-/** The file of one standing decision in the person's repository: one file per playground, at a fixed place (lib/record.ts).
+/** The file of one standing decision in the person's repository: one file per lab, at a fixed place (lib/record.ts).
  * It is here because the pages name it too, and this module has no dependency. */
-export const recordPath = (id: string) => `.clay/decisions/${id}.md`;
+export const recordPath = (id: string) => `.sorvi/decisions/${id}.md`;

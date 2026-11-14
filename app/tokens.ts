@@ -1,5 +1,5 @@
 /**
- * The design system's tokens, as Taste Skill 2.5.1 dealt them for Clay (`start.mjs css --page software --palette
+ * The design system's tokens, as Taste Skill 2.5.1 dealt them for Sorvi (`start.mjs css --page software --palette
  * stone-blueprint --type gabarito --radius sharp`): the palette and the type pairing, kept as printed. Both root layouts
  * put this block in the page: the site pages (the landing page, /connect) after the kit's stylesheets, the app pages
  * before their own stylesheet (app/app.css), which reads the same tokens.

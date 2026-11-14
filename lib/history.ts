@@ -1,4 +1,4 @@
-// The change history of a price playground, in words a buyer reads: what a vendor did, where the change came from, and
+// The change history of a price lab, in words a buyer reads: what a vendor did, where the change came from, and
 // what it did to the saved choice at that time. Past tense: these rows are history; the state now is said once, above
 // them. Pure functions over stored events, so the page and its tests share the wording.
 import type { FieldChange, Verdict } from "./diff.ts";
@@ -82,7 +82,7 @@ export function sourceWords(trigger: "manual" | "webhook" | "auto", demo: boolea
  * `verdict`: as stored with the event; null when nothing was judged. `earlier`: the verdict of the change before this one
  * (for the same saved choice), which says whether the choice held until then. `current`: the event came after the choice
  * that is saved now; an older event was judged, if at all, for a choice that has since been replaced.
- * `own`: the reader owns the playground ("your choice"); a visitor reads "the saved choice".
+ * `own`: the reader owns the lab ("your choice"); a visitor reads "the saved choice".
  */
 export function effectSentence(verdict: Verdict | null, earlier: Verdict | null, o: { current: boolean; own: boolean; /** The saved vendor: its id and its name. */ chosenId: string; chosen: string; nameOf: (id: string | null) => string | null }): string {
   if (!verdict) return "Not judged at the time: no choice was saved then.";

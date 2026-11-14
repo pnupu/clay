@@ -98,10 +98,10 @@ test("tool use: a build case needs the create tool, a no-playground case must no
   assert.equal(toolUse(byId("price-email"), [call("create_playground")], null).status, "pass");
   const none = toolUse(byId("price-email"), [call("read_playground")], null);
   assert.deepEqual([none.id, none.status], ["tool_use", "fail"]);
-  assert.match(toolUse(byId("price-email"), [], null).reason, /never called create_playground or any Clay tool/);
+  assert.match(toolUse(byId("price-email"), [], null).reason, /never called create_playground or any Sorvi tool/);
   // With its normal tools on, the reason says what the agent did instead of building.
   const plain = (tool: string): Call => ({ tool, mcp: false, input: {}, result: "", isError: false });
-  assert.match(toolUse(byId("look-button"), [plain("Bash"), plain("Edit"), plain("Edit")], null).reason, /or any Clay tool; instead it used Bash, Edit$/);
+  assert.match(toolUse(byId("look-button"), [plain("Bash"), plain("Edit"), plain("Edit")], null).reason, /or any Sorvi tool; instead it used Bash, Edit$/);
   assert.match(toolUse(byId("price-email"), [], null).reason, /; it answered in words, with no tool$/);
   assert.match(toolUse(byId("price-email"), [{ ...plain("read_playground"), mcp: true }], null).reason, /\(it called read_playground\)$/);
   assert.equal(toolUse(byId("none-fact"), [], null).status, "pass");
@@ -284,7 +284,7 @@ test("time to the link: from the start of the leg to the first create result tha
   const built = JSON.stringify({ playground_id: "signup-button", url: "http://127.0.0.1:1/p/signup-button" });
   // The leg lasted 40 s and its last message is at second 50, so it started at second 10. A refused create and a
   // kit_reference result do not count; the second create returns the URL at second 34.
-  const leg = [use(12, "a", "mcp__clay__kit_reference"), result(13, "a", built), use(20, "b", "mcp__clay__create_playground"), result(21, "b", "The spec is not valid. Nothing was created.", true), use(33, "c", "mcp__clay__create_playground"), result(34, "c", built), JSON.stringify({ type: "assistant", timestamp: at(50), message: { content: [{ type: "text", text: "Here it is." }] } }), JSON.stringify({ type: "result", duration_ms: 40_000 })].join("\n");
+  const leg = [use(12, "a", "mcp__sorvi__kit_reference"), result(13, "a", built), use(20, "b", "mcp__sorvi__create_playground"), result(21, "b", "The spec is not valid. Nothing was created.", true), use(33, "c", "mcp__sorvi__create_playground"), result(34, "c", built), JSON.stringify({ type: "assistant", timestamp: at(50), message: { content: [{ type: "text", text: "Here it is." }] } }), JSON.stringify({ type: "result", duration_ms: 40_000 })].join("\n");
   assert.equal(linkSeconds(leg), 24);
   assert.equal(linkSeconds(leg.split("\n").filter((l) => !l.includes('"c"')).join("\n")), null); // no create succeeded
   assert.equal(linkSeconds(leg.replace(/"timestamp":"[^"]*",/g, "")), null); // a transcript without timestamps
@@ -293,15 +293,15 @@ test("time to the link: from the start of the leg to the first create result tha
   // With a start in the first turn, the link is its result (second 14); the build lands at 34 under the same id. The
   // person has it when a visible reply holds the URL: second 16.
   const said = JSON.stringify({ type: "assistant", timestamp: at(16), message: { content: [{ type: "text", text: "Open http://127.0.0.1:1/p/signup-button while I build." }] } });
-  const started = [use(13, "s", "mcp__clay__start_playground"), result(14, "s", built), said, ...leg.split("\n")].join("\n");
+  const started = [use(13, "s", "mcp__sorvi__start_playground"), result(14, "s", built), said, ...leg.split("\n")].join("\n");
   assert.deepEqual(linkTimes(started), { link: 4, built: 24, said: 6, startedFirst: true, orphanStart: false });
   // A start that comes after the create call is not "first", and a refused start gives no link.
-  const late = [...leg.split("\n").slice(0, 3), use(22, "s", "mcp__clay__start_playground"), result(23, "s", built), ...leg.split("\n").slice(3)].join("\n");
+  const late = [...leg.split("\n").slice(0, 3), use(22, "s", "mcp__sorvi__start_playground"), result(23, "s", built), ...leg.split("\n").slice(3)].join("\n");
   assert.deepEqual(linkTimes(late), { link: 13, built: 24, said: null, startedFirst: false, orphanStart: false });
-  assert.deepEqual(linkTimes([use(13, "s", "mcp__clay__start_playground"), result(14, "s", "Nothing was started.", true), ...leg.split("\n")].join("\n")), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: false });
+  assert.deepEqual(linkTimes([use(13, "s", "mcp__sorvi__start_playground"), result(14, "s", "Nothing was started.", true), ...leg.split("\n")].join("\n")), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: false });
   // A start that the create did not fill (another id) is not the link: the person's page never becomes the playground.
   const other = JSON.stringify({ playground_id: "another-id", url: "http://127.0.0.1:1/p/another-id" });
-  assert.deepEqual(linkTimes([use(13, "s", "mcp__clay__start_playground"), result(14, "s", other), ...leg.split("\n")].join("\n")), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: true });
+  assert.deepEqual(linkTimes([use(13, "s", "mcp__sorvi__start_playground"), result(14, "s", other), ...leg.split("\n")].join("\n")), { link: 24, built: 24, said: null, startedFirst: false, orphanStart: true });
 });
 
 test("tool use: a start where no playground was right counts like a build", () => {

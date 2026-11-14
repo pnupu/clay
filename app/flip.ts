@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 
 /**
- * Rows that change places glide to their new place instead of jumping (the ranking of a price playground, on the landing
+ * Rows that change places glide to their new place instead of jumping (the ranking of a price lab, on the landing
  * page and on its own page). Each child of the list names itself with `data-flip`; after a render in which the order
  * changed, a child that moved starts from where it was and travels to where it is. Nothing else about the layout is
  * touched, rows may have any height, and the server-rendered order is simply the order. With reduced motion the rows

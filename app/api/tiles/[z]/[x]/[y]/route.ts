@@ -40,7 +40,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ z: strin
   // The site as the tile server should know it: the configured public address, else the host this request came to.
   const site = publicBase() ?? requestOrigin(req.url, req.headers.get("host"), req.headers.get("x-forwarded-proto"));
   try {
-    const r = await fetch(`${TILES.upstream}/${t.z}/${t.x}/${t.y}.png`, { headers: { "User-Agent": `Clay map previews (+${site})`, Referer: `${site}/` }, signal: AbortSignal.timeout(8_000) });
+    const r = await fetch(`${TILES.upstream}/${t.z}/${t.x}/${t.y}.png`, { headers: { "User-Agent": `Sorvi map previews (+${site})`, Referer: `${site}/` }, signal: AbortSignal.timeout(8_000) });
     if (!r.ok || !(r.headers.get("content-type") ?? "").startsWith("image/png")) return none(502);
     const body = await r.arrayBuffer();
     if (body.byteLength > MAX_BYTES) return none(502);

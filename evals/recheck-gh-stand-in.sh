@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A stand-in for the GitHub CLI, for evals/recheck-workflow.test.ts and for a local proof of connect/github/clay-recheck.sh.
+# A stand-in for the GitHub CLI, for evals/recheck-workflow.test.ts and for a local proof of connect/github/sorvi-recheck.sh.
 # It keeps the issues as GitHub's JSON in $GH_STAND_IN/issues.json (number, state, title, body, labels), answers
 # "issue list" by running the caller's own --jq expression over them, and records every call in $GH_STAND_IN/calls.log.
 # GH_STAND_IN_FAIL names calls that fail (for example "list" or "create"), to play a broken set-up. It contacts nothing.

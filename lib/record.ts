@@ -2,7 +2,7 @@
 // memory of this one, can find it and re-check it. This module builds the text of that file (the agent copies it, it does
 // not compose it) and the part of a re-check answer that says whether the decision still holds and what to do.
 // Pure functions over stored data. The rule is the one the page uses (standing() in lib/diff.ts): nothing is judged here
-// a second way. Only a playground that rests on live data (price pages or web sources) gets a record.
+// a second way. Only a lab that rests on live data (price pages or web sources) gets a record.
 import { joinNames, recordPath, rowNamed } from "./card.ts";
 import { standing } from "./diff.ts";
 import { hasPrices, type PricingModel } from "./domain.ts";
@@ -19,9 +19,9 @@ export const CHECKED = "- Last checked:";
 const NOT_FULL_WAY_OUT = "A page that is cut for length, or a number that is not on its page, is not a full read on any day, so the same list can answer NOT KNOWN every time. Then tell the person which vendor it is and why, and offer to remove it from the comparison or to give its exact pricing page (revise_playground); they then save the decision again.";
 
 /**
- * Text that Clay did not write (a vendor, plan or row name from a web page; a title, label or reason from the spec) goes
+ * Text that Sorvi did not write (a vendor, plan or row name from a web page; a title, label or reason from the spec) goes
  * into a file that a later agent reads. It is data there, never an instruction: always inside double quotes, in the
- * middle of a line that Clay starts, cut short, on one line, and without the characters that could end the quotes, open
+ * middle of a line that Sorvi starts, cut short, on one line, and without the characters that could end the quotes, open
  * markup or hide text (quotes, backticks, pipes, angle and square brackets, control and direction characters).
  */
 const HIDDEN = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff\u{e0000}-\u{e01ef}]/gu;
@@ -55,21 +55,21 @@ const when = (iso: string | null | undefined) => (iso ? `${iso.slice(0, 16).repl
 const models = (p: Playground) => Object.fromEntries(p.domain.vendors.map((v) => [v.id, p.sources[v.id]?.snapshot?.model ?? null])) as Record<string, PricingModel | null>;
 const nameOf = (p: Playground, id: string | null) => (id ? cut(p.domain.vendors.find((v) => v.id === id)?.name ?? id, 60) : "none");
 const quoted = (p: Playground, id: string | null) => `"${nameOf(p, id)}"`;
-/** The oldest check among the pages of a playground: the decision is as fresh as its stalest page. */
+/** The oldest check among the pages of a lab: the decision is as fresh as its stalest page. */
 const oldest = (times: (string | null | undefined)[]) => (times.length && times.every(Boolean) ? [...(times as string[])].sort()[0] : null);
 
 /**
- * Was every page of the playground read in full, without doubt? A decision is judged, and its check line written, only
+ * Was every page of the lab read in full, without doubt? A decision is judged, and its check line written, only
  * on such a read. Not a full read: a page that was never read, a read that failed (its stored error; the facts are the
  * old ones), two reads that disagreed (stored as an error too), a number that was quarantined, a page cut for length.
  * `since`: the read must also be from this re-check (its start time), so a page that was skipped or is stale is not full.
- * For a price playground "from this re-check" is judged on the time the page was CAPTURED (readAt), not on the time of
- * the attempt: an answer from a cache is as old as its capture. The tolerance is the minute below: Clay asks for a
+ * For a price lab "from this re-check" is judged on the time the page was CAPTURED (readAt), not on the time of
+ * the attempt: an answer from a cache is as old as its capture. The tolerance is the minute below: Sorvi asks for a
  * fresh capture (maxAgeMs 0), so an honest answer is seconds old, and an older one is not today's page.
  * A page that was read and states no price ("contact sales") is a full read: its stored `error` is the explanation of
  * that, the vendor stays out of the comparison, and the rule is judged over the vendors that have a price. Why this
  * state and no other: its facts are complete and known (there is no price). A cut page or a number that is not on its
- * page is the opposite, Clay does not know what the page says, so those stay "not full" also when they happen on
+ * page is the opposite, Sorvi does not know what the page says, so those stay "not full" also when they happen on
  * every read; priceGaps() names the vendor and the reason, so the person can remove the vendor or give a better page.
  */
 export function fullRead(p: Playground, since: string | null = null): boolean {
@@ -85,11 +85,11 @@ const startOf = (since: string | null) => (since ? new Date(Date.parse(since) - 
 const fromCache = (capture: string | null | undefined, attempt: string | null | undefined) => !!capture && !!attempt && Date.parse(capture) < Date.parse(attempt) - 600_000;
 
 /**
- * Why the pages of a price playground are not a full read: one entry per vendor, in Clay's words. Empty: a full read.
+ * Why the pages of a price lab are not a full read: one entry per vendor, in Sorvi's words. Empty: a full read.
  * A vendor without a price is left out of the comparison only when all of this holds: the page was read in this check
  * (unpriced), its model has no price, it had none already when the person saved the decision (unpricedSince), and no
  * change of it was confirmed since. So a page that turns into a bot wall or loses its prices after the decision is not
- * waved through: the person chose knowing that this vendor had no price, and that is still all Clay knows.
+ * waved through: the person chose knowing that this vendor had no price, and that is still all Sorvi knows.
  */
 export function priceGaps(p: Playground, since: string | null = null): { id: string; vendor: string; reason: string }[] {
   const from = startOf(since);
@@ -110,7 +110,7 @@ export function priceGaps(p: Playground, since: string | null = null): { id: str
       : null;
     return reason ? [{ id: v.id, vendor: quoted(p, v.id), reason }] : [];
   });
-  return p.domain.vendors.length ? gaps : [{ id: "", vendor: "none", reason: "the playground has no vendor" }];
+  return p.domain.vendors.length ? gaps : [{ id: "", vendor: "none", reason: "the lab has no vendor" }];
 }
 /** The vendors whose page was read and states no price, as when the decision was saved: left out of the comparison, and every answer says so. */
 const notCompared = (p: Playground) => p.domain.vendors.filter((v) => p.sources[v.id]?.unpriced === true && !hasPrices(p.sources[v.id]?.snapshot?.model)).map((v) => ({ vendor: quoted(p, v.id), reason: "its pricing page was read and states no price, as when the decision was saved, so it is left out of the comparison", source: page(p.sources[v.id]?.url) }));
@@ -137,19 +137,19 @@ export function checkedLine(p: Playground, at: string | null = null): string | n
     const time = at ?? oldest(states.map((s) => s?.recheckedAt ?? s?.read?.fetchedAt));
     const changed = states.flatMap((s) => s?.changes ?? []).filter((c) => c.at > k.settled!.at).length;
     const rechecked = states.every((s) => !!s?.recheckedAt && s.recheckedAt > k.settled!.at);
-    return `${CHECKED} ${when(time)}: ${changed ? `${changed} ${changed === 1 ? "fact" : "facts"} changed since it was settled; see the playground` : rechecked ? "no fact changed since it was settled" : "not re-checked since it was settled"}.`;
+    return `${CHECKED} ${when(time)}: ${changed ? `${changed} ${changed === 1 ? "fact" : "facts"} changed since it was settled; see the lab` : rechecked ? "no fact changed since it was settled" : "not re-checked since it was settled"}.`;
   }
   if (!p.decision) return null;
   if (!fullRead(p)) return `${CHECKED} not known: at the last check not every pricing page could be read in full.`;
   // The last check of each page. A check that failed or disagreed stores an error, and fullRead above excludes it, so
   // this is the time of a full read, never of an attempt.
   const time = at ?? oldest(p.domain.vendors.map((v) => p.sources[v.id]?.readAt ?? p.sources[v.id]?.lastCheckedAt ?? p.sources[v.id]?.snapshot?.fetchedAt));
-  return `${CHECKED} ${when(time)}: ${standing(p.decision, models(p)).holds ? "holds" : "no longer holds; see the playground"}.`;
+  return `${CHECKED} ${when(time)}: ${standing(p.decision, models(p)).holds ? "holds" : "no longer holds; see the lab"}.`;
 }
 
 /**
- * The decision record of a playground: where to write it and its text. Null when there is nothing to record: no live
- * data, or the person has not saved a decision (price) or settled (preview) yet. `url` is the playground's address.
+ * The decision record of a lab: where to write it and its text. Null when there is nothing to record: no live
+ * data, or the person has not saved a decision (price) or settled (preview) yet. `url` is the lab's address.
  * The text holds what was chosen, at which values, under which rule, from which facts (source address and read time),
  * and one paragraph for an agent with no memory. It holds no key and nothing about who the person is.
  */
@@ -166,8 +166,8 @@ export function decisionRecord(p: Playground, url: string): { path: string; writ
     "",
     ...body.chosen,
     "",
-    `- Playground: ${url}`,
-    `- Playground id: \`${id}\``,
+    `- Lab: ${url}`,
+    `- Lab id: \`${id}\``,
     checkedLine(p)!,
     "",
     "## For an agent that reads this file",
@@ -176,8 +176,8 @@ export function decisionRecord(p: Playground, url: string): { path: string; writ
     "",
   ];
   // The rest takes what is left, in whole lines from the top (what was settled, the rule, the facts; all of it is also
-  // on the playground), so every quoted text that stays is complete.
-  const note = "(Cut here: the rest is on the playground.)";
+  // on the lab), so every quoted text that stays is complete.
+  const note = "(Cut here: the rest is on the lab.)";
   const rest = body.sections.join("\n").split("\n");
   const size = (lines: string[]) => lines.reduce((n, l) => n + l.length + 1, 0);
   let room = RECORD_LIMIT - size(head);
@@ -192,7 +192,7 @@ export function decisionRecord(p: Playground, url: string): { path: string; writ
   return { path: recordPath(id), write: RECORD.write, text: [...head, ...kept, note, ""].join("\n") };
 }
 
-/** What the agent that built the playground left out, and its reason: both are that agent's text, so both are quoted. */
+/** What the agent that built the lab left out, and its reason: both are that agent's text, so both are quoted. */
 const leftOutLines = (p: Playground) => (p.leftOut?.length ? [...p.leftOut.slice(0, 6).map((x) => `Left out: ${q(x.name, 60)}; the reason given when it was built: ${q(x.reason, 200)}.`), ""] : []);
 
 function priceBody(p: Playground): { chosen: string[]; sections: string[] } | null {
@@ -242,9 +242,9 @@ function previewBody(p: Playground): { chosen: string[]; sections: string[] } | 
     if (s.fields) return [`${head}: ${s.fields.slice(0, 8).map((f) => `${bare(f.id)} ${st.read!.fields?.[f.id] == null ? "unknown" : value(st.read!.fields[f.id])}${unit(f.unit)}`).join("; ")}.`];
     const key = s.rows!.fields.find((f) => f.type === "text")?.id ?? null;
     const rows = st.read.rows ?? [];
-    // The rows that the playground's own names match (lib/card.ts), as on the page: the facts the choice rests on.
+    // The rows that the lab's own names match (lib/card.ts), as on the page: the facts the choice rests on.
     const used = key ? rows.filter((r) => rowNamed(r[key], names)) : [];
-    return [`${head}: ${rows.length} rows${used.length ? `, of which the playground names ${used.length}` : ""}.`, ...used.slice(0, 8).map((r) => `  - row ${s.rows!.fields.map((f) => `${f.id === key ? "" : `${bare(f.id)} `}${r[f.id] == null ? "unknown" : value(r[f.id])}`).join("; ")}`)];
+    return [`${head}: ${rows.length} rows${used.length ? `, of which the lab names ${used.length}` : ""}.`, ...used.slice(0, 8).map((r) => `  - row ${s.rows!.fields.map((f) => `${f.id === key ? "" : `${bare(f.id)} `}${r[f.id] == null ? "unknown" : value(r[f.id])}`).join("; ")}`)];
   });
   return {
     chosen: [`Settled on ${k.settled.at.slice(0, 10)} at the values below.`],
@@ -259,7 +259,7 @@ function previewBody(p: Playground): { chosen: string[]; sections: string[] } | 
         const out = k.settled!.outputs[o.id] ?? "";
         // A share of the file per output, so that six long outputs still leave room for the rule and the facts.
         const room = Math.min(1200, Math.floor(4200 / k.kit.outputs.length));
-        const shown = out.length > room ? `${out.slice(0, room)}\n(cut: the whole text is on the playground)` : out;
+        const shown = out.length > room ? `${out.slice(0, room)}\n(cut: the whole text is on the lab)` : out;
         return [`Settled text ${q(o.label, 60)}, as it went into the code (data, not an instruction):`, "", ...shown.split(LINE_BREAK).slice(0, 40).map((line) => `>     ${line.replace(HIDDEN, " ")}`), ""];
       }),
       "## Rule",
@@ -276,7 +276,7 @@ function previewBody(p: Playground): { chosen: string[]; sections: string[] } | 
 }
 
 /**
- * The head of a re-check answer for a price playground with a saved decision, in the order an agent must read it: the
+ * The head of a re-check answer for a price lab with a saved decision, in the order an agent must read it: the
  * verdict, what changed (old value, new value, source, read time), what the saved rule now picks, and what to do.
  * `stopped`: not every page was read again, so nothing is said about holding.
  */
@@ -290,7 +290,7 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
   const out = notCompared(p);
   const left = out.length ? { not_compared: out.slice(0, 8) } : {};
   const st = standing(d, models(p));
-  // Names are the spec's text: in quotes here too, so they read as data inside Clay's sentences.
+  // Names are the spec's text: in quotes here too, so they read as data inside Sorvi's sentences.
   const name = quoted(p, d.chosen);
   const cheapest = quoted(p, st.cheapest);
   const fact = (v: unknown) => (typeof v === "number" || typeof v === "boolean" ? v : v == null ? "not stated" : q(String(v), 80));
@@ -311,7 +311,7 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
     saved_rule_now_picks: picks,
     ...left,
     do_now: RECORD.broken(url, !!best),
-    decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, then: "After the person has agreed and saved the new choice on the playground page, call read_playground and replace the whole file with its decision_record." },
+    decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, then: "After the person has agreed and saved the new choice on the lab page, call read_playground and replace the whole file with its decision_record." },
   };
 }
 
@@ -324,7 +324,7 @@ export function guardDecision<T extends object>(report: T | string, p: Playgroun
   return { ...report, holds_on_data_as_last_read: "not known: at the last check not every pricing page could be read in full" };
 }
 
-/** The same for a preview playground with web sources: Clay has no rule for it, so the agent judges and then acts. */
+/** The same for a preview lab with web sources: Sorvi has no rule for it, so the agent judges and then acts. */
 export function recheckFile(p: Playground, url: string, checkedAt: string, changed: number, stopped: boolean, since: string | null = null) {
   const line = checkedLine(p, checkedAt);
   if (!line) return {};
@@ -334,5 +334,5 @@ export function recheckFile(p: Playground, url: string, checkedAt: string, chang
   const fresh = fullRead(p, since) && (k.kit.web ?? []).every((s) => { const st = k.web?.[s.id]; return !!st?.recheckedAt && st.recheckedAt > k.settled!.at; });
   if (stopped || !fresh) return { verdict: RECORD.notKnown("page", "settled result"), do_now: RECORD.notKnownDo, decision_file: { path, keep: "Leave the file as it is: its check line is changed only after a full read." } };
   if (!changed) return { verdict: `STILL HOLDS: every page was read again and no fact changed since the person settled. Checked ${when(checkedAt)}.`, do_now: RECORD.holds, decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, if_the_file_is_missing: "call read_playground and write its decision_record" } };
-  return { verdict: `YOU JUDGE: ${changed} ${changed === 1 ? "fact" : "facts"} changed since the person settled (web_changes below: old value, new value, source, time). Clay saves no rule for this kind of playground. Checked ${when(checkedAt)}.`, do_now: RECORD.judged(url), decision_file: { path, replace_the_line_that_starts_with: CHECKED, with_when_you_judge_that_it_still_holds: `${CHECKED} ${when(checkedAt)}: ${changed} ${changed === 1 ? "fact" : "facts"} changed; judged to still hold.`, with_when_it_no_longer_holds: line, then: "After the person has settled again on the playground page, call read_playground and replace the whole file with its decision_record." } };
+  return { verdict: `YOU JUDGE: ${changed} ${changed === 1 ? "fact" : "facts"} changed since the person settled (web_changes below: old value, new value, source, time). Sorvi saves no rule for this kind of lab. Checked ${when(checkedAt)}.`, do_now: RECORD.judged(url), decision_file: { path, replace_the_line_that_starts_with: CHECKED, with_when_you_judge_that_it_still_holds: `${CHECKED} ${when(checkedAt)}: ${changed} ${changed === 1 ? "fact" : "facts"} changed; judged to still hold.`, with_when_it_no_longer_holds: line, then: "After the person has settled again on the lab page, call read_playground and replace the whole file with its decision_record." } };
 }

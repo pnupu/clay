@@ -9,17 +9,17 @@ import { load } from "@/lib/store";
 /** What a browser without Fetch Metadata sees inside the frame: a plain notice, no script, no request. */
 const unavailable = () =>
   new Response(
-    `<!doctype html><meta charset="utf-8"><body style="font:14px/1.5 system-ui,sans-serif;margin:16px;color:#333">Preview unavailable in this browser. Clay runs a preview only when the browser says it is shown inside its playground page (Fetch Metadata), which current Chrome, Edge, Firefox and Safari (16.4 or later) do.</body>`,
+    `<!doctype html><meta charset="utf-8"><body style="font:14px/1.5 system-ui,sans-serif;margin:16px;color:#333">Preview unavailable in this browser. Sorvi runs a preview only when the browser says it is shown inside its lab page (Fetch Metadata), which current Chrome, Edge, Firefox and Safari (16.4 or later) do.</body>`,
     { status: 403, headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" } },
   );
 
 /**
- * The frame of the admin's playground page is pinned to the version that page rendered (app/manage.tsx, MarkExample).
- * When the playground changed since, this says so instead of running the newer code: the admin marks only what they saw.
+ * The frame of the admin's lab page is pinned to the version that page rendered (app/manage.tsx, MarkExample).
+ * When the lab changed since, this says so instead of running the newer code: the admin marks only what they saw.
  */
 const changed = () =>
   new Response(
-    `<!doctype html><meta charset="utf-8"><body style="font:14px/1.5 system-ui,sans-serif;margin:16px;color:#333">This playground changed after this page loaded. Reload the page to see it as it is now.<script>parent.postMessage({clay:1,type:"error",message:"This playground changed after this page loaded. Reload the page, look at it again, then mark it."},"*")</script></body>`,
+    `<!doctype html><meta charset="utf-8"><body style="font:14px/1.5 system-ui,sans-serif;margin:16px;color:#333">This lab changed after this page loaded. Reload the page to see it as it is now.<script>parent.postMessage({clay:1,type:"error",message:"This lab changed after this page loaded. Reload the page, look at it again, then mark it."},"*")</script></body>`,
     { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" } },
   );
 
@@ -45,13 +45,13 @@ const font = (): string | null => {
 export const dynamic = "force-dynamic";
 
 /**
- * The preview of a preview playground: agent-supplied code, untrusted. Open to whoever may open the page (an example to
- * everyone, any other playground to its owner and the admin), and inert to this app:
+ * The preview of a preview lab: agent-supplied code, untrusted. Open to whoever may open the page (an example to
+ * everyone, any other lab to its owner and the admin), and inert to this app:
  * the Content-Security-Policy header sandboxes the document (opaque origin, scripts only) and blocks its network access.
  * See lib/frame.ts and the README.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ pg: string }> }) {
-  // Only as a frame of Clay's own pages: there the page's frame-src (next.config.ts) limits where the frame can navigate.
+  // Only as a frame of Sorvi's own pages: there the page's frame-src (next.config.ts) limits where the frame can navigate.
   // Both Fetch Metadata headers must say so. Missing ones fail closed: a browser that does not send them (or a request
   // that drops them) would get the preview as a top-level page, where no embedding page limits its navigation.
   if (req.headers.get("sec-fetch-dest") !== "iframe" || req.headers.get("sec-fetch-site") !== "same-origin") return unavailable();

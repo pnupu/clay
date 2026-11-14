@@ -5,7 +5,7 @@ import type { Exploration } from "./store.ts";
 
 const num = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 1e15;
 
-/** Returns the merged summary, or null when the report is malformed. Controls and vendors the playground does not have are ignored. */
+/** Returns the merged summary, or null when the report is malformed. Controls and vendors the lab does not have are ignored. */
 export function mergeExploration(d: Domain, prev: Exploration | null, report: unknown, now: string): Exploration | null {
   const r = report as { metrics?: unknown; required?: unknown; selected?: unknown } | null;
   if (!r || typeof r !== "object" || typeof r.metrics !== "object" || r.metrics === null || !Array.isArray(r.required)) return null;

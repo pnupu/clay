@@ -11,7 +11,7 @@ import "./site.css";
 
 // The website pages (the landing page and /connect) are built with Taste Skill 2.5.1 (MIT), whose kit is served as plain
 // files from public/assets. They have a root layout of their own, so a move between them and the app pages (app/(app)) is a
-// full page load and the kit's stylesheets never reach a playground. Every link here is therefore a plain <a>.
+// full page load and the kit's stylesheets never reach a lab. Every link here is therefore a plain <a>.
 //
 // type: software (site-kind software)
 // deal: hero triptych, nav nav-mega, close close-word, footer footer-columns, rhythm surface-pairs, buttons tonal,
@@ -19,9 +19,9 @@ import "./site.css";
 // moments: counter-rolls (#decisions). The dealt marquee-row and the close's large word were removed on Ilkka's review.
 
 export const metadata: Metadata = {
-  title: "Clay: playgrounds your coding agent builds for you",
+  title: "Sorvi: labs your coding agent builds for you",
   description: "Your own coding agent builds a page where your real component, animation or price choice runs under a few controls. You shape it by hand; the agent carries out what you settle.",
-  openGraph: { type: "website", title: "Clay: playgrounds your coding agent builds for you", description: "Your agent builds the real thing with a few controls. You shape it by hand. It carries out what you settle.", images: ["/share.jpg"] },
+  openGraph: { type: "website", title: "Sorvi: labs your coding agent builds for you", description: "Your agent builds the real thing with a few controls. You shape it by hand. It carries out what you settle.", images: ["/share.jpg"] },
   twitter: { card: "summary_large_image" },
   icons: { icon: [{ url: "/favicon.svg", type: "image/svg+xml" }] },
   other: { "site-kind": "software", "page-type": "software" },
@@ -37,7 +37,7 @@ async function Header() {
     <header className="nav">
       <div className="wrap nav__bar">
         <a className="skip-link" href="#top">Skip to content</a>
-        <a className="nav__logo" href="/"><span className="mark" data-mark="stack" aria-hidden="true" />Clay</a>
+        <a className="nav__logo" href="/"><span className="mark" data-mark="stack" aria-hidden="true" />Sorvi</a>
         <nav className="nav__links" aria-label="Main">
           <div className="nav__item">
             <a className="nav__link" href="/#examples">Examples <svg className="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></a>
@@ -56,7 +56,7 @@ async function Header() {
           </div>
           <div className="nav__item"><a className="nav__link" href="/#steps">Steps</a></div>
           <div className="nav__item"><a className="nav__link" href="/#decisions">Decisions</a></div>
-          {me.kind !== "visitor" && <div className="nav__item"><a className="nav__link" href="/#yours">Playgrounds</a></div>}
+          {me.kind !== "visitor" && <div className="nav__item"><a className="nav__link" href="/#yours">Labs</a></div>}
         </nav>
         <div className="nav__actions">
           {me.kind === "user" ? <Account /> : me.kind === "admin" ? <span className="who" aria-label="Operator session">Operator</span> : me.kind === "visitor" && clerkOn() ? <a className="nav__link" href="/sign-in">Sign in</a> : null}

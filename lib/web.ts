@@ -1,4 +1,4 @@
-// data.web: live facts from web pages for a preview playground. The agent names the facts (single fields, or a table of
+// data.web: live facts from web pages for a preview lab. The agent names the facts (single fields, or a table of
 // rows); Context.dev reads them; this module is the trust boundary and the honesty guard for them:
 // - checkWeb(): what the agent may ask for (bounded sources, fields and rows; public https pages only).
 // - webSchema(), webInstructions(): the structured extraction that is asked of Context.dev.
@@ -11,7 +11,7 @@ import { hostname } from "./config.ts";
 export const WEB_LIMITS = { sources: 6, fields: 20, rows: 60, text: 200, unit: 40, quote: 160, describe: 300, find: 120, changes: 40, quoteBytes: 16_000 } as const;
 /**
  * The quotes of one read, for what the read still holds: its fields, or its retained rows. At most one quote per field or
- * row (so at most max(fields, rows) entries) and WEB_LIMITS.quoteBytes characters per source; per playground at most
+ * row (so at most max(fields, rows) entries) and WEB_LIMITS.quoteBytes characters per source; per lab at most
  * WEB_LIMITS.sources times that. A quote of a removed row or an unknown key is dropped.
  */
 export function keptQuotes(s: WebSource, quotes: Record<string, string>, rowKeysKept: string[] | undefined): Record<string, string> {
@@ -66,7 +66,7 @@ const str = (x: unknown, max: number, min = 1): x is string => typeof x === "str
 export function checkWeb(raw: unknown): { ok: true; sources: WebSource[] } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   if (!Array.isArray(raw)) return { ok: false, errors: ['data.web: give a list of sources: [{"id", "url" or "domain" with "find", "fields" or "rows"}].'] };
-  if (raw.length < 1 || raw.length > WEB_LIMITS.sources) return { ok: false, errors: [`data.web: 1 to ${WEB_LIMITS.sources} sources, this list has ${raw.length}. Read only the pages this playground needs.`] };
+  if (raw.length < 1 || raw.length > WEB_LIMITS.sources) return { ok: false, errors: [`data.web: 1 to ${WEB_LIMITS.sources} sources, this list has ${raw.length}. Read only the pages this lab needs.`] };
   const sources: WebSource[] = [];
   for (const [i, r] of raw.entries()) {
     const at = `data.web.${isObj(r) && typeof r.id === "string" ? r.id : i}`;
@@ -213,7 +213,7 @@ export function pageHash(text: string): string {
  */
 export const oldestCapture = (...times: string[]): string => [...times].sort()[0];
 /**
- * Is a capture from a cache, seen from the re-check that began at `began`? Clay asks for a fresh capture, so an honest
+ * Is a capture from a cache, seen from the re-check that began at `began`? Sorvi asks for a fresh capture, so an honest
  * answer is seconds old; one more than a minute older than the start of the re-check (or of unknown age, which is given
  * as the epoch) is yesterday's page. Such a structured answer replaces no fact and reports no change.
  */
@@ -361,5 +361,5 @@ export function confirmChanges(s: WebSource, old: WebRead, first: WebRead, secon
   return { read, changes, unconfirmed };
 }
 
-/** A stamp that changes whenever the web data of a playground changes: the page reloads its preview when it does. */
+/** A stamp that changes whenever the web data of a lab changes: the page reloads its preview when it does. */
 export const webStamp = (state: Record<string, WebState> | undefined): string => Object.entries(state ?? {}).map(([id, s]) => `${id}:${s.read?.fetchedAt ?? ""}:${s.read?.textHash.slice(0, 8) ?? ""}:${s.error ? "e" : ""}:${s.changes.length}`).join("|");

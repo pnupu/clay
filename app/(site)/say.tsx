@@ -26,7 +26,7 @@ export default function Say() {
   // The caret blinks while a whole request is held, and is solid while one is typed or deleted.
   return (
     <p className="say">
-      build me a playground for <span className="sr-only">…</span>
+      build me a lab for <span className="sr-only">…</span>
       <span className={REQUESTS.includes(text) ? "say__what say__what--held" : "say__what"} aria-hidden="true">{text}</span>
     </p>
   );

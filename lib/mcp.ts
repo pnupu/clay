@@ -1,5 +1,5 @@
-// The agent's side: an MCP server over the playgrounds. The tool descriptions are the product's API for another model.
-// Built per request (stateless Streamable HTTP), with the app's origin for the playground URLs.
+// The agent's side: an MCP server over the labs. The tool descriptions are the product's API for another model.
+// Built per request (stateless Streamable HTTP), with the app's origin for the lab URLs.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { INSTRUCTIONS, PROMPTS, TOOLS } from "./texts";
@@ -50,12 +50,12 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * Next.js after()). Without it the reads still run on a long-lived server such as `next dev`.
  */
 export function buildServer(origin: string, background: (work: Promise<unknown>) => void = () => {}): McpServer {
-  const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "sorvi", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
   /** Store what the agent left out and why (when the call says so), and return the stored list for the result. */
   // One line per name is stored: the last reason given for it.
   const leftOut = async (id: string, given?: LeftOut[]) => {
-    // The playground itself is stored by now: a storage refusal of the list is said, not turned into a failed call.
+    // The lab itself is stored by now: a storage refusal of the list is said, not turned into a failed call.
     if (given)
       try {
         await update((s) => { const p = s.playgrounds[id]; if (p) p.leftOut = given.filter((x, i) => !given.slice(i + 1).some((y) => y.name.toLowerCase() === x.name.toLowerCase())).map((x) => ({ ...x, at: new Date().toISOString() })); });
@@ -81,21 +81,21 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     const brand = within(r.brand);
     if ((await within(r.web, FIRST_WAIT_MS)).done) await brand;
   };
-  // Ownership: the caller sees their own playgrounds (the admin sees all) and may read the examples (lib/accounts.ts).
+  // Ownership: the caller sees their own labs (the admin sees all) and may read the examples (lib/accounts.ts).
   const list = async () => Object.values((await load()).playgrounds).filter((p) => canWrite(currentActor(), p)).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.started ? { status: "started, not built", working_on: p.started.workingOn } : p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
-  /** The playground, or an error that names the ids that exist. */
+  /** The lab, or an error that names the ids that exist. */
   /** `revising`: revise_playground, the one write an owner may do on a published example (it clears the mark). */
   const find = async (id: string, write = false, revising = false): Promise<Playground | string> => {
     const p = (await load()).playgrounds[id];
     const published = p && write && !revising ? publishedRefusal(currentActor(), p, id) : null;
     if (published) return published;
     if (p && (write ? canWrite : canRead)(currentActor(), p)) return p;
-    if (p && canRead(currentActor(), p)) return `Playground "${id}" is an example and cannot be changed. Build your own with create_playground.`;
+    if (p && canRead(currentActor(), p)) return `Lab "${id}" is an example and cannot be changed. Build your own with create_playground.`;
     return missing(id);
   };
   const missing = async (id: string) => {
     const ids = (await list()).map((p) => p.playground_id);
-    return `Playground "${id}" does not exist. ${ids.length ? `Existing playground ids: ${ids.join(", ")}. Use one of them, or` : "You have no playgrounds yet. Use"} create_playground to build a new one.`;
+    return `Lab "${id}" does not exist. ${ids.length ? `Existing lab ids: ${ids.join(", ")}. Use one of them, or` : "You have no labs yet. Use"} create_playground to build a new one.`;
   };
   /** `detail`: the vendors to describe in full. The others get one line, so a revise does not repeat what the agent already has. */
   const built = async (id: string, extra: object, stop: string | null, detail?: string[]) => {
@@ -119,7 +119,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     });
   };
 
-  /** The result of building or revising a preview playground. */
+  /** The result of building or revising a preview lab. */
   const preview = async (id: string, extra: object, warnings: string[], previewKept = false) => {
     const p = (await load()).playgrounds[id];
     const k = p.kit!;
@@ -140,7 +140,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k, reading),
-      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null), ...look],
+      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The lab works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null), ...look],
       // What is in problems is not said twice.
       warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !look.includes(x)),
       next:
@@ -159,9 +159,9 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     });
   };
 
-  // The prompts a person runs to ask for a playground or a re-check (lib/texts.ts). Each returns the person's own request.
+  // The prompts a person runs to ask for a lab or a re-check (lib/texts.ts). Each returns the person's own request.
   const said = (text: string) => ({ messages: [{ role: "user" as const, content: { type: "text" as const, text } }] });
-  server.registerPrompt("playground", { title: PROMPTS.playground.title, description: PROMPTS.playground.description, argsSchema: { what: z.string().max(2000).optional().describe(PROMPTS.playground.what) } }, ({ what }) => said(PROMPTS.playground.text(what)));
+  server.registerPrompt("lab", { title: PROMPTS.playground.title, description: PROMPTS.playground.description, argsSchema: { what: z.string().max(2000).optional().describe(PROMPTS.playground.what) } }, ({ what }) => said(PROMPTS.playground.text(what)));
   server.registerPrompt("recheck", { title: PROMPTS.recheck.title, description: PROMPTS.recheck.description, argsSchema: { which: z.string().max(300).optional().describe(PROMPTS.recheck.which) } }, ({ which }) => said(PROMPTS.recheck.text(which)));
 
   // A link before anything is built (lib/started.ts). Both texts are the agent's: bounded here, stored as one plain line.
@@ -169,28 +169,28 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   server.registerTool(
     "start_playground",
     {
-      title: "Start a playground: the link first",
+      title: "Start a lab: the link first",
       description: TOOLS.start_playground,
       inputSchema: {
-        title: line(...STARTED_LIMITS.title, "title").optional().describe("The question in the person's own words: what they want to try, tune or decide. Required for a new playground."),
+        title: line(...STARTED_LIMITS.title, "title").optional().describe("The question in the person's own words: what they want to try, tune or decide. Required for a new lab."),
         working_on: line(...STARTED_LIMITS.workingOn, "working_on").describe("One plain line, at most 200 characters, shown on the page: what you are doing now, for example 'Reading the pricing pages of the three vendors'."),
-        playground_id: z.string().max(40).optional().describe("Only to change the working_on line of a playground you started: its id. Leave it out to start a new one."),
+        playground_id: z.string().max(40).optional().describe("Only to change the working_on line of a lab you started: its id. Leave it out to start a new one."),
       },
     },
     async ({ title, working_on, playground_id }) => {
-      if (!playground_id && !title) return fail("Nothing was started. Give title: the question in the person's words. (playground_id is only for changing the working_on line of a playground you already started.)");
+      if (!playground_id && !title) return fail("Nothing was started. Give title: the question in the person's words. (playground_id is only for changing the working_on line of a lab you already started.)");
       try {
         const r = await startPlayground({ title, workingOn: working_on, id: playground_id });
         if ("refused" in r) return fail(r.refused);
         if ("missing" in r) return fail(await missing(r.missing));
-        if ("built" in r) return text({ playground_id: r.built, url: url(r.built), status: "built", note: "This playground is built already: its page shows the playground, so there is no working_on line to change. Nothing was changed." });
+        if ("built" in r) return text({ playground_id: r.built, url: url(r.built), status: "built", note: "This lab is built already: its page shows the lab, so there is no working_on line to change. Nothing was changed." });
         const { id } = r.started;
-        // Only a call that named the playground changed a line: the person has the link by then. A start (also a repeated
+        // Only a call that named the lab changed a line: the person has the link by then. A start (also a repeated
         // one, whose first answer may have been lost) must still bring the link to the person.
         if (playground_id) return text({ playground_id: id, url: url(id), status: "started, not built", working_on: r.started.workingOn, next: `The page at the url shows the new line. Go on with the work, then build with create_playground, with "${id}" as the id of the spec.` });
         return text({
           // First, as in a create result: an agent that reads only `next` goes on working, and the person waits without a link.
-          tell_person_now: `The person cannot see this result or your reasoning. Write them a visible reply with the url ${url(id)} now, before your next tool call and before you think about the spec (the reply needs no thought): one line that the page works already, shows what you are doing, and becomes the playground by itself.`,
+          tell_person_now: `The person cannot see this result or your reasoning. Write them a visible reply with the url ${url(id)} now, before your next tool call and before you think about the spec (the reply needs no thought): one line that the page works already, shows what you are doing, and becomes the lab by itself.`,
           playground_id: id,
           url: url(id),
           status: "started, not built",
@@ -198,25 +198,25 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           next: `1. Give the person the url in a visible reply now (tell_person_now). 2. Then build with create_playground, with "${id}" as the id of the spec: the build lands at this url. 3. When a long step starts (research, reading pages), call start_playground with playground_id "${id}" and a new working_on, at most about once a minute.`,
         });
       } catch (e) {
-        return fail(`The playground could not be started: ${message(e)}`);
+        return fail(`The lab could not be started: ${message(e)}`);
       }
     },
   );
 
-  server.registerTool("create_playground", { title: "Create a playground", description: TOOLS.create_playground, inputSchema: specShape }, async (args) => {
+  server.registerTool("create_playground", { title: "Create a lab", description: TOOLS.create_playground, inputSchema: specShape }, async (args) => {
     const parsed = parseSpec(args);
     if (!parsed.ok) return fail(`The spec is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
-    // The id asked for may be taken (by anyone): the playground then gets that id with a suffix, and the result says so.
-    const again = { existing: "You already have a playground with exactly this spec: this is it, nothing was created. Pages that were not read before are being read now (see build). To change it, call revise_playground." };
-    const filled = (r: { filled?: boolean }) => (r.filled ? { started_playground_built: "This is the playground you started: the page at its url, which the person has, now shows the build, with no reload." } : {});
-    /** The caller started playgrounds and this create did not fill one (another id in the spec): the link the person has for them never becomes a playground. */
+    // The id asked for may be taken (by anyone): the lab then gets that id with a suffix, and the result says so.
+    const again = { existing: "You already have a lab with exactly this spec: this is it, nothing was created. Pages that were not read before are being read now (see build). To change it, call revise_playground." };
+    const filled = (r: { filled?: boolean }) => (r.filled ? { started_playground_built: "This is the lab you started: the page at its url, which the person has, now shows the build, with no reload." } : {});
+    /** The caller started labs and this create did not fill one (another id in the spec): the link the person has for them never becomes a lab. */
     const unfilled = async (r: { id: string; filled?: boolean; existed?: boolean }) => {
       if (r.filled || r.existed) return {};
       const owner = currentUserId();
       const ids = Object.values((await load()).playgrounds).filter((p) => p.started && (p.owner ?? null) === owner).map((p) => p.domain.id);
-      return ids.length ? { started_not_built: `You started ${ids.map((x) => `"${x}"`).join(", ")} and this build did not fill it: its spec has another id, so the link the person has from start_playground still says "building". Tell the person in your reply that the playground is at the url of this result, not at the earlier link. (To build at a started link, the spec's id must be the started playground_id.)` } : {};
+      return ids.length ? { started_not_built: `You started ${ids.map((x) => `"${x}"`).join(", ")} and this build did not fill it: its spec has another id, so the link the person has from start_playground still says "building". Tell the person in your reply that the lab is at the url of this result, not at the earlier link. (To build at a started link, the spec's id must be the started playground_id.)` } : {};
     };
-    const renamed = (id: string) => (id === parsed.domain.id ? {} : { id_note: `The id "${parsed.domain.id}" was taken, so this playground got the id "${id}". Use "${id}" in every later call.` });
+    const renamed = (id: string) => (id === parsed.domain.id ? {} : { id_note: `The id "${parsed.domain.id}" was taken, so this lab got the id "${id}". Use "${id}" in every later call.` });
     try {
       if (parsed.kind === "preview") {
         const r = await createPreview(parsed.domain, parsed.kit);
@@ -229,21 +229,21 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const w = await within(r.work, FIRST_WAIT_MS);
       return built(r.id, { ...tellNow(url(r.id)), ...renamed(r.id), ...filled(r), ...(await unfilled(r)), ...(r.existed ? again : {}), ...(await leftOut(r.id, parsed.leftOut)) }, w.done ? w.value : null);
     } catch (e) {
-      return fail(`The playground could not be built: ${message(e)}`);
+      return fail(`The lab could not be built: ${message(e)}`);
     }
   });
 
-  server.registerTool("kit_reference", { title: "Kit reference for preview playgrounds", description: TOOLS.kit_reference, inputSchema: {}, annotations: { readOnlyHint: true } }, async () => text(KIT_REFERENCE));
+  server.registerTool("kit_reference", { title: "Kit reference for preview labs", description: TOOLS.kit_reference, inputSchema: {}, annotations: { readOnlyHint: true } }, async () => text(KIT_REFERENCE));
 
   server.registerTool(
     "read_playground",
     {
-      title: "Read a playground",
+      title: "Read a lab",
       description: TOOLS.read_playground,
       inputSchema: {
-        playground_id: z.string().max(40).optional().describe("Id of the playground: the last part of its URL. Leave it out to list the playgrounds."),
-        since: z.string().max(40).optional().describe("Price playground: only return change events after this time, as an ISO 8601 date-time such as 2026-11-13T18:00:00Z. Leave it out for all stored events."),
-        include_spec: z.boolean().optional().describe("true adds the playground's current spec, for a revise_playground when you no longer have it."),
+        playground_id: z.string().max(40).optional().describe("Id of the lab: the last part of its URL. Leave it out to list the labs."),
+        since: z.string().max(40).optional().describe("Price lab: only return change events after this time, as an ISO 8601 date-time such as 2026-11-13T18:00:00Z. Leave it out for all stored events."),
+        include_spec: z.boolean().optional().describe("true adds the lab's current spec, for a revise_playground when you no longer have it."),
       },
       annotations: { readOnlyHint: true },
     },
@@ -252,7 +252,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const found = await find(playground_id);
       if (typeof found === "string") return fail(found);
       // Started and not built: there is nothing to read yet. Only its owner (or the admin) gets here: it is never an example.
-      if (found.started) return text({ playground_id, url: url(playground_id), status: "started, not built", title: found.domain.question, working_on: found.started.workingOn, working_on_since: found.started.at, next: `This playground is started and not built: the person has its link and the page says you are building. Build it now with create_playground, with "${playground_id}" as the id of the spec.` });
+      if (found.started) return text({ playground_id, url: url(playground_id), status: "started, not built", title: found.domain.question, working_on: found.started.workingOn, working_on_since: found.started.at, next: `This lab is started and not built: the person has its link and the page says you are building. Build it now with create_playground, with "${playground_id}" as the id of the spec.` });
       // While pricing pages are being read, wait for them (at most WAIT_MS), so one more call usually sees the finished build.
       const p = (await settled(playground_id, WAIT_MS)) ?? found;
       const t = since == null ? null : Date.parse(since);
@@ -271,14 +271,14 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
 
   server.registerTool(
     "recheck_playground",
-    { title: "Re-check a playground now", description: TOOLS.recheck_playground, inputSchema: { playground_id: z.string().max(40).describe("Id of the playground: the last part of its URL.") } },
+    { title: "Re-check a lab now", description: TOOLS.recheck_playground, inputSchema: { playground_id: z.string().max(40).describe("Id of the lab: the last part of its URL.") } },
     async ({ playground_id }) => {
       const before = await find(playground_id, true);
       if (typeof before === "string") return fail(before);
       if (before.started) return fail(notBuilt(playground_id));
       if (before.kit) {
-        // A preview playground: re-read its web sources. Clay reports what changed; the agent judges what it means.
-        if (!before.kit.kit.web?.length) return fail(`"${playground_id}" is a preview playground without web sources (data.web): it has nothing to re-check. Call read_playground for its settled result.`);
+        // A preview lab: re-read its web sources. Sorvi reports what changed; the agent judges what it means.
+        if (!before.kit.kit.web?.length) return fail(`"${playground_id}" is a preview lab without web sources (data.web): it has nothing to re-check. Call read_playground for its settled result.`);
         const began = new Date().toISOString();
         const w = await within(recheckWeb(playground_id));
         const now = (await load()).playgrounds[playground_id];
@@ -341,16 +341,16 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   server.registerTool(
     "revise_playground",
     {
-      title: "Revise a playground",
+      title: "Revise a lab",
       description: TOOLS.revise_playground,
       inputSchema: {
-        playground_id: z.string().max(40).describe("Id of the playground: the last part of its URL."),
+        playground_id: z.string().max(40).describe("Id of the lab: the last part of its URL."),
         title: specShape.title.optional(),
         notes: specShape.notes,
         data: specShape.data,
-        controls: specShape.controls.describe("The full new list of controls of a preview playground. It replaces the current list."),
+        controls: specShape.controls.describe("The full new list of controls of a preview lab. It replaces the current list."),
         view: specShape.view.partial().optional().describe("Only the view fields that change: html, css, js, tailwind, map, height. The fields you leave out stay as they are. type may be left out; it cannot change."),
-        outputs: specShape.outputs.describe("The full new list of outputs of a preview playground. It replaces the current list."),
+        outputs: specShape.outputs.describe("The full new list of outputs of a preview lab. It replaces the current list."),
         left_out: specShape.left_out,
       },
     },
@@ -360,10 +360,10 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       if (p.started) return fail(notBuilt(playground_id));
       if (playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
       const was = toSpec(p);
-      if (change.view?.type && change.view.type !== was.view.type) return fail(`Nothing was changed. "${playground_id}" has view.type "${was.view.type}", and the view type of a playground cannot change. Build a separate playground with create_playground.`);
+      if (change.view?.type && change.view.type !== was.view.type) return fail(`Nothing was changed. "${playground_id}" has view.type "${was.view.type}", and the view type of a lab cannot change. Build a separate lab with create_playground.`);
       const parsed = parseSpec(mergeSpec(was, change as SpecChange));
-      if (!parsed.ok) return fail(`The revised playground would not be valid. Nothing was changed. Fix these and call revise_playground again:\n- ${parsed.errors.join("\n- ")}`);
-      const tell_person = "The page the person has open shows the revised playground by itself within a few seconds, with their control values kept for the controls that still allow them. Tell them what you changed; do not ask them to reload.";
+      if (!parsed.ok) return fail(`The revised lab would not be valid. Nothing was changed. Fix these and call revise_playground again:\n- ${parsed.errors.join("\n- ")}`);
+      const tell_person = "The page the person has open shows the revised lab by itself within a few seconds, with their control values kept for the controls that still allow them. Tell them what you changed; do not ask them to reload.";
       try {
         if (parsed.kind === "preview") {
           const r = await revisePreview(parsed.domain, parsed.kit);
@@ -375,7 +375,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
         const w = await within(r.work, FIRST_WAIT_MS);
         return built(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, w.done ? w.value : null, r.recollected);
       } catch (e) {
-        return fail(`The playground could not be revised: ${message(e)}`);
+        return fail(`The lab could not be revised: ${message(e)}`);
       }
     },
   );

@@ -101,7 +101,7 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
 export const NO_PRICE_GAP_MS = 10 * 60_000;
 /**
  * How long the first such re-check counts. An older one is not agreement with a read of today: the count starts again.
- * 30 days, so that a weekly re-check (the slowest schedule public/clay-recheck.yml names) still finds the mark of the
+ * 30 days, so that a weekly re-check (the slowest schedule public/sorvi-recheck.yml names) still finds the mark of the
  * run before it, with room for late runs.
  */
 export const NO_PRICE_MAX_MS = 30 * 24 * 3_600_000;

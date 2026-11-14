@@ -132,7 +132,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   // Daily budget of a deployment (CONTEXT_DEV_DAILY_CAP, default 300 requests per UTC day, 0 turns it off), counted in the store.
   // A DELETE is not counted: it spends nothing, and stopping a monitor must work when the budget is used up.
   // lean: the counter lives in the one store document, so each request costs one more read and conditional write of it.
-  // Move it to its own blob if playgrounds grow large or many requests run at once.
+  // Move it to its own blob if labs grow large or many requests run at once.
   const daily = dailyCap(process.env.CONTEXT_DEV_DAILY_CAP);
   // A signed-in person (their page or their agent) also has their own daily cap (CLAY_USER_DAILY_REQUESTS, lib/accounts.ts).
   const user = currentUserId();
@@ -162,7 +162,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
     charged = { global: daily > 0 ? b!.day : null, personal: user && personal > 0 && u ? u.day : null };
     return null;
   });
-  if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
+  if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Sorvi deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
   if (refusal === "user") throw new ContextDevError(429, "USER_DAILY_CAP", userCapMessage(personal));
   return charged;
   };
@@ -181,7 +181,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   let waited = 0;
   for (let attempt = 0; ; attempt++) {
     // An urgent request does not queue behind the paced ones: it is a single request that a person is waiting for (the
-    // brand of a preview playground) while a price build may hold the queue for minutes. It still takes a place among the
+    // brand of a preview lab) while a price build may hold the queue for minutes. It still takes a place among the
     // requests in flight and counts as a start, and a 429 is retried below like any other.
     // A retry is a new request sent: it is reserved too, before it waits for a place (the place is held for the send, not
     // for the store). Reached here, the earlier attempts were sent, and no more are.
@@ -258,7 +258,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
 
 type Output<T> = { requested: boolean; success: boolean | null; data: T | null; error_code?: string; message?: string; isTruncated?: true };
 /**
- * When the page of a scrape answer was captured. Clay asks for a fresh capture (maxAgeMs 0), so the age is normally 0.
+ * When the page of a scrape answer was captured. Sorvi asks for a fresh capture (maxAgeMs 0), so the age is normally 0.
  * It fails closed. Only two answers have a known time: one with a usable age, and one that says it is a fresh capture
  * ("miss") and gives no age. A cache hit without a usable age, a negative or broken age, and an answer WITHOUT the
  * cache_metadata block are of unknown age, which is given as the epoch, so they never count as read "in this check"
@@ -273,7 +273,7 @@ export function capturedAt(meta: { status?: string; age_ms?: unknown } | null | 
 
 /**
  * Does a scrape answer say that it came from a cache? A hit, or an age longer than the call took (with five seconds of
- * slack): the page was not captured for this call. Clay asks for a fresh capture, so such an answer is refused where it
+ * slack): the page was not captured for this call. Sorvi asks for a fresh capture, so such an answer is refused where it
  * is read (lib/pipeline.ts) and nothing of it is stored. An answer of unknown age is not refused here: it is kept,
  * dated as unknown (capturedAt), and certifies nothing.
  */
@@ -333,7 +333,7 @@ export function parseWatch(input: unknown, sourceIds: string[]): { ok: true; wat
   if (typeof input !== "object" || Array.isArray(input)) return { ok: false, error: 'sources must be an object: {"<source id>": {"minutes": 60, "waitMs": 5000}}' };
   const watch: Record<string, MonitorWatch> = {};
   for (const [id, raw] of Object.entries(input as Record<string, unknown>)) {
-    if (!sourceIds.includes(id)) return { ok: false, error: `sources.${id}: this playground has no such source. Its sources: ${sourceIds.join(", ")}` };
+    if (!sourceIds.includes(id)) return { ok: false, error: `sources.${id}: this lab has no such source. Its sources: ${sourceIds.join(", ")}` };
     if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: `sources.${id}: give {"minutes"?, "waitMs"?}` };
     const one: MonitorWatch = {};
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
