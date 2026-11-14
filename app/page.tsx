@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { viewer } from "@/app/api/respond";
-import { canWrite, isExample } from "@/lib/accounts";
+import { canWrite, isExample, orderExamples } from "@/lib/accounts";
 import { cardText } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
 import { load, type Playground } from "@/lib/store";
@@ -32,8 +32,10 @@ const forVisitor = (k: NonNullable<Playground["kit"]>) => ({ ...k, settled: null
 
 export default async function Home() {
   const me = await viewer();
-  const all = Object.entries((await load()).playgrounds as Record<string, AnyPlayground>).sort(([, a], [, b]) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
-  const examples = all.filter(([id, p]) => isExample(p, id));
+  const playgrounds = (await load()).playgrounds as Record<string, AnyPlayground>;
+  const all = Object.entries(playgrounds).sort(([, a], [, b]) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  // The featured example first (the admin chooses it), then the newest first. The first one is embedded under "Try it here".
+  const examples = orderExamples(playgrounds);
   const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
   const first = examples[0]?.[0];
   return (
@@ -58,7 +60,7 @@ export default async function Home() {
           </div>
           <div className="try-box">
             {examples[0][1].kit ? (
-              <Kit key={JSON.stringify(examples[0][1].kit.kit)} id={first} title={titleOf(examples[0][1], first)} state={forVisitor(examples[0][1].kit)} canWrite={false} embedded />
+              <Kit key={JSON.stringify(examples[0][1].kit.kit)} id={first} title={titleOf(examples[0][1], first)} state={forVisitor(examples[0][1].kit)} canWrite={false} leftOut={examples[0][1].leftOut} embedded />
             ) : (
               <PricePlayground key={JSON.stringify(examples[0][1].domain)} domain={examples[0][1].domain} explored={null} canWrite={false} admin={false} embedded />
             )}
@@ -109,9 +111,9 @@ export default async function Home() {
                 <li key={id} className="card">
                   <div>
                     <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
-                    <p className="small muted">{kindOf(p)} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? " · example" : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
+                    <p className="small muted">{kindOf(p)} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
                   </div>
-                  <Manage id={id} example={isExample(p, id)} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
+                  <Manage id={id} example={isExample(p, id)} featured={p.featured === true} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
                 </li>
               ))}
             </ul>

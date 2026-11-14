@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { atWord, blurbOf, cardText, requestOf } from "./card.ts";
+import { atWord, becauseOf, blurbOf, cardText, requestOf } from "./card.ts";
 import { DOMAIN } from "./domain.ts";
 
 // The notes of the seven examples that are live, as their agents wrote them.
@@ -63,4 +63,10 @@ test("the request is the quoted text after the opening words, up to the quote th
   // A very long request is shown cut at a word.
   const said = cardText(`Someone told their agent: "${"please help me choose ".repeat(12).trim()}" Their agent built it.`)!;
   assert.ok("quote" in said && said.quote.endsWith("…") && said.quote.length <= 200 && !/\s…$/.test(said.quote));
+});
+
+test("what was left out reads as a clause after \"because\"", () => {
+  assert.equal(becauseOf("Its pricing page, read twice, gave neither an allowance nor a price"), "its pricing page, read twice, gave neither an allowance nor a price.");
+  assert.equal(becauseOf("because the page shows prices only through a slider."), "the page shows prices only through a slider.");
+  assert.equal(becauseOf("AWS lists it per region, not as one price"), "AWS lists it per region, not as one price.");
 });

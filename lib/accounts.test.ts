@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
 import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
 
@@ -137,4 +137,39 @@ test("budget: a brand read counts as 2 and cannot pass the cap with one unit lef
   assert.deepEqual(spend({ day: "d", used: 37 }, "d", 40, 2), { day: "d", used: 39 });
   assert.equal(spend({ day: "d", used: 39 }, "d", 40, 2), null);
   assert.deepEqual(spend({ day: "d", used: 39 }, "d", 40), { day: "d", used: 40 });
+});
+
+test("examples: only the admin marks and features; one example is featured at a time; the gallery puts it first", () => {
+  const store = () => ({
+    card: { domain: { id: "card" }, example: true, createdAt: "2026-11-14T00:41:00Z" } as { domain: { id: string }; example?: boolean; featured?: boolean; createdAt: string; owner?: string },
+    models: { domain: { id: "models" }, example: true, createdAt: "2026-11-14T05:00:00Z" },
+    gpu: { domain: { id: "gpu" }, createdAt: "2026-11-14T06:00:00Z", owner: "user_ann" },
+  });
+  // Nobody but the admin: not a visitor, not a signed-in person, not even the owner of the playground, not a missing caller.
+  for (const who of [VISITOR, ann, bob, null]) {
+    const s = store();
+    assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, who), { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." });
+    assert.deepEqual(s, store());
+  }
+  const s = store();
+  // Without a featured example the newest example comes first, as before.
+  assert.deepEqual(orderExamples(s).map(([id]) => id), ["models", "card"]);
+  assert.deepEqual(markExample(s, "card", { featured: true }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(orderExamples(s).map(([id]) => id), ["card", "models"]);
+  // Featuring another one takes the mark from the first: one at a time.
+  assert.deepEqual(markExample(s, "models", { example: true, featured: true }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(Object.entries(s).filter(([, p]) => (p as { featured?: boolean }).featured).map(([id]) => id), ["models"]);
+  // Only an example can be featured; marking and featuring in one call works for a playground that is not one yet.
+  assert.equal((markExample(s, "gpu", { featured: true }, admin) as { status: number }).status, 400);
+  assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(orderExamples(s).map(([id]) => id), ["gpu", "models", "card"]);
+  // Unmarking the example also unfeatures it, and the newest example is first again.
+  assert.deepEqual(markExample(s, "gpu", { example: false }, admin), { ok: true, example: false, featured: false });
+  assert.deepEqual(orderExamples(s).map(([id]) => id), ["models", "card"]);
+  // A plain mark leaves the featured one alone; unknown ids and empty bodies are refused.
+  markExample(s, "card", { featured: true }, admin);
+  assert.deepEqual(markExample(s, "models", { example: true }, admin), { ok: true, example: true, featured: false });
+  assert.equal(s.card.featured, true);
+  assert.equal((markExample(s, "nope", { example: true }, admin) as { status: number }).status, 404);
+  assert.equal((markExample(s, "card", {}, admin) as { status: number }).status, 400);
 });

@@ -65,3 +65,13 @@ export function cardText(note: string, max = 200): { quote: string } | { blurb: 
   const blurb = blurbOf(note, Math.min(max, BLURB_MAX));
   return blurb ? { blurb } : null;
 }
+
+/**
+ * What the agent left out of a playground, as a clause after "because": "its pricing page states no price." The reason is
+ * the agent's own sentence, so a leading "because" and a capital first letter are folded in, and a full stop is added.
+ */
+export function becauseOf(reason: string): string {
+  const text = reason.trim().replace(/^because\s+/i, "");
+  const lowered = /^[A-Z][a-z]/.test(text) && !/^I\b/.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
+  return /[.!?]$/.test(lowered) ? lowered : `${lowered}.`;
+}

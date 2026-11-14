@@ -111,6 +111,8 @@ export type Playground = {
   owner?: string | null;
   /** Marked by the admin as an example: anyone may open and use it without signing in. Missing: only the seed is one. */
   example?: boolean;
+  /** The one example that the landing page embeds under "Try it here" (lib/accounts.ts, markExample). At most one playground has it. */
+  featured?: boolean;
   /** What the agent left out of this playground and why, as it said (spec left_out). Text from the agent: shown as text. */
   leftOut?: { name: string; reason: string; at: string }[];
 };

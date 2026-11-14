@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { fromFrame, limiter } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
+import { becauseOf } from "@/lib/card";
 import css from "./kit.module.css";
 
 const noSubscription = () => () => {};
@@ -25,7 +26,7 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, embedded = false, reading = false }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean; reading?: boolean }) {
+export default function Kit({ id, title, state, canWrite, embedded = false, reading = false, leftOut = [] }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[] }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
@@ -243,7 +244,7 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
             )}
           </section>
 
-          {(kit.brand || kit.inline || kit.web?.length) && (
+          {(kit.brand || kit.inline || kit.web?.length || leftOut.length > 0) && (
             <section className="card">
               <h2>Where the data comes from</h2>
               <ul className={css.data}>
@@ -261,6 +262,8 @@ export default function Kit({ id, title, state, canWrite, embedded = false, read
                 )}
                 {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} />)}
                 {kit.inline && <li><p className="small">Provided by your agent, not checked: {Object.keys(kit.inline).join(", ")}.</p></li>}
+                {/* What the agent left out and why, as it said (left_out of the spec). */}
+                {leftOut.map((x) => <li key={x.name} data-left-out><p className="small muted">Left out: <b>{x.name}</b>, because {becauseOf(x.reason)}</p></li>)}
               </ul>
             </section>
           )}

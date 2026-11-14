@@ -46,10 +46,41 @@ export const currentUserId = (): string | null => {
   return a?.kind === "user" ? a.userId : null;
 };
 
-type Owned = { owner?: string | null; example?: boolean; domain?: { id?: string } };
+type Owned = { owner?: string | null; example?: boolean; featured?: boolean; createdAt?: string; domain?: { id?: string } };
 /** The seed playground is an example unless the admin unmarks it. Any other playground is an example only when marked. */
 export const isExample = (p: Owned, id = p.domain?.id): boolean => p.example ?? id === DOMAIN.id;
 export const ownerOf = (p: Owned): string | null => p.owner ?? null;
+
+/**
+ * Mark or unmark a playground as an example, and choose the featured example: the one the landing page embeds.
+ * Only the admin may do either (the example route is admin-only already; this is the same rule where the data changes).
+ * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
+ * example also unfeatures it. Returns what the playground is now, or the refusal.
+ */
+export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: boolean; featured?: boolean }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404; error: string } {
+  if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
+  const p = playgrounds[id];
+  if (!p) return { ok: false, status: 404, error: "Playground not found." };
+  if (typeof mark.example !== "boolean" && typeof mark.featured !== "boolean") return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };
+  const example = mark.example ?? isExample(p, id);
+  if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured. Send {"example": true, "featured": true}.' };
+  if (typeof mark.example === "boolean") p.example = mark.example;
+  if (mark.featured === true) {
+    for (const other of Object.values(playgrounds)) delete other.featured;
+    p.featured = true;
+  } else if (mark.featured === false || !example) delete p.featured;
+  return { ok: true, example, featured: p.featured === true };
+}
+
+/**
+ * The examples in the order of the gallery: the featured one first, then the newest first. The first entry is the one the
+ * landing page embeds, so without a featured example that is the newest, as before.
+ */
+export function orderExamples<T extends Owned>(playgrounds: Record<string, T>): [string, T][] {
+  return Object.entries(playgrounds)
+    .filter(([id, p]) => isExample(p, id))
+    .sort(([, a], [, b]) => Number(b.featured === true) - Number(a.featured === true) || (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
 
 /** May this caller open the playground? Examples are open to everyone; any other playground only to its owner and the admin. */
 export function canRead(a: Actor | null, p: Owned, id?: string): boolean {

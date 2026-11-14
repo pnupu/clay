@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-/** Delete a playground; the admin also marks it as an example or unmarks it. */
-export default function Manage({ id, example, admin, deletable }: { id: string; example: boolean; admin: boolean; deletable: boolean }) {
+/** Delete a playground; the admin also marks it as an example or unmarks it, and chooses the example that the landing page embeds. */
+export default function Manage({ id, example, featured, admin, deletable }: { id: string; example: boolean; featured: boolean; admin: boolean; deletable: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +20,7 @@ export default function Manage({ id, example, admin, deletable }: { id: string; 
   return (
     <div className="manage">
       {admin && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}/example`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ example: !example }) })}>{example ? "Unmark example" : "Mark as example"}</button>}
+      {admin && example && !featured && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}/example`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ featured: true }) })}>Feature on the landing page</button>}
       {deletable && <button className="small-btn" disabled={busy} onClick={() => run(`/api/p/${id}`, { method: "DELETE" }, "Delete this playground? This cannot be undone.")}>Delete</button>}
       {error && <p className="small bad">{error}</p>}
     </div>
