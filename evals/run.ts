@@ -242,7 +242,8 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   // Kind "data": the facts carry sources, and an unknown is not shown as a number.
   // A data case may be answered with a price playground ("where is this GPU cheapest"). Its facts are read from the
   // vendors' pricing pages too, and it has no preview code to probe: a vendor it cannot price is listed as "cannot be ranked".
-  const pricePage = !!c.web && page.preview == null && page.web.length > 0;
+  // A price playground is known by its ranking, not by a missing preview: a data preview that failed to render keeps its checks.
+  const pricePage = !!c.web && page.ranked > 0;
   if (c.web) add(sources(page.web), pricePage ? { id: "unknowns", status: "na", reason: "a price playground: there is no preview code, and a vendor without a price is listed as not rankable" } : unknowns(page.web.length ? await previewWithoutWebNumbers(browser, { baseUrl, url, key }) : null));
 
   // ---- Second leg: the person settles, then the same conversation continues.

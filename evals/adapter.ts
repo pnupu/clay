@@ -241,8 +241,8 @@ export async function settle(page: Page, dims: Dimension[]): Promise<{ chosen: s
   // A preview playground: move EVERY control off its start value, so the settled outputs differ from the code as it is.
   // A person does not pick the same option everywhere: with the first swatch on every colour control the background,
   // the text and the accent become one colour, and an agent rightly refuses to write that. So each control with
-  // options takes the next option in turn (the first control its first other option, the second its second, ...).
-  let turn = 0;
+  // options takes the first option that no earlier control took (by its name), and the first one when all are taken.
+  const taken = new Set<string>();
   for (const c of await page.locator("[data-control]").all()) {
     const range = c.locator('input[type="range"]');
     const option = c.locator('[role="group"] button[aria-pressed="false"]');
@@ -252,7 +252,12 @@ export async function settle(page: Page, dims: Dimension[]): Promise<{ chosen: s
       const snap = (n: number) => Number((min + Math.round((n - min) / step) * step).toFixed(6));
       const to = snap((now + max) / 2) !== now ? snap((now + max) / 2) : now + step <= max ? snap(now + step) : snap(now - step);
       await range.fill(String(to));
-    } else if (await option.count()) await option.nth(turn++ % (await option.count())).click();
+    } else if (await option.count()) {
+      const names = await option.evaluateAll((els) => els.map((e) => (e.getAttribute("aria-label") || e.getAttribute("title") || e.textContent || "").trim()));
+      const pick = Math.max(0, names.findIndex((n) => !taken.has(n)));
+      taken.add(names[pick]);
+      await option.nth(pick).click();
+    }
     else if (await c.locator('input[type="checkbox"]').count()) await c.locator('input[type="checkbox"]').click();
     await page.waitForTimeout(150);
   }

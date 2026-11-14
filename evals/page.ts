@@ -94,7 +94,8 @@ async function reacts(page: Page, control: Locator, kind: string, animated: { ye
   return yes;
 }
 
-export type PageResult = { checks: Check[]; shot: string | null; web: WebSourceOnPage[]; preview: string | null };
+/** `ranked`: the vendors a price playground could price and rank; 0 on a preview playground. */
+export type PageResult = { checks: Check[]; shot: string | null; web: WebSourceOnPage[]; preview: string | null; ranked: number };
 
 /** Load the page, look for error states, move every control, take the contact-sheet screenshot. */
 export async function checkPage(browser: Browser, o: { baseUrl: string; url: string; key?: string; dims: Dimension[] | null; shotPath: string }): Promise<PageResult> {
@@ -103,6 +104,7 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
   let shot: string | null = null;
   let web: WebSourceOnPage[] = [];
   let preview: string | null = null;
+  let rankedRows = 0;
   try {
     // ---- Does it load without an error state and without console errors?
     const status = response instanceof Error ? null : (response?.status() ?? null);
@@ -116,7 +118,7 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     await page.screenshot({ path: o.shotPath }).then(() => (shot = o.shotPath), () => {});
     const shown: string[] = [];
     for (const sel of PAGE.errors) for (const el of await page.locator(sel).all()) if (await el.isVisible()) shown.push(cut(await el.innerText(), 120));
-    const ranked = await page.locator(PAGE.ranked).count();
+    const ranked = (rankedRows = await page.locator(PAGE.ranked).count());
     const hasPreview = (await page.locator(PAGE.preview).count()) > 0;
     const load =
       response instanceof Error ? `the page did not load: ${cut(response.message)}` :
@@ -129,7 +131,7 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     checks.push(load ? { id: "page_loads", status: "fail", reason: load } : { id: "page_loads", status: "pass", reason: `loaded, no error state, no console error${hasPreview ? "" : `, ${ranked} vendor(s) ranked`}` });
     if (!rendered) {
       checks.push({ id: "controls", status: "fail", reason: "no page to find controls on" });
-      return { checks, shot, web, preview };
+      return { checks, shot, web, preview, ranked: rankedRows };
     }
 
     // What the data panel and the preview show at the start values (for the checks of kind "data").
@@ -163,7 +165,7 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
       checks.push(!visible ? { id: "preview", status: "fail", reason: "the preview is blank: no visible element in it" } : { id: "preview", status: "pass", reason: `the preview shows ${visible} visible element(s) and no error` });
     }
     if (errors.length && !load) checks[0] = { id: "page_loads", status: "fail", reason: cut(errors[0]) }; // an error raised by moving a control
-    return { checks, shot, web, preview };
+    return { checks, shot, web, preview, ranked: rankedRows };
   } finally {
     await context.close();
   }
