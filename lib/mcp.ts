@@ -7,7 +7,7 @@ import { DOMAIN } from "./domain";
 import { BRAND_PENDING, brandPending, initialValues, renderOutputs } from "./kit";
 import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
-import { BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
+import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
 import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
@@ -154,7 +154,10 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       const p = (await settled(playground_id, WAIT_MS)) ?? found;
       const t = since == null ? null : Date.parse(since);
       if (t != null && Number.isNaN(t)) return fail(`since "${since}" is not a date-time. Use ISO 8601, for example 2026-11-13T18:00:00Z, or leave it out.`);
-      return text({ ...(p.kit ? previewReport(p, url(playground_id)) : readReport(p, url(playground_id), t)), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
+      // Someone else's example: the non-owner projection (lib/report.ts), and a note that it is not this person's.
+      const own = canWrite(currentActor(), p);
+      const view = own ? p : nonOwnerView(p);
+      return text({ ...(own ? {} : { not_yours: NOT_YOURS }), ...(view.kit ? previewReport(view, url(playground_id)) : readReport(view, url(playground_id), t)), ...(await leftOut(playground_id)), ...(include_spec ? { spec: toSpec(p) } : {}) });
     },
   );
 

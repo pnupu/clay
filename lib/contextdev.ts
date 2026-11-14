@@ -86,6 +86,9 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   const personal = user ? userDailyCap() : 0;
   // A brand read costs 10 credits and a price extraction 5: a brand read counts as 2 requests in both caps.
   const units = path.startsWith("/brand/") ? 2 : 1;
+  // The caps count requests SENT to Context.dev: every attempt, a retry after a 429 included, is reserved right before it
+  // is sent. At the cap nothing more is sent, also in the middle of retries.
+  const reserve = async () => {
   const refusal = (daily > 0 || personal > 0) && method !== "DELETE" ? await update((s) => {
     const b = daily > 0 ? spend(s.budget, day, daily, units) : s.budget;
     if (!b && daily > 0) return "global";
@@ -97,6 +100,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   }) : null;
   if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
   if (refusal === "user") throw new ContextDevError(429, "USER_DAILY_CAP", userCapMessage(personal));
+  };
   // The account's rate limit (10 request units per minute) is shared by every function instance and every person, so the
   // pacing in slot() cannot always prevent a 429. Builds run in the background (lib/mcp.ts answers the agent early), so a
   // wait is cheap and a stopped build is not: a 429 RATE_LIMITED is sent again after the wait the API states, up to 3 times.
@@ -107,6 +111,11 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
     if (opts.urgent) starts.push(Date.now());
     else await slot();
     overCap();
+    await reserve().catch((e) => {
+      // Reached while retrying after a rate limit: the earlier attempts were sent, and no more are.
+      if (attempt > 0 && e instanceof ContextDevError) throw new ContextDevError(e.status, e.code, `${e.message} (${attempt} earlier ${attempt === 1 ? "attempt was" : "attempts were"} sent and rate-limited; no more are sent.)`);
+      throw e;
+    });
     const t0 = Date.now();
     pending++;
     let res: Response | null = null;

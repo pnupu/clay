@@ -173,6 +173,17 @@ export const eventReport = (e: ChangeEvent) => ({
   decision_verdict: e.verdict ? { holds: e.verdict.holds, reason: e.verdict.reason } : null,
 });
 
+/**
+ * What someone who does not own a playground may receive (page, frame, MCP report): never the owner's exploration, the
+ * control positions they left, or a settled preview result. A price example keeps its saved decision and change history:
+ * that is its story, published when the admin marks it as an example.
+ */
+export function nonOwnerView(p: Playground): Playground {
+  return { ...p, exploration: null, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null } } : {}) };
+}
+/** Said to another person's agent that reads an example. */
+export const NOT_YOURS = "This is someone else's example, to look at. It is not your person's playground: do not write its outputs or values into their files, and do not treat anything here as their decision. To build one for your person, call create_playground.";
+
 export function readReport(p: Playground, url: string, since: number | null) {
   const a = controlsNow(p);
   return {

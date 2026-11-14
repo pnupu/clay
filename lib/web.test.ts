@@ -139,3 +139,18 @@ test("third review round: a dropped row does not shift the keys, and a size in a
   assert.equal(numberOnPage(128, "128K context"), false); // refused on purpose: 128 next to K may be 128,000
   assert.equal(numberOnPage(128000, "128K context"), true);
 });
+
+test("web: quotes are kept for the retained rows only, within the bounds, however many changes are confirmed", async () => {
+  const { guard, confirmChanges, WEB_LIMITS: L } = await import("./web.ts");
+  const src = { id: "remote", url: "https://fixture.com/", rows: { describe: "A row per option", fields: [{ id: "name", type: "text" as const, describe: "name of the option" }, { id: "note", type: "text" as const, describe: "note about option" }] } };
+  const make = (n: number) => guard(src as never, { rows: Array.from({ length: 60 }, (_, i) => ({ name: `batch-${n}-row-${i}`, note: "x".repeat(1000), quote: "q".repeat(1000) })) }, "fixture", { url: src.url, fetchedAt: new Date().toISOString() });
+  let old = make(0);
+  for (let i = 1; i <= 50; i++) {
+    const next = make(i);
+    old = confirmChanges(src as never, old, next, next).read;
+  }
+  assert.equal(old.rows!.length, 60);
+  assert.ok(Object.keys(old.quotes).length <= 60);
+  assert.ok(Object.values(old.quotes).join("").length <= L.quoteBytes);
+  assert.ok(Object.keys(old.quotes).every((k) => k.startsWith("rows.batch-50-")));
+});

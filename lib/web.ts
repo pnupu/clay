@@ -8,7 +8,26 @@
 // No Node builtins: the kit page and the frame import it too. The reads themselves are in lib/pipeline.ts.
 import { hostname } from "./config.ts";
 
-export const WEB_LIMITS = { sources: 6, fields: 20, rows: 60, text: 200, unit: 40, quote: 160, describe: 300, find: 120, changes: 40 } as const;
+export const WEB_LIMITS = { sources: 6, fields: 20, rows: 60, text: 200, unit: 40, quote: 160, describe: 300, find: 120, changes: 40, quoteBytes: 16_000 } as const;
+/**
+ * The quotes of one read, for what the read still holds: its fields, or its retained rows. At most one quote per field or
+ * row (so at most max(fields, rows) entries) and WEB_LIMITS.quoteBytes characters per source; per playground at most
+ * WEB_LIMITS.sources times that. A quote of a removed row or an unknown key is dropped.
+ */
+export function keptQuotes(s: WebSource, quotes: Record<string, string>, rows: WebRow[] | undefined): Record<string, string> {
+  const wanted = s.fields ? s.fields.map((f) => f.id) : rowKeys(s, rows ?? []).map((k) => `rows.${k}`);
+  const out: Record<string, string> = {};
+  let bytes = 0;
+  for (const k of wanted) {
+    const q = quotes[k];
+    if (typeof q !== "string") continue;
+    const cutQ = q.slice(0, WEB_LIMITS.quote);
+    if (bytes + cutQ.length > WEB_LIMITS.quoteBytes) break;
+    out[k] = cutQ;
+    bytes += cutQ.length;
+  }
+  return out;
+}
 
 export type WebField = { id: string; type: "number" | "text" | "boolean"; unit?: string; describe: string };
 /** One page and what to read from it: single named fields, or a table (`rows`). `domain` + `find`: search finds the page. */
@@ -300,6 +319,7 @@ export function confirmChanges(s: WebSource, old: WebRead, first: WebRead, secon
       read.fields[c.field!] = c.after;
       if (second.quotes[c.field!]) read.quotes[c.field!] = second.quotes[c.field!];
     }
+    read.quotes = keptQuotes(s, read.quotes, undefined);
     return { read, changes, unconfirmed };
   }
   // Rows are addressed by their unique keys, never by splitting a path: a row name is page text and may hold any character.
@@ -320,6 +340,8 @@ export function confirmChanges(s: WebSource, old: WebRead, first: WebRead, secon
     if (c.row && second.quotes[`rows.${c.row}`]) read.quotes[`rows.${c.row}`] = second.quotes[`rows.${c.row}`];
   }
   read.rows = rows.map((r) => r.row);
+  // Only the quotes of the rows that stay: without this, the quotes of removed rows piled up with every change.
+  read.quotes = keptQuotes(s, read.quotes, read.rows);
   return { read, changes, unconfirmed };
 }
 

@@ -123,7 +123,10 @@ check("no request for an external host reached the network", external.length ===
 check("no dialog was shown", dialogs.length === 0, dialogs.join(", "));
 check("no popup or new tab was opened", popups === 0);
 
-const res = await fetch(`${base}/p/sbx-probe-${tag}/frame`);
+// As the browser's iframe request (Fetch Metadata): the policy header. Without the headers: refused (fails closed).
+const res = await fetch(`${base}/p/sbx-probe-${tag}/frame`, { headers: { "Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "same-origin" } });
+const bare = await fetch(`${base}/p/sbx-probe-${tag}/frame`);
+check("frame URL without Fetch Metadata headers: refused, with a notice and no script", bare.status === 403 && /Preview unavailable/.test(await bare.text()) && /^sandbox; default-src 'none'/.test(bare.headers.get("content-security-policy") ?? ""), `status ${bare.status}`);
 const csp = res.headers.get("content-security-policy") ?? "";
 check("the frame response carries the sandbox policy as a header", /^sandbox allow-scripts; default-src 'none'/.test(csp) && csp.includes("connect-src 'none'") && csp.includes("frame-ancestors 'self'"), csp.slice(0, 60));
 
