@@ -51,6 +51,8 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  /** A visitor's Settle on an example: the values it was pressed at, kept on this page only. A later move ends it. */
+  const [tried, setTried] = useState<string | null>(null);
   /** The names this preview can join page rows on: its own data and its select options (lib/card.ts). */
   const names = useMemo(() => joinNames(kit.inline, kit.controls.flatMap((c) => (c.type === "select" ? c.options.flatMap((o) => [o.value, o.label ?? ""]) : []))), [kit]);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -199,6 +201,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     }
   };
   const isSettled = !!settled && JSON.stringify(settled.values) === JSON.stringify(values);
+  const triedNow = tried === JSON.stringify(values);
   const atStart = JSON.stringify(values) === JSON.stringify(initialValues(kit.controls));
   const copy = (key: string, text: string) => navigator.clipboard?.writeText(text).then(() => setCopied(key), () => {});
 
@@ -268,7 +271,23 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                 )}
               </div>
             ) : (
-              <p className="small" data-example>This is an example, so there is nothing to settle here. <Link href="/connect" prefetch={false}>Connect your own agent</Link> to build and settle your own.</p>
+              embedded ? (
+                <p className="small" data-example>This is an example, so there is nothing to settle here. <Link href="/connect" prefetch={false}>Connect your own agent</Link> to build and settle your own.</p>
+              ) : (
+                // A visitor can finish the loop: Settle on an example saves nothing and sends nothing; it shows, on this
+                // page only, what their own agent would receive (the values and the texts above, as they stand).
+                <div data-example>
+                  <div className={css.settle}>
+                    <button className="primary" disabled={triedNow} onClick={() => setTried(JSON.stringify(values))}>{triedNow ? "Settled, here only" : "Settle on these values"}</button>
+                    {!triedNow && <span className="small muted">This is an example: Settle saves nothing. It shows what your agent would get.</span>}
+                  </div>
+                  {triedNow && (
+                    <p className="small" data-settle-try role="status">
+                      Nothing is saved: this is an example. On your own playground your agent reads this and writes it into your code: the texts above as they stand, and the values {kit.controls.map((c) => `${c.label} ${c.type === "toggle" ? (values[c.id] ? "on" : "off") : String(values[c.id])}`).join(", ")}. <Link href="/connect" prefetch={false}>Connect your own agent</Link>
+                    </p>
+                  )}
+                </div>
+              )
             )}
           </section>
 
