@@ -5,6 +5,7 @@
 // and, for a preview with view.map, the pinned map library and map tiles from this app's own tile route.
 // The only channel to the page is postMessage, and both sides validate every message.
 import type { KitState } from "./kit.ts";
+import { dataSheet } from "./sheet.ts";
 import { webData } from "./web.ts";
 
 /** The in-browser Tailwind build, pinned by version and content hash (checked against the registry and the CDN on 2026-11-14). */
@@ -386,8 +387,12 @@ window.addEventListener("load", reportHeight);`;
 /** JSON inside a script element: no "<" (so no closing tag, no comment opener) and no raw line separators. */
 const inScript = (x: unknown) => JSON.stringify(x).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, (c) => (c.charCodeAt(0) === 0x2028 ? "\\u2028" : "\\u2029"));
 
-/** The complete frame document: the bridge, then the agent's html, css and js. */
-export function frameDocument(k: KitState, values: Record<string, unknown>, origin = ""): string {
+/**
+ * The complete frame document: the bridge, then the agent's html, css and js.
+ * `font`: the page's text typeface as a data: URL, for a data view (view.data, lib/sheet.ts). The frame route reads the
+ * file; the frame's policy already allows a font from a data: URL and from nowhere else.
+ */
+export function frameDocument(k: KitState, values: Record<string, unknown>, origin = "", font: string | null = null): string {
   const { preview, controls } = k.kit;
   const js = preview.js.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
   const head = (jsLine: number) => {
@@ -411,7 +416,7 @@ export function frameDocument(k: KitState, values: Record<string, unknown>, orig
 <title>Preview</title>
 <style>html, body { margin: 0; } body { min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }</style>
 ${preview.tailwind ? `<script src="${TAILWIND.url}" integrity="${TAILWIND.integrity}" crossorigin="anonymous"></script>` : ""}${preview.map === true ? `<link rel="stylesheet" href="${LEAFLET.css.url}" integrity="${LEAFLET.css.integrity}" crossorigin="anonymous"><script src="${LEAFLET.js.url}" integrity="${LEAFLET.js.integrity}" crossorigin="anonymous"></script>` : ""}
-<style id="clay-css"></style>
+${preview.data === true ? `<style>${dataSheet(font)}</style>\n` : ""}<style id="clay-css"></style>
 </head>
 <body>
 <div id="clay-root"></div>

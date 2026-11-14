@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { INSTRUCTIONS, PROMPTS, TOOLS } from "./texts";
 import { DOMAIN } from "./domain";
-import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutputs } from "./kit";
+import { BRAND_PENDING, brandPending, initialValues, markupWarning, renderOutputs, styleProblems } from "./kit";
 import { createPlayground, createPreview, recheckAll, recheckWeb, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
 import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems, webReading, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
@@ -120,10 +120,17 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   };
 
   /** The result of building or revising a preview playground. */
-  const preview = async (id: string, extra: object, warnings: string[]) => {
+  const preview = async (id: string, extra: object, warnings: string[], previewKept = false) => {
     const p = (await load()).playgrounds[id];
     const k = p.kit!;
     const reading = webReading(p);
+    /**
+     * How a page of data looks (lib/kit.ts, styleProblems): always part of problems, so a revision that changed nothing
+     * of the look does not read as a repair. `next` names it too, after the link, but not after a revision that left
+     * the preview code as it was (`previewKept`): a change of a label is no reason to rewrite a page the person may have settled.
+     */
+    const look = styleProblems(k.kit);
+    const lead = look.length > 0 && !previewKept;
     return text({
       playground_id: id,
       url: url(id),
@@ -133,16 +140,21 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k, reading),
-      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null)],
-      warnings: warnings.filter((x) => x !== markupWarning(k.kit)),
+      problems: [...webProblems(k, reading), ...(k.brandError && !brandPending(k) ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError === BRAND_PENDING ? "the read was cut off before it ended" : k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : []), ...[markupWarning(k.kit)].filter((x) => x != null), ...look],
+      // What is in problems is not said twice.
+      warnings: warnings.filter((x) => x !== markupWarning(k.kit) && !look.includes(x)),
       next:
-        reading.length
+        (reading.length
           ? `The web sources are still being read. 1. ${LINK_NOW}, with a sentence that the page is being built from live web pages: the url works already and the numbers fill in as each page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is "done". 3. Look at data: check that the rows and values are what your view.js expects (names it joins on, units), repair what problems lists with revise_playground, and tell the person the page is ready and which values are unknown.`
           : brandPending(k)
             ? `The brand's colours are still being read, so the brand palette is still empty; the page loads the colours by itself when they arrive. ${LINK_NOW}, with that in one line, and say: move the controls until it is right, then press Settle. Then call read_playground: it waits up to 20 seconds for the brand; repeat it until data shows the colours or a problem.${k.kit.web?.length ? " Look at data too: check that the rows and values are what your view.js expects, and repair with revise_playground if they are not." : ""} When they say they are done, call read_playground again for the settled outputs.`
             : k.kit.web?.length
               ? `${LINK_NOW}, and say: move the controls until it is right, then press Settle. Then look at data: check that the rows and values are what your view.js expects (the names it joins on, the units, the unknown values); if they are not, repair with revise_playground: the open page shows the repair by itself. When they say they are done, call read_playground: it returns the settled outputs to write into their files.`
-              : `${LINK_NOW}, and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.`,
+              : `${LINK_NOW}, and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.`) +
+        // The look of a page of data comes after the link: the person has the page at once, and their open page shows
+        // the repair by itself. read_playground does not list the look, so this result is where it is said. One
+        // revision is enough, and a problem that does not apply (the person's own component, a colour that is data) stays.
+        (lead ? " Then act on what problems says about the look of the page (only a build or revise result lists it): when it applies, revise the page one time with revise_playground, and the open page shows the repair by itself. It does not apply to the person's own component or to a colour that is data." : ""),
       ...(k.kit.web?.length || k.kit.brand ? { note: [k.kit.web?.length ? WEB_NOTE : "", k.kit.brand ? BRAND_NOTE : ""].filter(Boolean).join(" ") } : {}),
     });
   };
@@ -357,7 +369,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           const r = await revisePreview(parsed.domain, parsed.kit);
           await firstAnswer(r);
           const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the open page shows the new outputs by itself.";
-          return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings);
+          return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings, !!r.previewKept);
         }
         const r = await revisePlayground(parsed.domain, origin);
         const w = await within(r.work, FIRST_WAIT_MS);

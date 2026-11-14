@@ -2,7 +2,7 @@
 
 // The screen of a preview playground: kit controls, the sandboxed preview of the real artifact, and the outputs that go
 // back to the agent. Every move is local: the page posts the values to the frame, and nothing waits for a network call.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fromFrame, limiter, TILES } from "@/lib/frame";
@@ -259,7 +259,9 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                 Preview failed: {frame.error} {!canWrite ? "" : builtByViewer ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : "The error is saved; the author's agent can read it and repair the preview."}
               </p>
             )}
-            <div className={css.mat}>
+            {/* A data view is not an artboard: it is part of the page, in the page's own type and colours (lib/sheet.ts),
+                so it sits on the pane itself, with no mat and no white sheet around it. */}
+            <div className={kit.preview.data ? css.sheet : css.mat}>
               {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: frameHeight }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
@@ -323,7 +325,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
                     )}
                   </li>
                 )}
-                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
+                {(kit.web ?? []).map((s) => <WebSourceItem key={s.id} pg={id} source={s} state={state.web?.[s.id]} reading={reading} since={settled?.at ?? null} names={names} />)}
                 {kit.inline && <li data-inline><p className="small">{builtByViewer ? "Provided by your agent, not checked" : "Provided by the author's agent, not checked"}: {Object.keys(kit.inline).join(", ")}.</p></li>}
                 {/* What the agent left out and why, as it said (left_out of the spec). */}
                 {leftOut.map((x, i) => <li key={i} data-left-out><p className="small muted">Left out: <b>{x.name}</b> — {reasonOf(x.reason)}</p></li>)}
@@ -506,13 +508,36 @@ const SELECT_AS_BUTTONS = 5;
 /** More rows than this are folded: the rows the preview names are shown, the rest opens on request. */
 const FOLD_OVER = 8;
 
+/** A field id as a person reads it: "price_per_hour" is "Price per hour". */
+const words = (id: string) => id.replace(/_/g, " ").replace(/^[a-z]/, (c) => c.toUpperCase());
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
+
+/** The values a person opened, by playground and source, kept in this tab's memory. */
+const opened = new Set<string>();
+
+/**
+ * The values read from one source, closed until the person asks for them: the card says where the data comes from, and
+ * the raw tables no longer push the page away. They stay in the page, so any number can still be checked against its
+ * source. No summary: nothing to fold, the content is shown as it is.
+ */
+function Values({ id, summary, children }: { id: string; summary: string | null; children: ReactNode }) {
+  // What the person opened stays open in this tab: the screen is mounted again whenever a source is read (see `held`).
+  const [open, setOpen] = useState(() => opened.has(id));
+  const toggle = (now: boolean) => {
+    if (now) opened.add(id);
+    else opened.delete(id);
+    setOpen(now);
+  };
+  return summary == null ? <>{children}</> : <details className={css.values} open={open} onToggle={(e) => toggle(e.currentTarget.open)}><summary>{summary}</summary>{children}</details>;
+}
+
 /**
  * One web source in "Where the data comes from": the page (a link), when it was read, every value that was read, what was
  * quarantined, and what changed since the person settled. So a person can check any number against its page.
  * A long table shows first the rows that the preview's own names match (`names`), and the rest on request. A row whose
  * name the read did not find cannot be matched to anything: it is listed last, as such, and counted in a line of its own.
  */
-function WebSourceItem({ source: s, state: st, reading, since, names }: { source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
+function WebSourceItem({ pg, source: s, state: st, reading, since, names }: { /** The playground's id. */ pg: string; source: WebSource; state: WebState | undefined; reading: boolean; since: string | null; names: JoinNames }) {
   const [all, setAll] = useState(false);
   const read = st?.read;
   const link = st?.url && /^https:\/\//.test(st.url) ? st.url : null;
@@ -533,6 +558,10 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
   const isShown = (r: (typeof rows)[number]) => !foldable || all || first.includes(r);
   const tableId = `rows-${s.id}`;
   const site = hostsOf([host])[0] ?? host;
+  /** The name under which this tab remembers that the person opened the values of this source. */
+  const fold = `${pg}:${s.id}`;
+  // Values the read did not find: counted in the line that opens the values, so "unknown" is said also while they are closed.
+  const unknown = s.fields ? s.fields.filter((f) => read?.fields?.[f.id] == null).length : rows.reduce((n, r) => n + fields.filter((f) => r[f.id] == null).length, 0);
   return (
     <li data-web-source={s.id}>
       <p className="small">
@@ -543,19 +572,22 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
       {!read && !reading && <p className="small warn">This page could not be read{st?.error ? `: ${st.error.slice(0, 200)}` : ""}. Its values are unknown.</p>}
       {read && st?.error && <p className="small warn">{st.error.slice(0, 200)}</p>}
       {read && s.fields && (
-        <table className={css.web}>
-          <tbody>
-            {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{f.id}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
-          </tbody>
-        </table>
+        <Values id={fold} summary={unknown ? `${s.fields.length - unknown} of ${count(s.fields.length, "value")} read, ${unknown} unknown` : `${count(s.fields.length, "value")} read`}>
+          <table className={`${css.web} ${css.webFields}`}>
+            <tbody>
+              {s.fields.map((f) => <tr key={f.id}><th title={f.describe}>{words(f.id)}</th><td title={read.quotes[f.id] ?? ""}>{shown(read.fields?.[f.id])}{f.unit && read.fields?.[f.id] != null ? ` ${f.unit}` : ""}</td></tr>)}
+            </tbody>
+          </table>
+        </Values>
       )}
       {read && s.rows && (
-        <>
+        // A page on which no row was found has nothing to fold: the line that says so stays in view.
+        <Values id={fold} summary={rows.length ? `${count(rows.length, "row")} read${unknown ? `, ${count(unknown, "value")} unknown` : ""}` : null}>
           <div className={`${css.webScroll} ${all ? css.webOpen : ""}`} id={tableId}>
             <table className={css.web}>
-              <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe}>{f.id}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
+              <thead><tr>{fields.map((f) => <th key={f.id} title={f.describe} className={f.type === "number" ? css.num : undefined}>{words(f.id)}{f.unit ? <small>{f.unit}</small> : null}</th>)}</tr></thead>
               <tbody>
-                {ordered.map((r, i) => <tr key={i} hidden={!isShown(r)}>{fields.map((f) => <td key={f.id}>{f.id === key && r[f.id] == null ? <span className="muted"><span className={css.unseen}>unknown: </span>no name read</span> : shown(r[f.id])}</td>)}</tr>)}
+                {ordered.map((r, i) => <tr key={i} hidden={!isShown(r)}>{fields.map((f) => <td key={f.id} className={f.type === "number" ? css.num : undefined}>{f.id === key && r[f.id] == null ? <span className="muted"><span className={css.unseen}>unknown: </span>no name read</span> : shown(r[f.id])}</td>)}</tr>)}
                 {!rows.length && <tr><td colSpan={fields.length}><span className="warn">No row was found on this page.</span></td></tr>}
               </tbody>
             </table>
@@ -572,7 +604,7 @@ function WebSourceItem({ source: s, state: st, reading, since, names }: { source
               {foldable && !all ? ` ${nameless.length === 1 ? "It is" : "They are"} listed last under “Show all”.` : ` ${nameless.length === 1 ? "It is" : "They are"} listed last, marked “no name read”.`}
             </p>
           )}
-        </>
+        </Values>
       )}
       {read?.truncated && <p className="small warn">The page was too long to read in full. Rows may be missing.</p>}
       {read?.quarantined.map((q, i) => <p className="small warn" key={i}>Not used: the extraction returned {q.value} for {q.path}, but that number is not in the page text. It is shown as unknown.</p>)}
