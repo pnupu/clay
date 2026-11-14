@@ -13,7 +13,7 @@ const server = createServer((req, res) => {
   if (req.url === "/favicon.ico") return void res.writeHead(204).end();
   let page: Buffer | null = null;
   try {
-    page = readFileSync(join(dir, (req.url ?? "/").replace(/[^a-z-.]/g, "")));
+    page = readFileSync(join(dir, (req.url ?? "/").replace(/\/frame$/, "").replace(/[^a-z-.]/g, "")));
   } catch {}
   res.writeHead(page ? 200 : 404, { "Content-Type": "text/html" }).end(page ?? "not found");
 }).listen(0, "127.0.0.1");
@@ -28,10 +28,12 @@ const expectations: [string, string, RegExp, string[]][] = [
   ["dead-control.html", "controls", /changes nothing visible: seats$/, ["page_loads"]],
   ["error-state.html", "page_loads", /the page shows an error: Alpha Mail/, []],
   ["missing.html", "page_loads", /HTTP 404/, []],
+  // An animated preview: its pixels always change, so they must not make a dead control look alive.
+  ["animated-dead.html", "controls", /changes nothing visible: nothing$/, ["page_loads", "preview"]],
 ];
 let ok = true;
 for (const [file, id, reason, passing] of expectations) {
-  const { checks } = await checkPage(browser, { baseUrl, url: `${baseUrl}/${file}`, dims: file === "dead-control.html" ? dims : dims.slice(0, 1), shotPath: join(shots, `${file}.png`) });
+  const { checks } = await checkPage(browser, { baseUrl, url: `${baseUrl}/${file}`, dims: file === "dead-control.html" ? dims : file === "animated-dead.html" ? [] : dims.slice(0, 1), shotPath: join(shots, `${file}.png`) });
   const c = checks.find((x) => x.id === id);
   const good = c?.status === "fail" && reason.test(c.reason) && passing.every((p) => checks.find((x) => x.id === p)?.status === "pass");
   ok &&= good;

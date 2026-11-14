@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: an animated preview and a control that does nothing</title>
+<!-- The preview frame animates for ever, so its pixels always differ. The first slider drives the output text; the second drives nothing. -->
+<main class="shell">
+  <h1>How should the spinner feel? (fixture)</h1>
+  <section class="card controls">
+    <div data-control="speed"><label for="speed">Speed</label><input id="speed" type="range" min="1" max="10" value="5"></div>
+    <div data-control="nothing"><label for="nothing">Nothing</label><input id="nothing" type="range" min="1" max="10" value="5"></div>
+  </section>
+  <iframe src="animated-frame.html/frame" style="width:300px;height:120px;border:0"></iframe>
+  <pre data-output="speed" id="out"></pre>
+</main>
+<script>
+  const speed = document.getElementById("speed");
+  const draw = () => { out.textContent = "duration: " + speed.value + "s"; };
+  speed.addEventListener("input", draw);
+  draw();
+</script>

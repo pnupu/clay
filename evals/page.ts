@@ -25,25 +25,29 @@ async function open(browser: Browser, baseUrl: string, url: string, key: string 
   return { context, page, errors, response };
 }
 
-/** What the person sees react: the text of the reacting areas, and a hash of the preview's pixels when there is one. */
-async function observe(page: Page): Promise<string> {
+/** What the person sees react: the text of the reacting areas, and (with `pixels`) a hash of the preview's pixels when there is one. */
+async function observe(page: Page, pixels = true): Promise<string> {
   const parts: string[] = [];
   for (const sel of PAGE.reacts) for (const el of await page.locator(sel).all()) parts.push(await el.innerText().catch(() => ""));
   const preview = page.locator(PAGE.preview).first();
-  if (await preview.count()) parts.push(createHash("sha1").update(await preview.screenshot().catch(() => Buffer.alloc(0))).digest("hex"));
+  if (pixels && (await preview.count())) parts.push(createHash("sha1").update(await preview.screenshot().catch(() => Buffer.alloc(0))).digest("hex"));
   return parts.join("\n");
 }
 
-/** What the person sees once it has stopped changing (a preview that is still rendering, an animation that runs out). */
-async function settled(page: Page): Promise<string> {
+/**
+ * What the person sees once it has stopped changing (a preview that is still rendering, an animation that runs out).
+ * A preview that animates for ever never stops: its pixels differ between any two looks, so they say nothing about a
+ * control. Then `animated` is true and only the texts are compared (the outputs, the ranking).
+ */
+async function settled(page: Page): Promise<{ view: string; animated: boolean }> {
   let last = await observe(page);
   for (let i = 0; i < 10; i++) {
     await page.waitForTimeout(200);
     const now = await observe(page);
-    if (now === last) return now;
+    if (now === last) return { view: now, animated: false };
     last = now;
   }
-  return last; // lean: a preview that animates for ever never settles; every control then looks alive. Revisit with a paused-animation probe.
+  return { view: await observe(page, false), animated: true };
 }
 
 /**
@@ -51,9 +55,10 @@ async function settled(page: Page): Promise<string> {
  * The probe runs signed in as the owner (a private playground cannot be opened otherwise); its exploration reports are
  * intercepted in open(), so nothing it does is stored.
  */
-async function reacts(page: Page, control: Locator, kind: string): Promise<boolean> {
-  const before = await settled(page);
-  const changed = async () => { await page.waitForTimeout(250); return (await observe(page)) !== before; };
+async function reacts(page: Page, control: Locator, kind: string, animated: { yes: boolean }): Promise<boolean> {
+  const { view: before, animated: moving } = await settled(page);
+  if (moving) animated.yes = true;
+  const changed = async () => { await page.waitForTimeout(250); return (await observe(page, !moving)) !== before; };
   if (kind === "checkbox") {
     await control.click();
     const yes = await changed();
@@ -128,17 +133,18 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     const controls = await page.locator(PAGE.controls).locator('input[type="range"], input[type="checkbox"], select, input[type="color"], [role="group"]:has(button)').all();
     const hidden = o.dims ? await missingControls(page, o.dims) : [];
     const dead: string[] = [];
+    const animated = { yes: false };
     for (const c of controls) {
       const kind = (await c.evaluate((el) => (el as HTMLInputElement).type ?? "buttons")) as string;
       const name = (await c.getAttribute("id")) || (await c.getAttribute("aria-label")) || cut(await c.locator("xpath=..").innerText().catch(() => kind), 40);
       // A control that cannot be moved at all is as dead as one that changes nothing.
-      if (!(await reacts(page, c, kind).catch(() => false))) dead.push(name);
+      if (!(await reacts(page, c, kind, animated).catch(() => false))) dead.push(name);
     }
     checks.push(
       !controls.length ? { id: "controls", status: "fail", reason: "the page has no controls" } :
       hidden.length ? { id: "controls", status: "fail", reason: `no control on the page for: ${hidden.join(", ")}` } :
       dead.length ? { id: "controls", status: "fail", reason: `moving these changes nothing visible: ${dead.join(", ")}` } :
-      { id: "controls", status: "pass", reason: `${controls.length} control(s), each changes something visible` },
+      { id: "controls", status: "pass", reason: `${controls.length} control(s), each changes something visible${animated.yes ? " (the preview animates on its own, so the output texts were compared, not its pixels)" : ""}` },
     );
 
     // ---- The preview: no error (covered by the error states above) and not blank.
