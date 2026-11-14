@@ -41,16 +41,22 @@ export const LEAFLET = {
 export const TILES = { path: "/api/tiles/", upstream: "https://tile.openstreetmap.org", attribution: "\u00a9 OpenStreetMap contributors", licence: "https://www.openstreetmap.org/copyright", maxZoom: 19 };
 
 /**
- * The address of this app as the browser reached it, for the tile path of a map frame: the Host header of the request
- * (behind a proxy the request URL can name another host than the browser used), with the scheme of the request. Only a
+ * The address of this app as the browser reached it, for the tile path of a map frame: the X-Forwarded-Host or Host
+ * header of the request (behind a proxy the request URL can name another host than the browser used), with the scheme
+ * of the request. Only a
  * plain host name with an optional port is taken, so a header cannot add anything to the frame's policy; else the
  * request URL's own origin.
  */
-export function requestOrigin(url: string, host: string | null, forwardedProto: string | null): string {
+export function requestOrigin(url: string, host: string | null, forwardedProto: string | null, forwardedHost: string | null = null): string {
+  // A proxy in front of the app names the host the browser used in X-Forwarded-Host; Host is then the app's own address.
+  host = forwardedHost?.split(",")[0].trim() || host;
   const u = new URL(url);
   const proto = forwardedProto === "https" || forwardedProto === "http" ? `${forwardedProto}:` : u.protocol;
   return host && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:\d{1,5})?$/i.test(host) ? `${proto}//${host.toLowerCase()}` : u.origin;
 }
+
+/** The address of one tile under the tile path, the only form the route answers: no query, no other spelling. */
+export const tilePathOf = (t: { z: number; x: number; y: number }) => `${TILES.path}${t.z}/${t.x}/${t.y}.png`;
 
 /** One tile of the standard grid, from the three parts of a tile address ("15", "18642", "9477.png"). Null for anything else: the route serves nothing but tiles. */
 export function tileOf(z: string, x: string, y: string): { z: number; x: number; y: number } | null {
@@ -329,11 +335,15 @@ window.addEventListener("message", function (e) {
 // scrolls the page and two fingers move and zoom the map (Leaflet then sets touch-action: pan-x pan-y on the map); the
 // + and - buttons zoom with one finger. With a mouse the map is dragged as usual.
 function clayMap(el, o) {
-  if (!cfg.map || !window.L) { fail("clay.map() needs view.map: true in the spec."); return null; }
+  if (!cfg.map) { fail("clay.map() needs view.map: true in the spec."); return null; }
+  if (!window.L) { fail("The map library did not load (cdn.jsdelivr.net could not be reached), so clay.map() made no map."); return null; }
   o = o || {};
   var touch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-  var m = L.map(el, { center: o.center || [0, 0], zoom: typeof o.zoom === "number" ? o.zoom : 2, minZoom: typeof o.minZoom === "number" ? o.minZoom : 1, maxZoom: cfg.map.maxZoom, scrollWheelZoom: false, dragging: !touch, tap: false, touchZoom: true, zoomControl: true });
+  var m = L.map(el, { minZoom: typeof o.minZoom === "number" ? o.minZoom : 1, maxZoom: cfg.map.maxZoom, scrollWheelZoom: false, dragging: !touch, tap: false, touchZoom: true, zoomControl: true });
   m.attributionControl.setPrefix(false);
+  // The first view is set before the tile layer is added, so the tiles of one view are asked for, not of two.
+  if (o.bounds) m.fitBounds(o.bounds, { maxZoom: typeof o.maxZoom === "number" ? o.maxZoom : cfg.map.maxZoom, padding: [32, 32] });
+  else m.setView(o.center || [0, 0], typeof o.zoom === "number" ? o.zoom : 2);
   L.tileLayer(cfg.map.url, { maxZoom: cfg.map.maxZoom, attribution: cfg.map.attribution }).addTo(m);
   return m;
 }
@@ -346,7 +356,10 @@ window.clay = Object.freeze({
   map: clayMap
 });
 draw();
-window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
+// "ready" means view.js has run. Without a map that is the load event, as before. With a map the load event also waits
+// for every tile image, and a slow tile is not a preview that failed: there the frame is ready when its scripts have run.
+if (cfg.map) document.addEventListener("DOMContentLoaded", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
+else window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
 // The height of the content, so the page can size the frame to it. At most one report per second, and only on a change:
 // an animation that resizes on every frame cannot flood the page (it counts the messages and stops a preview at 30 in 10 s).
 var lastH = 0, lastT = 0, later = null, measure = null;

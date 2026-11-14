@@ -228,7 +228,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
           {unseenChange && <button className={`primary ${css.jump}`} data-preview-changed onClick={() => stage.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>The preview changed. Show it</button>}
-          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
+          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. {kit.preview.map ? "No agent is in the loop; the map loads its tiles through Clay as you move it." : "No agent and no network call is in the loop."} {!canWrite ? "Nothing you try here is saved." : builtByViewer ? "A short summary of what you tried is kept for your agent." : "A short summary of what you tried is kept for the author's agent."}</p>
         </section>
 
         <div className={`${css.main} k-main`}>

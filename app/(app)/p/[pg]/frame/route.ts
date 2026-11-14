@@ -44,7 +44,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ pg: stri
   if (pin !== null && pin !== viewVersion(p)) return changed();
   // Someone else's example starts at its initial values: the owner's current values are theirs (lib/report.ts, nonOwnerView).
   // The address of this app as this browser reached it: a map preview loads its tiles from the tile route under it.
-  const origin = requestOrigin(req.url, req.headers.get("host"), req.headers.get("x-forwarded-proto"));
+  const origin = requestOrigin(req.url, req.headers.get("host"), req.headers.get("x-forwarded-proto"), req.headers.get("x-forwarded-host"));
   return new Response(frameDocument(k, valuesNow(a.write && pin === null ? k : nonOwnerView(p).kit!), origin), {
     headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": frameCsp(k, origin), "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store", "X-DNS-Prefetch-Control": "off" },
   });

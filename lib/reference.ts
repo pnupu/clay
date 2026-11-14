@@ -175,16 +175,18 @@ export const MAP_EXAMPLE: Spec = {
 const places = clay.data.inline.places;
 // Names go onto the map as text nodes, never as markup strings.
 const text = (s) => document.createTextNode(String(s));
-const map = clay.map(document.getElementById("map"), { center: [60.1851, 24.8292], zoom: 15 });
+// The map starts on an area that shows every place, whatever the width of the preview.
+const map = clay.map(document.getElementById("map"), { bounds: places.concat([start]).map((p) => [p.lat, p.lng]), maxZoom: 15 });
 L.circleMarker([start.lat, start.lng], { radius: 6, color: "#111827", fillColor: "#111827", fillOpacity: 1 }).addTo(map).bindTooltip(text(start.name));
 const circle = L.circle([start.lat, start.lng], { radius: clay.values.radius, color: "#2563eb", weight: 2, fillOpacity: 0.06 }).addTo(map);
 const marks = places.map((p) => ({
   p,
   metres: Math.round(map.distance([start.lat, start.lng], [p.lat, p.lng])),
-  dot: L.circleMarker([p.lat, p.lng], { radius: 8, weight: 2 }).addTo(map).bindTooltip(text(p.name), { permanent: true, direction: "top", offset: [0, -8] }),
+  dot: L.circleMarker([p.lat, p.lng], { radius: 8, weight: 2 }).addTo(map),
 }));
-// Start on an area that shows every place, whatever the width of the preview.
-map.fitBounds(L.latLngBounds(places.concat([start]).map((p) => [p.lat, p.lng])).pad(0.25), { maxZoom: 15 });
+// On a wide map every place keeps its label. On a narrow one (a phone) the labels would cover each other: only the
+// picked place keeps its label there, and a tap on another place shows that one's.
+const wide = document.getElementById("map").clientWidth >= 480;
 const line = document.getElementById("inside");
 clay.onChange((v) => {
   circle.setRadius(v.radius);
@@ -195,6 +197,7 @@ clay.onChange((v) => {
     const colour = picked ? "#dc2626" : "#2563eb";
     x.dot.setStyle({ color: colour, fillColor: colour, opacity: within ? 1 : 0.35, fillOpacity: within ? 0.9 : 0.12 });
     x.dot.setRadius(picked ? 11 : 8);
+    x.dot.unbindTooltip().bindTooltip(text(x.p.name), { permanent: wide || picked, direction: "top", offset: [0, -8] });
     if (within) inside.push(x.p.name + " (" + x.metres + " m)");
   }
   const pick = marks.find((x) => x.p.name === v.place);
@@ -224,11 +227,11 @@ Good controls: the 3 to 6 dimensions behind THIS person's complaint, not every p
 - view.css: plain CSS, {{control_id}} allowed.
 - view.tailwind: true loads the in-browser Tailwind v4 build. Arbitrary values work: rounded-[{{radius}}px], bg-[{{bg}}], px-[{{pad}}px].
 - view.map: true loads a map library (Leaflet 1.9, the global L) for a "where" question: which location, which radius, which area, which stop. Worked example 4 shows the whole of it.
-  - clay.map(element, {center: [lat, lng], zoom}) returns the Leaflet map with its tiles (OpenStreetMap) and the attribution they require. Always make the map with it: no other tile layer or image host loads. Give the element a height in view.css.
+  - clay.map(element, {bounds: [[lat, lng], ...], maxZoom?}) or clay.map(element, {center: [lat, lng], zoom}) returns the Leaflet map with its tiles (OpenStreetMap) and the attribution they require. bounds starts on an area that shows all your points at any width. Always make the map with it: no other tile layer or image host loads. Give the element a height in view.css.
   - Draw with L.circleMarker, L.circle, L.polyline, L.polygon and L.marker (its pin is built in). No other marker image and no layers control: their image files do not load. Bind the map to the controls in clay.onChange: move, restyle or filter what is drawn; map.setView or map.fitBounds only when a control asks for another area.
   - Coordinates come from you: data.inline (the person's places with lat and lng, and where you got them, in notes) or number fields of data.web. Clay has no geocoding or routing: map.distance(a, b) is a straight line in metres, so say "straight line" on the page.
-  - Text on the map: bindPopup, bindTooltip and setContent build markup from a string. Pass a text node or an element instead: marker.bindTooltip(document.createTextNode(place.name)). The rule for web and brand text below applies to them as to innerHTML.
-  - The person's page scroll stays free: the wheel does not zoom the map, and on a phone one finger scrolls the page while two fingers move the map and the + and - buttons zoom it. So start on the area that matters: map.fitBounds on your points shows every marker at any width.
+  - Text on the map: bindPopup, bindTooltip, openPopup, openTooltip and setContent (and the content option of L.popup and L.tooltip) build markup from a string. Pass a text node or an element instead: marker.bindTooltip(document.createTextNode(place.name)). The rule for web and brand text below applies to them as to innerHTML.
+  - The person's page scroll stays free: the wheel does not zoom the map, and on a phone one finger scrolls the page while two fingers move the map and the + and - buttons zoom it. So start on the area that matters: give clay.map the bounds of your points.
 - view.js: runs once, after the html is in the page. Use it for what markup cannot show: motion, dragging, timing.
   - clay.values.<id>: the value now. Read it inside your animation loop or event handler, so a move takes effect at once.
   - clay.onChange((values) => { ... }): runs at once and after every move.

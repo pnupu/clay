@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import vm from "node:vm";
-import { BRIDGE_PURE, frameCsp, frameDocument, fromFrame, LEAFLET, limiter, requestOrigin, TAILWIND, tileOf, TILES } from "./frame.ts";
+import { BRIDGE_PURE, frameCsp, frameDocument, fromFrame, LEAFLET, limiter, requestOrigin, TAILWIND, tileOf, tilePathOf, TILES } from "./frame.ts";
 import type { KitState } from "./kit.ts";
 import { BUTTON_EXAMPLE, MAP_EXAMPLE } from "./reference.ts";
 import { parseSpec } from "./spec.ts";
@@ -98,6 +98,8 @@ test("a map preview may load the pinned map library and tiles from this app's ti
   assert.ok(doc.includes(`<link rel="stylesheet" href="${LEAFLET.css.url}" integrity="${LEAFLET.css.integrity}" crossorigin="anonymous"><script src="${LEAFLET.js.url}" integrity="${LEAFLET.js.integrity}" crossorigin="anonymous"></script>`));
   assert.match(LEAFLET.js.integrity + LEAFLET.css.integrity, /^sha384-[A-Za-z0-9+/]{64}sha384-[A-Za-z0-9+/]{64}$/);
   assert.ok(doc.includes('"map":{"tiles":"https://clay.example/api/tiles/","url":"https://clay.example/api/tiles/{z}/{x}/{y}.png","attribution":'), "the tile layer of clay.map() is in the frame's configuration");
+  // A map frame is ready when its scripts have run, not when every tile has loaded; another frame, at the load event as before.
+  assert.ok(doc.includes('if (cfg.map) document.addEventListener("DOMContentLoaded"') && plain.includes('else window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });'));
   assert.match(doc, /"attribution":"[^"]*OpenStreetMap contributors","maxZoom":19\}/);
   assert.equal(TILES.attribution, "\u00a9 OpenStreetMap contributors");
 });
@@ -109,11 +111,17 @@ test("the tile path of a map frame is on the host the browser asked for, and a h
   // Anything but a host name with a port falls back to the request's own origin.
   for (const bad of ["evil.example; script-src *", "a b", "evil.example/path", "user@evil.example", "evil.example:99999999", "", "'self'", "*.example"]) assert.equal(requestOrigin("https://clay.example/p/x/frame", bad, "https"), "https://clay.example", bad);
   assert.equal(requestOrigin("https://clay.example/p/x/frame", "clay.example", "javascript"), "https://clay.example");
+  // Behind a proxy, Host is the app's own address and X-Forwarded-Host is the one the browser used.
+  assert.equal(requestOrigin("http://127.0.0.1:43117/p/x/frame", "127.0.0.1:43117", "https", "clay.example"), "https://clay.example");
+  assert.equal(requestOrigin("http://127.0.0.1:43117/p/x/frame", "127.0.0.1:43117", "https", "clay.example, edge.internal"), "https://clay.example");
+  assert.equal(requestOrigin("https://clay.example/p/x/frame", "clay.example", "https", "evil.example; img-src *"), "https://clay.example");
 });
 
 test("the tile route serves tiles of the standard grid and nothing else", () => {
   assert.deepEqual(tileOf("15", "18642", "9477.png"), { z: 15, x: 18642, y: 9477 });
   assert.deepEqual(tileOf("0", "0", "0.png"), { z: 0, x: 0, y: 0 });
+  // The route answers one spelling of a tile's address: this one, with no query.
+  assert.equal(tilePathOf({ z: 15, x: 18642, y: 9477 }), "/api/tiles/15/18642/9477.png");
   assert.deepEqual(tileOf("19", "524287", "524287.png"), { z: 19, x: 524287, y: 524287 });
   // Outside the grid, beyond the deepest zoom, or not a tile address at all (a path, a query, another file type).
   for (const bad of [["20", "1", "1.png"], ["15", "32768", "1.png"], ["15", "1", "32768.png"], ["1", "2", "0.png"], ["15", "18642", "9477"], ["15", "18642", "9477.jpg"], ["-1", "0", "0.png"], ["1.0", "0", "0.png"], ["15", "../x", "1.png"], ["15", "18642", "9477.png?x=1"], ["15", "1e3", "1.png"], ["", "", ".png"], ["015", "1", "1.png"], ["15", "01", "1.png"], ["15", " 1", "1.png"], ["15", "1", "1.PNG"]]) assert.equal(tileOf(bad[0], bad[1], bad[2]), null, bad.join("/"));

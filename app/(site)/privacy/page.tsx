@@ -40,7 +40,7 @@ export default function Privacy() {
                     {signIn && <li><b>Clerk</b> runs sign-in and holds your sign-in data. On the sign-in pages Cloudflare’s bot check runs for Clerk.</li>}
                     <li><b>Context.dev</b> reads the web for Clay. It receives the addresses and domains to read, the search words for a pricing page, and the description of what to extract. It does not receive your account id or the values you set.</li>
                     <li><b>Vercel</b> hosts the site and the stored document.</li>
-                    <li><b>jsDelivr:</b> when a preview uses Tailwind, your browser loads that file from jsDelivr.</li>
+                    <li><b>jsDelivr:</b> when a preview uses Tailwind or shows a map, your browser loads that library’s files from jsDelivr.</li>
                     <li><b>A brand’s logo hosts:</b> when a preview shows a brand’s logo, your browser loads it from that brand’s hosts.</li>
                   </ul>
                 </section>
@@ -48,7 +48,7 @@ export default function Privacy() {
                   <h2>What a preview can and cannot do</h2>
                   <p>A preview is code that a playground’s author wrote with their agent. It runs in a sandbox: it cannot read the page around it, your Clay account or session, or other sites’ data, and it cannot open windows or submit forms.</p>
                   <p>It is not sealed from the network. In some browsers its code can make outgoing requests, so the values you set and the data shown in the preview could be sent to a server its author chose, with your IP address. A brand’s logo hosts can also receive them in image addresses.</p>
-                  <p>A preview with a map shows map tiles of OpenStreetMap. Clay fetches them from tile.openstreetmap.org for you: Clay’s server sees the area you look at, and the tile server sees Clay’s server, not your internet address.</p>
+                  <p>A preview with a map shows map tiles of OpenStreetMap. Clay fetches them from tile.openstreetmap.org for you: Clay’s server sees the area you look at, and the tile server sees Clay’s server, not your internet address. The map library itself comes from jsDelivr, as above.</p>
                   <p>Another person’s preview reaches you only when the operator has marked it as an example. A preview can show any text inside its box: never type a secret into one.</p>
                 </section>
                 <section>
