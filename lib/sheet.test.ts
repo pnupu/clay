@@ -83,6 +83,25 @@ test("the colours of a data view are the page's own: every colour of the sheet's
   assert.match(page, /--c-line-2: color-mix\(in oklab, var\(--p-ink\) 30%, transparent\)/);
 });
 
+test("the look of a page is checked in a time that grows with its length: a view.css written to be slow costs milliseconds", () => {
+  // The check runs on what an agent sends, before anything is stored. Each of these took seconds to hours with a
+  // pattern that could start a number or a value at every character: 20,000 characters is the largest view.css.
+  const hostile = {
+    "a run of digits with no unit": `.a { font-size: ${"1".repeat(19_980)} }`,
+    "colons before a brace": `${":".repeat(19_999)}{`,
+    "colons with no end": ":".repeat(20_000),
+    "colour functions that are never closed": `.a { color: ${"rgb(".repeat(4_990)} }`,
+    "font declarations with no end": "font: ".repeat(3_333),
+    "comments that are never closed": "/*".repeat(10_000),
+  };
+  for (const [what, css] of Object.entries(hostile)) {
+    const start = performance.now();
+    styleProblems({ preview: { html: `<p${' style="font: 1"'.repeat(1_000)}>x</p>`, css, data: true } });
+    const ms = performance.now() - start;
+    assert.ok(ms < 500, `${what}: ${Math.round(ms)} ms`);
+  }
+});
+
 test("a page of data in styles of its own is a problem for the agent that builds it; a data view with Clay's parts has none", () => {
   assert.deepEqual(parsed(MODEL_EXAMPLE).warnings, []);
   // Web facts without view.data: told to become a data view. A map with web facts is not a table.
@@ -120,6 +139,8 @@ test("a page of data in styles of its own is a problem for the agent that builds
   // comment that is never closed and after a view.css that does not close its last rule.
   assert.deepEqual(styleProblems({ preview: { html: '<p style="font-size: 1em /* n"><b style="padding: 4px">x</b></p>', css: "", data: true } }), []);
   assert.deepEqual(styleProblems({ preview: { html: '<b style="padding: 4px">x</b>', css: ".a { font-size: 1em", data: true } }), []);
+  // url(#grad) names a gradient or a clip path of a chart, not a colour.
+  assert.deepEqual(data(".a { fill: url(#abc); stroke: url( '#def'); mask: url(#fed); color: #2a78d6 }"), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
   assert.deepEqual(data("button { font: inherit } .font:hover { font-weight: 600 }"), []);
 });

@@ -202,8 +202,8 @@ const OWN_COLOURS = 2;
  * - a preview that reads web pages and is not a data view is told to become one. Not a map, and not a Tailwind
  *   preview: those are a place and the person's own component, and view.data is refused with view.tailwind;
  * - a data view is told about each thing it brings that the frame already has: a typeface, text under 12 px, colours.
- * Advice, not a refusal: the playground is built. Only view.css and the style attributes of view.html are read; what
- * view.js sets is not seen, and neither is a colour by name or a size in em or %.
+ * Advice, not a refusal: the playground is built. Only view.css and the quoted style attributes of view.html are read;
+ * what view.js sets is not seen, and neither is a style element inside view.html, a colour by name or a size in em or %.
  */
 export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "data" | "map"> & { tailwind?: boolean }; web?: unknown[] | null }): string[] {
   const { preview } = kit;
@@ -219,19 +219,31 @@ export function styleProblems(kit: { preview: Pick<Preview, "html" | "css" | "da
   // (Not seen: "/*" inside a string or a url(), which is no comment; it hides the styles after it from this check.)
   const plain = (s: string) => `${s.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ")};`;
   const styles = [plain(preview.css), ...[...preview.html.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].map((m) => plain(m[1] ?? m[2]))].join("\n");
-  // A declaration, not a selector (".font:hover"), and not "font: inherit", which takes Clay's typeface.
-  if (/(?<![\w.#-])font(?:-family)?\s*:(?!\s*(?:inherit|unset|initial)\b)/i.test(styles)) out.push("view.css or a style attribute of view.html: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
-  // The size of font-size and of the font shorthand, in px or rem (16 px).
-  const small = [...new Set([...styles.matchAll(/(?<![\w.#-])font(?:-size)?\s*:[^;{}]*?(\d*\.?\d+)(px|rem)\b/gi)].map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
+  // The declarations, in one pass over the text: what stands before a ";" or a "}" is a declaration ("property: value"),
+  // what stands before a "{" is a selector (".font:hover", "#add") and is left out. Every check below reads one
+  // declaration at a time and each of its patterns can match a number or a colour only from its first character, so
+  // the time grows with the length of the text and no faster: a view.css of the largest size, written to be slow,
+  // costs milliseconds. It must: this runs on what an agent sends, before anything is stored.
+  const decls = [...styles.matchAll(/([^;{}]*)([;{}])/g)]
+    .filter((m) => m[2] !== "{")
+    .map((m) => /^\s*([\w-]+)\s*:([\s\S]*)$/.exec(m[1]))
+    .filter((m) => m != null)
+    .map((m) => ({ prop: m[1].toLowerCase(), value: m[2] }));
+  // Not "font: inherit", which takes Clay's typeface.
+  if (decls.some((d) => (d.prop === "font" || d.prop === "font-family") && !/^\s*(?:inherit|unset|initial)\b/i.test(d.value))) out.push("view.css or a style attribute of view.html: a data view (view.data) has Clay's typeface. Remove font-family and the font shorthand. A size goes in font-size alone, and only where no part fits: the parts have the sizes (.lead 21 px, body 15 px, .small 13 px).");
+  // The size of font-size and of the font shorthand, in px or rem (16 px): the first number with such a unit. A number
+  // starts only where no digit, letter, point or hyphen stands before it, so a long run of digits is read one time.
+  const size = /(?<![\w.-])(\d+(?:\.\d+)?|\.\d+)(px|rem)\b/i;
+  const small = [...new Set(decls.filter((d) => d.prop === "font" || d.prop === "font-size").map((d) => size.exec(d.value)).filter((m) => m != null).map((m) => ({ text: `${m[1]}${m[2].toLowerCase()}`, px: Number(m[1]) * (m[2].toLowerCase() === "rem" ? 16 : 1) })).filter((s) => s.px < SMALLEST_TEXT).map((s) => s.text))];
   if (small.length) out.push(`view.css or a style attribute of view.html: font-size ${small.join(", ")} is under ${SMALLEST_TEXT} px, the smallest text of a data view. Text that small is a sign of too much text: use .small (13 px), and move the long part into <details>.`);
-  // Colours in the values of declarations only (the text after a colon, up to ";" or "}"): "#add" in a selector is an id.
-  // One colour written in two ways is one colour: #fff, #FFFFFF and #ffffffff.
+  // Colours in the values of declarations only: "#add" in a selector is an id, and "#grad" in url(#grad) names a
+  // gradient or a clip path of a chart. One colour written in two ways is one colour: #fff, #FFFFFF and #ffffffff.
   const hex = (c: string) => {
     const h = c.length <= 5 ? `#${[...c.slice(1)].map((x) => x + x).join("")}` : c;
     return h.length === 9 && h.endsWith("ff") ? h.slice(0, 7) : h;
   };
-  const values = [...styles.matchAll(/:([^;{}]*)(?=[;}])/g)].map((m) => m[1]).join("\n");
-  const colours = [...new Set((values.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/gi) ?? []).map((c) => c.toLowerCase().replace(/\s*([,/()])\s*/g, "$1").replace(/\s+/g, " ")).map((c) => (c.startsWith("#") ? hex(c) : c)))];
+  const colour = /(?<!url\(\s*["']?)#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\([^()]{0,80}\)/gi;
+  const colours = [...new Set(decls.flatMap((d) => d.value.match(colour) ?? []).map((c) => c.toLowerCase().replace(/\s*([,/()])\s*/g, "$1").replace(/\s+/g, " ")).map((c) => (c.startsWith("#") ? hex(c) : c)))];
   if (colours.length > OWN_COLOURS) out.push(`view.css or a style attribute of view.html: ${colours.length} colours of its own (${colours.slice(0, 4).join(", ")}${colours.length > 4 ? ", ..." : ""}). A data view takes its colours from the variables: var(--ink), var(--muted), var(--line), var(--field), var(--accent), var(--ok), var(--warn), var(--bad), and --accent-bg, --ok-bg, --warn-bg, --bad-bg behind them; the parts .pick, .out, .badge and .note use them already. Keep a colour of your own only when it is data: a brand colour, a series in a chart.`);
   return out;
 }
