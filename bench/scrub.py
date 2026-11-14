@@ -20,7 +20,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The run's temp directory as given (mkdtemp builds on it) and resolved (a symlinked TMPDIR).
-TMPS = sorted({p.rstrip("/") for p in (tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir()))} - {"", "/tmp", "/var/tmp"}, key=len, reverse=True)
+TMPS = sorted({p.rstrip("/") for p in (tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir()))} - {"", "/tmp", "/var/tmp", os.path.realpath("/tmp"), os.path.realpath("/var/tmp")}, key=len, reverse=True)
 REPO = os.path.dirname(HERE)
 
 

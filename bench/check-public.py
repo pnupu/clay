@@ -2,7 +2,8 @@
 """Fail if a file under bench/ holds something that belongs to the machine or the person that ran it.
 
 Checks every tracked file under bench/ and every new file there that git does not ignore (a fresh run's
-results before `git add`). A binary file (it holds a NUL byte) gets the key checks only. Each file is checked for:
+results before `git add`). A binary file (it holds a NUL byte) skips only the user and host name checks.
+Each file is checked for:
   - absolute home or session paths (/home/<user>, /Users/<user>, /root/, <tmp>/claude-<uid>, /run/user/<uid>)
   - the user name and the host name of this machine in a path or address context (<user>@, @<host>, -home-<user>-)
   - the host name anywhere
@@ -23,7 +24,7 @@ user = re.escape(getpass.getuser())
 host = re.escape(socket.gethostname().split(".")[0])
 KNOWN_UNDER_HOME = r"\.claude|\.claude\.json|\.codex|\.agents|\.t3|\.t3code|agent-runs"
 
-NAME_CHECKS = {"absolute home path", "session temp path", "user name in a path or address", "host name", "unknown folder under <home>"}
+NAME_CHECKS = {"user name in a path or address", "host name"}  # short names can match random bytes in a binary
 CHECKS = [
     ("absolute home path", re.compile(r"/home/[A-Za-z0-9_.-]+|/Users/[A-Za-z0-9_.-]+|/root/")),
     ("session temp path", re.compile(r"/tmp/claude-\d+|/run/user/\d+")),

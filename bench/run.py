@@ -166,7 +166,7 @@ def parse_claude(stdout):
         m["input_tokens"] = u.get("input_tokens", 0) + cr + cw
         m["cached_input_tokens"], m["cache_write_tokens"], m["output_tokens"] = cr, cw, u.get("output_tokens", 0)
     if result.get("is_error") or result.get("subtype") not in (None, "success"):
-        m["cli_error"] = f"{result.get('subtype')}: {str(result.get('result') or result.get('errors') or '')[:500]}"
+        m["cli_error"] = f"{result.get('subtype')}: {str(result.get('result') or result.get('errors') or '')}"
     if result.get("stop_reason") == "refusal":
         m["refused"] = True
     return m
@@ -194,10 +194,10 @@ def parse_codex(stdout):
             if it.get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
                 m["tool_calls"] += 1
         elif t in ("error", "turn.failed"):
-            err = ev.get("message") or (ev.get("error") or {}).get("message") or json.dumps(ev)[:500]
-            errors.append(str(err)[:500])
+            err = ev.get("message") or (ev.get("error") or {}).get("message") or json.dumps(ev)
+            errors.append(str(err))
     if errors:
-        m["cli_error"] = " | ".join(errors)[:1000]
+        m["cli_error"] = " | ".join(errors)
     return m
 
 
@@ -215,16 +215,24 @@ def classify(timed_out, exit_code, parsed, stderr):
 
 
 # Long texts of a run record and how much of each is kept: (field, keep the head or the tail, characters).
+# An error_text taken from stderr keeps its tail instead: the error is at the end of stderr.
 CUTS = (("error_text", "head", 1000), ("check_output", "tail", 300), ("check_fail_line", "head", 400))
+STDERR_TAIL = 500
+
+
+def cut_text(v, side, n):
+    return v if not isinstance(v, str) or len(v) <= n else (v[:n] if side == "head" else v[-n:])
 
 
 def cut(rec):
     """A copy of a run record with its long texts cut to size (applied after scrubbing for the committed copy)."""
     out = dict(rec)
     for field, side, n in CUTS:
-        v = out.get(field)
-        if isinstance(v, str) and len(v) > n:
-            out[field] = v[:n] if side == "head" else v[-n:]
+        if field == "error_text" and out.get("error_text_from") == "stderr":
+            side, n = "tail", STDERR_TAIL
+        out[field] = cut_text(out.get(field), side, n) if field in out else None
+        if field not in rec:
+            del out[field]
     return out
 
 
@@ -257,9 +265,9 @@ def run_check(task_dir, task, work, limit=600):
         with open(out_path, encoding="utf-8", errors="replace") as f:
             text = f.read()
         if timed_out:
-            return False, text[-600:], f"FAIL check-timeout: the hidden check did not finish within {limit} s"
+            return False, text, f"FAIL check-timeout: the hidden check did not finish within {limit} s"
         fail = next((ln.strip() for ln in text.splitlines() if ln.startswith("FAIL")), None)
-        return p.returncode == 0, text[-600:], fail
+        return p.returncode == 0, text, fail
 
 
 def tree_digest(d):
@@ -290,7 +298,7 @@ def failure_kind(rec):
         return "no-change (gave up)"
     line = rec.get("check_fail_line") or ""
     if line.startswith("FAIL "):
-        return line[5:].split(":", 1)[0]
+        return line[5:].split(":", 1)[0][:60]
     return "wrong-output (check crashed)"
 
 
@@ -340,8 +348,10 @@ def one_run(task_id, agent, model, repeat, out_dir, versions):
             if agent == "codex" else ("stream-json init event" if effort else "none"),
             "repeat": repeat, "passed": passed, "wall_seconds": wall, "timeout_s": task["timeout_s"],
             "exit_code": p.returncode, "error_class": err_class,
-            # Full texts here; write_record() cuts them, after scrubbing for the committed copy (see CUTS).
+            # Uncut texts here; write_record() cuts them (CUTS), after scrubbing for the committed copy, so a cut
+            # cannot leave half a path. The private copy is cut too; the full texts are in the transcripts.
             "error_text": parsed.get("cli_error") or (stderr.strip() if p.returncode else None),
+            "error_text_from": "cli" if parsed.get("cli_error") else ("stderr" if p.returncode else None),
             "check_output": None if passed else check_out.strip(),
             "check_fail_line": None if passed else (fail_line or ""),
             "changed_files": changed, "task_set": os.path.basename(TASKS),
@@ -448,7 +458,7 @@ def main():
                    "input_tokens": None, "output_tokens": None}
         with lock:
             if rec["error_class"] == "rate_or_usage_limit" and (ag, m) not in stopped:
-                stopped[(ag, m)] = (rec["error_text"] or "")[:1000]
+                stopped[(ag, m)] = rec["error_text"] or ""
             write_record(rec)
             print(f"{t:17} {ag}:{m:22} r{r} {'PASS' if rec['passed'] else 'fail'} {rec['wall_seconds'] or 0:7.1f}s "
                   f"{rec['error_class']} in={rec['input_tokens']} out={rec['output_tokens']}", flush=True)
@@ -459,8 +469,10 @@ def main():
     manifest.update({"finished_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                      "agent_runs": len(done), "planned_runs": len(plan), "reused_records": reused, "reused_from": a.reuse,
                      "stopped_subjects": {f"{ag}:{m}": txt for (ag, m), txt in stopped.items()}})
-    json.dump(scrub_obj(manifest), open(os.path.join(out_dir, "manifest.json"), "w"), indent=2)
-    json.dump(manifest, open(os.path.join(private, "manifest.local.json"), "w"), indent=2)
+    def cut_stopped(m):  # after scrub_obj for the committed copy, as for the run records
+        return {**m, "stopped_subjects": {k: cut_text(v, "head", 1000) for k, v in m["stopped_subjects"].items()}}
+    json.dump(cut_stopped(scrub_obj(manifest)), open(os.path.join(out_dir, "manifest.json"), "w"), indent=2)
+    json.dump(cut_stopped(manifest), open(os.path.join(private, "manifest.local.json"), "w"), indent=2)
     print(f"done: {len(done)} runs -> {runs_path}")
 
 
