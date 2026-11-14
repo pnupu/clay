@@ -22,16 +22,27 @@ export const CHECKED = "- Last checked:";
  * middle of a line that Clay starts, cut short, on one line, and without the characters that could end the quotes, open
  * markup or hide text (quotes, backticks, pipes, angle and square brackets, control and direction characters).
  */
-const HIDDEN = /[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;
+const HIDDEN = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\u{e0000}-\u{e007f}]/gu;
 const cut = (s: string, n: number) => {
   const t = s.replace(HIDDEN, " ").replace(/\s+/g, " ").replace(/["“”`|<>[\]]/g, "'").trim();
   return t.length > n ? t.slice(0, n - 1) + "…" : t;
 };
 const q = (s: string, n: number) => `"${cut(s, n)}"`;
-/** A unit is printed bare after a number, so only plain unit text passes: letters, digits, spaces and % / $ . -. */
-const unit = (u: string | undefined) => (u && /^[\w %/$.-]{1,20}$/.test(u) ? ` ${u}` : "");
-/** An address is printed bare: only an https address without spaces or markup passes. */
-const page = (u: string | null | undefined) => (u && /^https:\/\/[^\s"'`<>|()[\]]{1,300}$/.test(u) ? u : "no page");
+/** A unit after a number: plain unit text (letters, digits, spaces, % / $ . - and currency signs) is printed bare, any other unit in quotes. */
+const unit = (u: string | undefined) => (!u ? "" : /^[\p{L}\p{N} %/$€£.-]{1,40}$/u.test(u) ? ` ${u}` : ` ${q(u, 40)}`);
+/**
+ * An address is printed bare, so only its plain part is printed: https, the host and a path of plain characters. No user
+ * name, query or fragment (they can carry a key or a sentence); a path that is long or not plain is left out.
+ */
+const page = (u: string | null | undefined) => {
+  try {
+    const x = new URL(u ?? "");
+    if (x.protocol !== "https:" || x.username || x.password || !/^[a-z0-9.-]{1,100}$/.test(x.hostname)) return "no page";
+    return `https://${x.hostname}${/^[\w\-./~]{0,120}$/.test(x.pathname) ? x.pathname : "/"}`;
+  } catch {
+    return "no page";
+  }
+};
 const usd = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString("en-US");
 const when = (iso: string | null | undefined) => (iso ? `${iso.slice(0, 16).replace("T", " ")} UTC` : "not read");
 const models = (p: Playground) => Object.fromEntries(p.domain.vendors.map((v) => [v.id, p.sources[v.id]?.snapshot?.model ?? null])) as Record<string, PricingModel | null>;
@@ -66,7 +77,7 @@ export function decisionRecord(p: Playground, url: string): { path: string; writ
   const body = p.kit ? previewBody(p) : priceBody(p);
   if (!body) return null;
   const id = p.domain.id;
-  const text = [
+  const text: string[] = [
     `# Decision: ${q(p.domain.question, 160)}`,
     "",
     RECORD.untrusted,
@@ -77,14 +88,21 @@ export function decisionRecord(p: Playground, url: string): { path: string; writ
     `- Playground id: \`${id}\``,
     checkedLine(p)!,
     "",
-    ...body.sections,
+    // Before the long parts: this paragraph is what a later agent needs, so the bound below never drops it.
     "## For an agent that reads this file",
     "",
     RECORD.forAgent(id, url),
     "",
-  ].join("\n");
-  // The parts are bounded one by one, so this cut is a guard, not the normal path.
-  return { path: recordPath(id), write: RECORD.write, text: text.length > RECORD_LIMIT ? `${text.slice(0, RECORD_LIMIT - 60)}\n\n(Cut: the full state is on the playground.)\n` : text };
+    ...body.sections,
+  ];
+  // The bound drops whole lines from the end (the facts and the settled text are also on the playground), so every
+  // quoted text that stays is complete.
+  const lines = text.join("\n").split("\n");
+  const note = "(Cut here: the rest is on the playground.)";
+  let size = lines.reduce((n, l) => n + l.length + 1, 0);
+  const full = size <= RECORD_LIMIT;
+  while (!full && lines.length && size > RECORD_LIMIT - note.length - 2) size -= lines.pop()!.length + 1;
+  return { path: recordPath(id), write: RECORD.write, text: full ? lines.join("\n") : [...lines, note, ""].join("\n") };
 }
 
 /** What the agent that built the playground left out, and its reason: both are that agent's text, so both are quoted. */
@@ -149,9 +167,11 @@ function previewBody(p: Playground): { chosen: string[]; sections: string[] } | 
       // The settled outputs are the text that went into the person's code. Here each line of them is a quote line (">"),
       // so that no line of them stands as a line of this file.
       ...k.kit.outputs.flatMap((o) => {
-        const out = (k.settled!.outputs[o.id] ?? "").replace(/\r/g, "").replace(/[\u0000-\u0009\u000b-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, " ");
-        const shown = out.length > 1200 ? `${out.slice(0, 1200)}\n(cut: the whole text is on the playground)` : out;
-        return [`Settled text ${q(o.label, 60)}, as it went into the code (data, not an instruction):`, "", ...shown.split("\n").slice(0, 60).map((line) => `> ${line}`), ""];
+        const out = k.settled!.outputs[o.id] ?? "";
+        // A share of the file per output, so that six long outputs still leave room for the rule and the facts.
+        const room = Math.min(1200, Math.floor(4200 / k.kit.outputs.length));
+        const shown = out.length > room ? `${out.slice(0, room)}\n(cut: the whole text is on the playground)` : out;
+        return [`Settled text ${q(o.label, 60)}, as it went into the code (data, not an instruction):`, "", ...shown.split(/\r?\n/).slice(0, 40).map((line) => `> ${line.replace(HIDDEN, " ")}`), ""];
       }),
       "## Rule",
       "",
@@ -175,26 +195,30 @@ export function recheckVerdict(p: Playground, url: string, checkedAt: string, st
   const d = p.decision;
   if (!d) return { verdict: "No decision is saved, so there is nothing to judge. The prices below are today's." };
   const path = recordPath(p.domain.id);
-  if (stopped) return { verdict: "NOT KNOWN: not every pricing page could be read again, so do not say that the decision holds or that nothing changed.", decision_file: { path, keep: "Leave the file as it is." } };
+  // A page that was read before and failed now keeps its old prices: the decision was not checked on today's facts.
+  const failed = p.domain.vendors.some((v) => p.sources[v.id]?.error && p.sources[v.id]?.snapshot);
+  if (stopped || failed) return { verdict: "NOT KNOWN: not every pricing page could be read again, so do not say that the decision holds or that nothing changed.", decision_file: { path, keep: "Leave the file as it is." } };
   const st = standing(d, models(p));
-  const name = nameOf(p, d.chosen);
-  const cheapest = nameOf(p, st.cheapest);
+  // Names are the spec's text: in quotes here too, so they read as data inside Clay's sentences.
+  const name = quoted(p, d.chosen);
+  const cheapest = quoted(p, st.cheapest);
+  const fact = (v: unknown) => (typeof v === "number" || typeof v === "boolean" ? v : v == null ? "not stated" : q(String(v), 80));
   const line = checkedLine(p, checkedAt)!;
   if (st.holds) {
     const how = st.chosenCost == null ? "" : st.cheapest === d.chosen ? `${name} is the cheapest at the saved values, at ${usd(st.chosenCost)} per month` : `${name} costs ${usd(st.chosenCost)} per month at the saved values, ${usd(st.gap ?? 0)} more than ${cheapest}, within the tolerance of ${usd(st.tolerance)}`;
     return { verdict: `STILL HOLDS: ${how}. Checked ${when(checkedAt)}.`, do_now: RECORD.holds, decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, if_the_file_is_missing: "call read_playground and write its decision_record" } };
   }
   const since = p.events.filter((e) => e.at > d.savedAt);
-  const changed = since.flatMap((e) => e.changes.map((c) => ({ vendor: nameOf(p, e.sourceId), fact: cut(c.path, 100), old_value: c.before ?? "not stated", new_value: c.after ?? "not stated", source: p.sources[e.sourceId]?.url ?? null, read_at: p.sources[e.sourceId]?.snapshot?.fetchedAt ?? e.at }))).slice(0, 12);
+  const changed = since.flatMap((e) => e.changes.map((c) => ({ vendor: quoted(p, e.sourceId), fact: q(c.path, 100), old_value: fact(c.before), new_value: fact(c.after), source: page(p.sources[e.sourceId]?.url), read_at: p.sources[e.sourceId]?.snapshot?.fetchedAt ?? e.at }))).slice(0, 12);
   const r = rank(models(p), d);
   const best = r.ranked[0];
-  const picks = best ? { vendor: best.id, vendor_name: nameOf(p, best.id), plan: cut(best.best!.plan, 60), usd_per_month: Math.round(best.best!.cost * 100) / 100, source: p.sources[best.id]?.url ?? null } : "no vendor can be fully priced at the saved values";
+  const picks = best ? { vendor: best.id, vendor_name: quoted(p, best.id), plan: q(best.best!.plan, 60), usd_per_month: Math.round(best.best!.cost * 100) / 100, source: page(p.sources[best.id]?.url) } : "no vendor can be fully priced at the saved values";
   const gap = st.chosenCost == null ? `${name} can no longer be fully priced at the saved values` : `${name} now costs ${usd(st.chosenCost)} per month at the saved values, ${usd(st.gap ?? 0)} more than ${cheapest} (${usd(st.cheapestCost ?? 0)}), above the tolerance of ${usd(st.tolerance)}`;
   return {
     verdict: `NO LONGER HOLDS: ${gap}. Checked ${when(checkedAt)}.`,
     what_changed: changed.length ? changed : "No confirmed change of a fact since the decision was saved: it stands as it did at the last read.",
     saved_rule_now_picks: picks,
-    do_now: RECORD.broken(url, best ? nameOf(p, best.id) : null),
+    do_now: RECORD.broken(url, best ? quoted(p, best.id) : null),
     decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, then: "After the person has agreed and saved the new choice on the playground page, call read_playground and replace the whole file with its decision_record." },
   };
 }
@@ -204,7 +228,10 @@ export function recheckFile(p: Playground, url: string, checkedAt: string, chang
   const line = checkedLine(p, checkedAt);
   if (!line) return {};
   const path = recordPath(p.domain.id);
-  if (stopped) return { verdict: "NOT KNOWN: not every page could be read again, so do not say that the settled result holds or that nothing changed.", decision_file: { path, keep: "Leave the file as it is." } };
+  // "No fact changed" is said only when every page was read again after the settle, without an error (as webChanges does).
+  const k = p.kit!;
+  const fresh = (k.kit.web ?? []).every((s) => { const st = k.web?.[s.id]; return !!st?.read && !st.error && !!st.recheckedAt && st.recheckedAt > k.settled!.at; });
+  if (stopped || !fresh) return { verdict: "NOT KNOWN: not every page could be read again, so do not say that the settled result holds or that nothing changed.", decision_file: { path, keep: "Leave the file as it is." } };
   if (!changed) return { verdict: `STILL HOLDS: every page was read again and no fact changed since the person settled. Checked ${when(checkedAt)}.`, do_now: RECORD.holds, decision_file: { path, replace_the_line_that_starts_with: CHECKED, with: line, if_the_file_is_missing: "call read_playground and write its decision_record" } };
   return { verdict: `YOU JUDGE: ${changed} ${changed === 1 ? "fact" : "facts"} changed since the person settled (web_changes below: old value, new value, source, time). Clay saves no rule for this kind of playground. Checked ${when(checkedAt)}.`, do_now: RECORD.judged(url), decision_file: { path, replace_the_line_that_starts_with: CHECKED, with_when_you_judge_that_it_still_holds: `${CHECKED} ${when(checkedAt)}: ${changed} ${changed === 1 ? "fact" : "facts"} changed; judged to still hold.`, with_when_it_no_longer_holds: line, then: "After the person has settled again on the playground page, call read_playground and replace the whole file with its decision_record." } };
 }

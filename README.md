@@ -117,17 +117,17 @@ A button is a one-off. A provider, model or GPU choice is a standing decision: i
 - `recheck_playground` starts its answer with the verdict. When the decision no longer holds, it gives what changed (old value, new value, source, read time), what the saved rule now picks, and what to do: tell the person in two lines with the link, propose the change, and change the code and the file only after they agree. When it still holds: one line, and the new "Last checked" line for the file. The rule is the one on the page (`standing()` in `lib/diff.ts`); for a preview on web facts Clay reports the changed facts and the agent judges.
 - Why a dot folder with one file per decision: it is the place tools keep their own state in a repository (`.github`, `.claude`), it does not mix with the team's own documents, one decision is one file to read, replace or delete, and the playground id in the file name is the argument of the re-check.
 - Text that Clay did not write (a vendor, plan or row name from a web page; a title, label or reason from the spec) is data in the file: always in double quotes inside a line that Clay starts, on one line, cut short, without quotes, backticks, pipes, brackets or hidden characters; the settled outputs are quoted line by line (`>`). The file says so before the first such text.
-- Proof: `node evals/return.ts` (cases of kind `return`, fixture prices, `evals/return-fixture.ts`). A fresh Claude Code session in a repository that holds only code and the decision file is asked "is our email provider still the right pick?", with no Clay word in the request. Measured on 2026-11-14, Claude Code with its normal tools and default model (Claude Opus 5.5) in a clean home, one run at a time, 9 runs:
+- Proof: `node evals/return.ts` (cases of kind `return`, fixture prices, `evals/return-fixture.ts`). A fresh Claude Code session in a repository that holds only code and the decision file is asked "is our email provider still the right pick?", with no Clay word in the request. Measured on 2026-11-14, Claude Code with its normal tools and default model (Claude Opus 5.5) in a clean home, one run at a time, 10 runs:
 
 | Case | Standing instruction | Runs | Found the file, called `recheck_playground` with its id, answered correctly |
 |---|---|---|---|
 | holds: prices unchanged | absent | 2 | 2 of 2 |
-| broken: the chosen vendor went from $20 to $45 | absent | 2 | 2 of 2 |
+| broken: the chosen vendor went from $20 to $45 | absent | 3 | 3 of 3 |
 | model: a settled preview on web facts, the chosen model's prices went up sixfold | absent | 1 | 1 of 1 |
 | holds and broken | present | 2 | 2 of 2 |
 | write: the first session writes the file as given | absent | 2 | 2 of 2 |
 
-In the "no longer holds" runs the agent named the old and the new price and what the rule now picks, gave the link, proposed the change and changed no code. Two of the nine runs were recorded as failed by the checker and were correct on reading: one pattern for "proposes the change" was too narrow, and one check expected a new "Last checked" line when the re-check fell in the same minute as the build. Both checks are corrected in `evals/return.ts`.
+In the "no longer holds" runs the agent named the old and the new price and what the rule now picks, gave the link, proposed the change and changed no code. Two of the ten runs were recorded as failed by the checker and were correct on reading: one pattern for "proposes the change" was too narrow, and one check expected a new "Last checked" line when the re-check fell in the same minute as the build. Both checks are corrected in `evals/return.ts`; after a code review the checks were also made stricter (the agent must open the file before the re-check; exact dollar amounts), and every saved answer passes the stricter checks.
 
 What this does not do: nothing wakes the agent by itself. A decision is re-checked when a person asks, or when an agent reads the file before related work.
 

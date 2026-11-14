@@ -177,7 +177,7 @@ async function runCase(c: ReturnCase, runDir: string, tag: string): Promise<Resu
     check("the file is the server's text, unchanged", (fileAfter ?? "").trim() === record.text.trim(), fileAfter == null ? "" : firstDifference(fileAfter.trim(), record.text.trim()));
     check("it told the person where the decision is kept", new RegExp(record.path.replace(/[.\/]/g, "\\$&")).test(run.allText) || /\.clay\/decisions/.test(run.allText), answer.slice(-240));
   } else {
-    check("it found the decision file in the repository", raw.includes(record.path) || raw.includes(".clay/decisions"), "");
+    check("it opened the decision file in the repository before it called the re-check", openedBefore(raw), "");
     check("it called recheck_playground with the id from the file", recheck.some((x) => x.input.playground_id === id), recheck.map((x) => JSON.stringify(x.input)).join(" ") || `Clay calls: ${run.calls.filter((x) => x.mcp).map((x) => x.tool).join(", ") || "none"}`);
     check("it did not build a new playground or search the web", !run.calls.some((x) => (x.mcp && x.tool === "create_playground") || /^Web(Search|Fetch)$/.test(x.tool)), run.calls.map((x) => x.tool).join(", "));
     check("it changed no code", read(join(repo, code)) === codeBefore, "");
@@ -186,21 +186,21 @@ async function runCase(c: ReturnCase, runDir: string, tag: string): Promise<Resu
     const lineNow = (fileAfter ?? "").split("\n").find((l) => l.startsWith("- Last checked:")) ?? "no line";
     if (c.id === "model") {
       // swift-2: 60,000 x $6 + 2,000 x $30 per 1M = $0.42 a task; deep-2: 60,000 x $3 + 2,000 x $15 = $0.21 a task.
-      check("the answer says the settled choice no longer holds", /no longer|not the (right|cheaper|cheapest|best)|isn't the (right|cheaper|cheapest|best)|doesn't hold|does not hold|not anymore|no\b/i.test(answer), answer.slice(0, 300));
-      check("it says what changed: swift-2's prices, old and new", /swift-2/i.test(answer) && /\$?\b1\b/.test(answer) && /\$?\b6\b/.test(answer) && /\$?\b30\b/.test(answer), answer.slice(0, 300));
-      check("it works out what the settled rule now gives: deep-2 is the cheaper one", /deep-2/i.test(answer) && /(0\.21|\$?630\b|half)/i.test(answer), answer.slice(0, 400));
+      check("the answer says the settled choice no longer holds", /no longer|not the (right|cheaper|cheapest|best)|isn't the (right|cheaper|cheapest|best)|doesn't hold|does not hold|not anymore|^no[.,]/i.test(answer.trim()), answer.slice(0, 300));
+      check("it says what changed: swift-2's prices, old and new", /swift-2/i.test(answer) && dollars(1).test(answer) && dollars(6).test(answer) && dollars(30).test(answer), answer.slice(0, 300));
+      check("it works out what the settled rule now gives: deep-2 is the cheaper one", /deep-2/i.test(answer) && /(\$0\.21|\$630(?!\d)|half as much|half the)/i.test(answer), answer.slice(0, 400));
       check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
-      check("it proposes the change and does not make it", /\?|want me|shall i|should i|if you (agree|go with|want|decide|switch)|let me know|tell me|say the word|your call|once you/i.test(answer), answer.slice(-240));
+      check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
       check("the file keeps the settled choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter), lineNow);
     } else if (c.id === "holds") {
       check("the answer says the choice still holds, and names the service", /resend/i.test(answer) && /(still|remains?|yes)\b[^.]*\b(holds?|right|cheapest|best|good|fine|stands)/i.test(answer) && !/no longer|switch to|move to/i.test(answer), answer.slice(0, 300));
       check("the check line of the file is the one the re-check gave, and says it holds", !!fileAfter && !!given && lineNow === given && /: holds\.$/.test(lineNow) && sameBut(fileBefore!, fileAfter), `${lineNow} (given: ${given})`);
     } else {
-      check("the answer says the choice no longer holds", /no longer|not the (right|cheapest|best)|isn't the (right|cheapest|best)|doesn't hold|does not hold|stopped holding/i.test(answer), answer.slice(0, 300));
-      check("it says what changed: the old and the new price of Resend", /\$?20\b/.test(answer) && /\$?45\b/.test(answer), answer.slice(0, 300));
-      check("it names what the saved rule now picks: Postmark at $25", /postmark/i.test(answer) && /\$?25\b/.test(answer), answer.slice(0, 300));
+      check("the answer says the choice no longer holds", /no longer|not the (right|cheapest|best)|isn't the (right|cheapest|best)|doesn't hold|does not hold|stopped holding|not anymore|^no[.,]/i.test(answer.trim()), answer.slice(0, 300));
+      check("it says what changed: the old and the new price of Resend", /resend/i.test(answer) && dollars(20).test(answer) && dollars(45).test(answer), answer.slice(0, 300));
+      check("it names what the saved rule now picks: Postmark at $25", /postmark/i.test(answer) && dollars(25).test(answer), answer.slice(0, 300));
       check("it gives the playground link", answer.includes(url) || answer.includes(`/p/${id}`), "");
-      check("it proposes the change and does not make it", /\?|want me|shall i|should i|if you (agree|go with|want|decide|switch)|let me know|tell me|say the word|your call|once you/i.test(answer), answer.slice(-240));
+      check("it proposes the change and does not make it", PROPOSES.test(answer), answer.slice(-240));
       check("the file keeps the saved choice; only the check line may change", !!fileAfter && sameBut(fileBefore!, fileAfter) && fileAfter.includes('"Resend" (chosen)'), lineNow);
     }
   }
@@ -211,6 +211,27 @@ async function runCase(c: ReturnCase, runDir: string, tag: string): Promise<Resu
   rename(join(caseDir, "repository"));
   return { id: c.id, kind: "return", request: c.request(id), note: c.note, memory: memory != null, result: checks.every((x) => x.pass) ? "pass" : "fail", checks, seconds: run.seconds, model: run.model, playground: id, answer, recheckAnswer: recheck.at(-1)?.result ?? null, fileBefore, fileAfter, error: run.error };
 }
+/**
+ * Did the agent look into .clay with one of its own tools before its first recheck_playground call? The re-check answer
+ * names the file's path itself, so the path anywhere in the transcript proves nothing.
+ */
+function openedBefore(raw: string): boolean {
+  for (const line of raw.split("\n")) {
+    let e: { type?: string; message?: { content?: { type?: string; name?: string; input?: unknown }[] } };
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e.type !== "assistant") continue;
+    for (const c of e.message?.content ?? []) {
+      if (c.type !== "tool_use") continue;
+      if (/recheck_playground$/.test(c.name ?? "")) return false;
+      if (!/^mcp__/.test(c.name ?? "") && JSON.stringify(c.input ?? {}).includes(".clay")) return true;
+    }
+  }
+  return false;
+}
+/** The agent offers the change and waits: words of an offer, not just any question mark. */
+const PROPOSES = /want me to|shall i|should i|would you like|do you want|if you (agree|go with|want|decide|switch|'d like)|let me know|tell me|say the word|your call|once you|after you/i;
+/** A dollar amount as a whole number: "$20", not "$200" or "$20.50". */
+const dollars = (n: number) => new RegExp(`\\$${n}(?!\\d)(?![.,]\\d)`);
 /** Two texts are the same except for the line that starts with "- Last checked:". */
 const sameBut = (a: string, b: string) => { const strip = (t: string) => t.trim().split("\n").filter((l) => !l.startsWith("- Last checked:")).join("\n"); return strip(a) === strip(b); };
 const firstDifference = (a: string, b: string) => { const i = [...a].findIndex((ch, n) => ch !== b[n]); return i < 0 ? (a.length === b.length ? "" : `lengths ${a.length} and ${b.length}`) : `first difference at character ${i}: wrote "${a.slice(i, i + 60)}", given "${b.slice(i, i + 60)}"`; };
