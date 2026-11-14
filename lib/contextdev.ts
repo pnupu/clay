@@ -200,6 +200,17 @@ export function capturedAt(meta: { status?: string; age_ms?: unknown } | null | 
   return meta?.status === "miss" && age == null ? new Date(now).toISOString() : new Date(0).toISOString();
 }
 
+/**
+ * Does a scrape answer say that it came from a cache? A hit, or an age longer than the call took (with five seconds of
+ * slack): the page was not captured for this call. Clay asks for a fresh capture, so such an answer is refused where it
+ * is read (lib/pipeline.ts) and nothing of it is stored. An answer of unknown age is not refused here: it is kept,
+ * dated as unknown (capturedAt), and certifies nothing.
+ */
+export function servedFromCache(meta: { status?: string; age_ms?: unknown } | null | undefined, tookMs: number): boolean {
+  const age = meta?.age_ms;
+  return meta?.status === "hit" || (typeof age === "number" && Number.isFinite(age) && age > tookMs + 5_000);
+}
+
 export type ScrapeResult = {
   url: string;
   markdown: Output<string>;

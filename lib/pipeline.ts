@@ -3,7 +3,7 @@ import { currentActor, unpublishOnRevision } from "./accounts.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, hasPrices, normalise, pricingCandidates, type Domain, type PricingModel, type RawModel } from "./domain";
-import { brand, cd, ContextDevError, scrape, capturedAt } from "./contextdev";
+import { brand, cd, ContextDevError, scrape, capturedAt, servedFromCache } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState, CACHED_FACTS, oldestCapture, staleCapture } from "./web";
@@ -71,10 +71,20 @@ export function verify(model: PricingModel, pageText: string): Pick<Snapshot, "m
 
 // ---- Reading a page
 
+/**
+ * Every read of a page goes through this: an answer that says it came from a cache is refused before anything of it is
+ * used (a build, a first read, a re-check, the text read and each structured read alike).
+ */
+function fresh<T extends { cache_metadata?: { status?: string; age_ms?: unknown } }>(r: T, t0: number): T {
+  if (servedFromCache(r.cache_metadata, Date.now() - t0)) throw new Error(CACHED_FACTS);
+  return r;
+}
+
 /** Cheap read: page text only, and when that text was captured (a cached answer is older than this call). Used as the gate before a paid structured extraction. */
 async function readText(src: Source, origin: string): Promise<{ text: string; at: string }> {
   if (src.demo && demoIsLocal()) return { text: await (await fetch(demoUrl(origin), { cache: "no-store" })).text(), at: new Date().toISOString() };
-  const r = await scrape(src.url!);
+  const t0 = Date.now();
+  const r = fresh(await scrape(src.url!), t0);
   if (!r.markdown.success || r.markdown.data == null) throw new Error(`Page text not readable: ${r.markdown.error_code ?? "unknown"} ${r.markdown.message ?? ""}`);
   return { text: r.markdown.data, at: capturedAt(r.cache_metadata) };
 }
@@ -91,7 +101,8 @@ async function readModel(d: Domain, src: Source, origin: string): Promise<Snapsh
     const text = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<[^>]+>/g, " ");
     return { url: demoUrl(origin), fetchedAt: new Date().toISOString(), extractor: "local-demo-parser", textHash: hash(html), ...verify(model, text), truncated: false, latencyMs: Date.now() - t0, requestId: null };
   }
-  const r = await scrape(src.url!, { schema: extractionSchema(d), instructions: extractionInstructions(d) });
+  const t0 = Date.now();
+  const r = fresh(await scrape(src.url!, { schema: extractionSchema(d), instructions: extractionInstructions(d) }), t0);
   // HTTP 200 does not mean every output succeeded: check each one.
   if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`);
   const text = r.markdown.success && r.markdown.data ? r.markdown.data : "";
@@ -349,7 +360,8 @@ const webWorkId = (id: string) => `web:${id}`;
 
 /** One structured read of a page: the facts the source asks for, guarded against the page text of the same capture. */
 async function extractWeb(src: WebSource, url: string): Promise<WebRead> {
-  const r = await scrape(url, { schema: webSchema(src), instructions: webInstructions(src) });
+  const t0 = Date.now();
+  const r = fresh(await scrape(url, { schema: webSchema(src), instructions: webInstructions(src) }), t0);
   if (!r.json.success || !r.json.data) throw new Error(`Extraction failed: ${r.json.error_code ?? "unknown"} ${r.json.message ?? ""}`.trim());
   // Without the page text no number can be checked: that is a failed read, not a page full of unknown values.
   if (!r.markdown.success || !r.markdown.data) throw new Error("Page text not readable: the numbers could not be checked against the page.");
@@ -437,8 +449,7 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
           const r = await readWeb(src, was);
           // A first read that worked is today's page: it counts as re-checked. Its values went from unknown to known,
           // which can overturn what the person settled: that is recorded as a change of the whole source.
-          if (r.state.read && staleCapture(r.state.read.fetchedAt, began)) r.state.error = CACHED_FACTS;
-          else if (r.state.read) {
+          if (r.state.read) {
             r.state.recheckedAt = r.state.read.fetchedAt;
             const first: WebChange = { at: r.state.read.fetchedAt, source: src.id, path: "the whole source", before: "not read (its values were unknown)", after: "read now" };
             r.state.changes = [first, ...r.state.changes].slice(0, WEB_LIMITS.changes);
@@ -450,7 +461,8 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
         const state: WebState = { ...was, error: null };
         let halted: string | null = null;
         try {
-          const page = await scrape(was.url);
+          const t0 = Date.now();
+          const page = fresh(await scrape(was.url), t0);
           if (!page.markdown.success || !page.markdown.data) throw new Error("Page text not readable: the page was not re-checked.");
           // The time of the capture, not of this call: a capture from the reader's cache may be older than the settle.
           state.recheckedAt = capturedAt(page.cache_metadata);
@@ -458,7 +470,7 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
             const first = await extractWeb(src, was.url);
             const second = diffWeb(src, was.read, first).length ? await extractWeb(src, was.url) : null;
             // The facts come from the structured reads, so the re-check is as old as the oldest capture among them and the
-            // text read. A structured answer from a cache (or of unknown age) is not today's page: nothing of it is stored.
+            // text read. An answer from a cache was refused in the read itself; one of unknown age is refused here: nothing of it is stored.
             state.recheckedAt = oldestCapture(state.recheckedAt, first.fetchedAt, ...(second ? [second.fetchedAt] : []));
             if (staleCapture(state.recheckedAt, began)) throw new Error(CACHED_FACTS);
             if (!second) state.read = first;
@@ -633,9 +645,9 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
         next = { ...second, model, evidence, quarantined, textHash: unconfirmed ? was.textHash : second.textHash };
         if (unconfirmed) note = `Two reads of this page disagreed on ${unconfirmed} ${unconfirmed === 1 ? "part" : "parts"} of the pricing. ${unconfirmed === 1 ? "It keeps its" : "They keep their"} earlier values, and the next re-check reads the page again.`;
       }
-      // As for a preview: an extraction from a cache is not today's page, so nothing of it is stored and no change is reported.
+      // As for a preview: the oldest capture counts, and an extraction of unknown age stores nothing and reports no change.
       readAt = oldestCapture(readAt, first.fetchedAt, next.fetchedAt);
-      if (first.extractor === "context.dev" && staleCapture(readAt, began)) throw new Error(CACHED_FACTS);
+      if (staleCapture(readAt, began)) throw new Error(CACHED_FACTS);
       const changes = diffModels(src.snapshot.model, next.model);
       snapshot = next;
       if (changes.length) {

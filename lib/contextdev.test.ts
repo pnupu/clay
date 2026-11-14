@@ -40,3 +40,14 @@ test("the capture time of an answer fails closed: a cache hit of unknown age is 
   // A hit without an age, an age that is no number, a negative age, and a status that is not a fresh capture: unknown too.
   for (const meta of [{ status: "hit" }, { status: "hit", age_ms: "86400000" }, { status: "miss", age_ms: -5 }, { status: "hit", age_ms: Number.NaN }, { status: "zdr" }]) assert.equal(capturedAt(meta, now), "1970-01-01T00:00:00.000Z", JSON.stringify(meta));
 });
+
+test("an answer that says it came from a cache is refused where it is read; one of unknown age is not", async () => {
+  const { servedFromCache } = await import("./contextdev.ts");
+  // A fresh capture: a miss, with the age of the call at most.
+  assert.equal(servedFromCache({ status: "miss", age_ms: 0 }, 800), false);
+  assert.equal(servedFromCache({ status: "miss", age_ms: 4000 }, 1200), false);
+  // A hit, whatever its age, and an age longer than the call took.
+  for (const meta of [{ status: "hit", age_ms: 86_400_000 }, { status: "hit", age_ms: 0 }, { status: "hit" }, { status: "hit", age_ms: "missing" }, { status: "miss", age_ms: 50_000 }]) assert.equal(servedFromCache(meta, 1200), true, JSON.stringify(meta));
+  // Unknown age without a hit: kept, and dated as unknown by capturedAt, so it certifies nothing.
+  for (const meta of [undefined, null, {}, { status: "miss" }, { status: "zdr" }, { status: "miss", age_ms: -5 }]) assert.equal(servedFromCache(meta, 1200), false, JSON.stringify(meta));
+});
