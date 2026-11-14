@@ -41,10 +41,7 @@ export default async function Connect() {
                     <p className="small muted">Want to look first? <a href="/#examples">Try an example</a>, no account needed.</p>
                   </section>
                 ) : me.kind === "admin" ? (
-                  <section className="pane">
-                    <h2>You are signed in with the owner key</h2>
-                    <p>The owner key works as the agent key for every playground. Connect with the commands in the README.</p>
-                  </section>
+                  <AgentKey endpoint={endpoint} createdAt={null} operator />
                 ) : (
                   <AgentKey endpoint={endpoint} createdAt={(await load()).users[me.userId]?.keyCreatedAt ?? null} />
                 )}

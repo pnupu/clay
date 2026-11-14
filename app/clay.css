@@ -244,3 +244,6 @@
 :root { --c-gut: 80px; }
 @media (max-width: 1023px) { :root { --c-gut: 48px; } }
 @media (max-width: 639px) { :root { --c-gut: 24px; } }
+
+/* The operator session, said in one small word where a person has their account button. */
+.who { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; font: 500 13px/1 var(--font-text); color: var(--p-ink); border: 1px solid var(--c-line-2); border-radius: 999px; white-space: nowrap; }

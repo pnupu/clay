@@ -11,7 +11,14 @@ const EXAMPLES = [
 ];
 
 /** The person's agent key: shown once after it is created, then only its creation time. The server keeps a hash. */
-export default function AgentKey({ endpoint, createdAt }: { endpoint: string; createdAt: string | null }) {
+/** What stands in a command for the operator's key. The page never has the key itself: it lives in the deployment's settings. */
+const OWNER_PLACEHOLDER = "<owner key>";
+
+/**
+ * `operator`: the viewer is in with the owner key (the operator session), not as a person. The same three steps, adapted:
+ * no key is created or shown; the commands carry the placeholder and can be copied with it.
+ */
+export default function AgentKey({ endpoint, createdAt, operator = false }: { endpoint: string; createdAt: string | null; operator?: boolean }) {
   const [key, setKey] = useState<string | null>(null);
   const [since, setSince] = useState(createdAt);
   const [busy, setBusy] = useState(false);
@@ -45,9 +52,9 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
   }
 
   /** The key as the page shows it: the placeholder without a key, the masked form while it is hidden, the key when asked. */
-  const shown = !key ? KEY_PLACEHOLDER : visible ? key : maskKey(key);
+  const shown = operator ? OWNER_PLACEHOLDER : !key ? KEY_PLACEHOLDER : visible ? key : maskKey(key);
   /** The text of a command with a key in it: for the page (the shown key) and for Copy (always the real key). */
-  const withKey = (make: (k: string) => string) => ({ text: make(shown), real: make(key ?? KEY_PLACEHOLDER) });
+  const withKey = (make: (k: string) => string) => ({ text: make(shown), real: make(operator ? OWNER_PLACEHOLDER : (key ?? KEY_PLACEHOLDER)) });
   // Without a clipboard (http on another machine's address, or a refusal) the person must select the text by hand. The
   // key is never shown because a copy failed (the page may be on a shared screen): the note under the block says that a
   // hidden key must be shown first, so a masked command is not copied as if it were real.
@@ -71,48 +78,57 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
     </>
   );
   const claude = withKey((k) => `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${k}"`);
-  const codex = withKey((k) => `export CLAY_AGENT_KEY=${k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var CLAY_AGENT_KEY`);
+  const env = operator ? "CLAY_ACCESS_KEY" : "CLAY_AGENT_KEY";
+  const codex = withKey((k) => `export ${env}=${k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var ${env}`);
 
   return (
     <>
+      {operator ? (
+        <section className="pane" data-operator>
+          <h2>1. You are in as the operator</h2>
+          <p>You are in as the operator (the owner key). Your agent connects with that same key. This page does not have the key: it is the value of <code>CLAY_ACCESS_KEY</code> in the deployment’s settings. In the commands below, put it in place of <code>{OWNER_PLACEHOLDER}</code>.</p>
+          <p className="small muted">Playgrounds that your agent builds with the owner key are the operator’s, and can be marked as examples. To see Clay as a new person does, leave the operator session (clear this site’s cookies in your browser), then sign up.</p>
+        </section>
+      ) : (
       <section className="pane">
-        <h2>1. Your agent key</h2>
-        {key ? (
-          <>
-            <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it. It stays on this page, hidden, until you leave the page.</p>
-            <div className="command copyable">
-              <pre className="code" data-testid="agent-key">{shown}</pre>
-              <button className="small-btn primary" onClick={() => copy("key", key)}>{label("key")}</button>
-            </div>
-            {byHand("key", true)}
-            <p className="row wrap">
-              <button className="small-btn" aria-pressed={visible} onClick={() => setVisible(!visible)} data-testid="show-key">{visible ? "Hide key" : "Show key"}</button>
-              <span className="small muted">Copy puts the real key on your clipboard, also while it is hidden here and in the commands below.</span>
-            </p>
-          </>
-        ) : since ? (
-          <p>You have a key, created on {new Date(since).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}. Clay cannot show it again, so the commands below show a placeholder and cannot be copied. To fill them in, create a new key (the old one then stops working).</p>
-        ) : (
-          <p>You have no key yet. Create one: the commands below then show it filled in.</p>
-        )}
-        <p className="row wrap">
-          {/* Right after a key is shown, the next step is to copy it, not to replace it: this button is then a plain one. */}
-          <button className={key ? undefined : "primary"} disabled={busy} onClick={() => call("POST")}>{since ? "Create a new key" : "Create my agent key"}</button>
-          {since && <button disabled={busy} onClick={() => call("DELETE")}>Revoke key</button>}
-        </p>
-        {error && <p className="alert">{error}</p>}
-      </section>
+          <h2>1. Your agent key</h2>
+          {key ? (
+            <>
+              <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it. It stays on this page, hidden, until you leave the page.</p>
+              <div className="command copyable">
+                <pre className="code" data-testid="agent-key">{shown}</pre>
+                <button className="small-btn primary" onClick={() => copy("key", key)}>{label("key")}</button>
+              </div>
+              {byHand("key", true)}
+              <p className="row wrap">
+                <button className="small-btn" aria-pressed={visible} onClick={() => setVisible(!visible)} data-testid="show-key">{visible ? "Hide key" : "Show key"}</button>
+                <span className="small muted">Copy puts the real key on your clipboard, also while it is hidden here and in the commands below.</span>
+              </p>
+            </>
+          ) : since ? (
+            <p>You have a key, created on {new Date(since).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}. Clay cannot show it again, so the commands below show a placeholder and cannot be copied. To fill them in, create a new key (the old one then stops working).</p>
+          ) : (
+            <p>You have no key yet. Create one: the commands below then show it filled in.</p>
+          )}
+          <p className="row wrap">
+            {/* Right after a key is shown, the next step is to copy it, not to replace it: this button is then a plain one. */}
+            <button className={key ? undefined : "primary"} disabled={busy} onClick={() => call("POST")}>{since ? "Create a new key" : "Create my agent key"}</button>
+            {since && <button disabled={busy} onClick={() => call("DELETE")}>Revoke key</button>}
+          </p>
+          {error && <p className="alert">{error}</p>}
+        </section>
+      )}
 
       <section className="pane">
         <h2>2. Add Clay to your agent</h2>
         <h3>Claude Code</h3>
-        {block("claude", claude.text, true, claude.real)}
+        {block("claude", claude.text, !operator, claude.real)}
         <p className="small muted"><code>--scope user</code> makes Clay available in every folder, not only the one you are in.</p>
         <p className="small muted">The first time your agent uses each Clay tool, Claude Code asks you to allow it. Allow it.</p>
 
         <h3>Codex</h3>
-        {block("codex", codex.text, true, codex.real)}
-        <p className="small muted">Codex reads the key from <code>CLAY_AGENT_KEY</code> each time it starts. Also put the export line in your shell profile (for example <code>~/.zshrc</code>).</p>
+        {block("codex", codex.text, !operator, codex.real)}
+        <p className="small muted">Codex reads the key from <code>{env}</code> each time it starts. Also put the export line in your shell profile (for example <code>~/.zshrc</code>).</p>
         <p className="small muted">For <code>codex exec</code> (no questions asked): add this line under <code>[mcp_servers.clay]</code> in <code>~/.codex/config.toml</code>, or Clay&apos;s tools are refused:</p>
         {block("codex-approve", `default_tools_approval_mode = "approve"`, false)}
         <p className="small muted"><code>codex exec</code> can only read files by default. To let it write your settled result into your code, run it with <code>-s workspace-write</code>:</p>
@@ -151,7 +167,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         <h2>Later</h2>
         <ul className="plain">
           <li><strong>Keep a decision alive:</strong> when you settle a choice that rests on prices or web facts, your agent writes it to <code>.clay/decisions/</code> in your repository. Ask “is my saved decision still right?” at any time (Claude Code: <code>/mcp__clay__recheck</code>). Save <a href="/clay-recheck.yml">clay-recheck.yml</a> as <code>.github/workflows/clay-recheck.yml</code> and add your key as the repository secret <code>CLAY_AGENT_KEY</code>: GitHub then re-checks your decisions every day and opens an issue when one no longer holds. Each run spends web requests from your daily allowance.</li>
-          <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>
+{!operator &&           <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>}
           <li><strong>Remove Clay:</strong> <code>claude mcp remove clay</code> or <code>codex mcp remove clay</code>. If Claude Code says clay exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local clay</code> in that folder and <code>claude mcp remove --scope user clay</code>.</li>
         </ul>
       </section>
