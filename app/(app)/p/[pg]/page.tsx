@@ -44,12 +44,13 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
         </p>
       </main>
     );
-  const builtByViewer = me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner;
+  // An account admin's own labs: the operator's (no owner), and those their personal agent key built.
+  const builtByViewer = me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && (!p.owner || p.owner === me.userId);
   // Started and not built: the page says what the agent is doing, and becomes the lab when the create lands.
   if (p.started) return <Started id={pg} title={p.domain.question} workingOn={p.started.workingOn} at={p.started.at} now={now} own={builtByViewer} />;
   // The admin marks here, with the version of what this page renders; a person's preview frame is pinned to it.
   const version = me.kind === "admin" ? viewVersion(p) : null;
-  const pinned = version && p.owner ? version : undefined;
+  const pinned = version && p.owner && !builtByViewer ? version : undefined;
   // The screen is keyed by what it shows, so a revision mounts a new one. Hold keeps the old one while a pointer is down.
   const screen = p.kit ? `${JSON.stringify(p.kit.kit)}|${p.kit.brandData?.fetchedAt ?? ""}|${webStamp(p.kit.web)}|${pinned ?? ""}` : JSON.stringify(p.domain);
   return (
