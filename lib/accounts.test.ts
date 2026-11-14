@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { specVersion, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
 import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
 
@@ -154,23 +154,23 @@ test("examples: only the admin marks and features; one example is featured at a 
   const s = store();
   // Without a featured example the newest example comes first, as before.
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["models", "card"]);
-  assert.deepEqual(markExample(s, "card", { featured: true }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(markExample(s, "card", { featured: true, version: specVersion(s["card"] as never) }, admin), { ok: true, example: true, featured: true });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["card", "models"]);
   // Featuring another one takes the mark from the first: one at a time.
-  assert.deepEqual(markExample(s, "models", { example: true, featured: true }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(markExample(s, "models", { example: true, featured: true, version: specVersion(s["models"] as never) }, admin), { ok: true, example: true, featured: true });
   assert.deepEqual(Object.entries(s).filter(([, p]) => (p as { featured?: boolean }).featured).map(([id]) => id), ["models"]);
   // Only an example can be featured; marking and featuring in one call works for a playground that is not one yet.
-  assert.equal((markExample(s, "gpu", { featured: true }, admin) as { status: number }).status, 400);
-  assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, admin), { ok: true, example: true, featured: true });
+  assert.equal((markExample(s, "gpu", { featured: true, version: specVersion(s["gpu"] as never) }, admin) as { status: number }).status, 400);
+  assert.deepEqual(markExample(s, "gpu", { example: true, featured: true, version: specVersion(s["gpu"] as never) }, admin), { ok: true, example: true, featured: true });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["gpu", "models", "card"]);
   // Unmarking the example also unfeatures it, and the newest example is first again.
   assert.deepEqual(markExample(s, "gpu", { example: false }, admin), { ok: true, example: false, featured: false });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["models", "card"]);
   // A plain mark leaves the featured one alone; unknown ids and empty bodies are refused.
-  markExample(s, "card", { featured: true }, admin);
-  assert.deepEqual(markExample(s, "models", { example: true }, admin), { ok: true, example: true, featured: false });
+  markExample(s, "card", { featured: true, version: specVersion(s["card"] as never) }, admin);
+  assert.deepEqual(markExample(s, "models", { example: true, version: specVersion(s["models"] as never) }, admin), { ok: true, example: true, featured: false });
   assert.equal(s.card.featured, true);
-  assert.equal((markExample(s, "nope", { example: true }, admin) as { status: number }).status, 404);
+  assert.equal((markExample(s, "nope", { example: true, version: specVersion(undefined) }, admin) as { status: number }).status, 404);
   assert.equal((markExample(s, "card", {}, admin) as { status: number }).status, 400);
   // A field of the wrong type is refused, also beside a valid one.
   assert.equal((markExample(s, "card", { example: "false", featured: false }, admin) as { status: number }).status, 400);
@@ -193,11 +193,31 @@ test("examples: a revision by the owner clears the mark; the operator's own revi
   assert.equal(p.featured, undefined);
   assert.equal(p.exampleCleared, "t1");
   // Marking it again publishes the revision the operator has now seen, and the note goes away.
-  assert.equal(markExample({ card: p }, "card", { example: true }, admin).ok, true);
+  assert.equal(markExample({ card: p }, "card", { example: true, version: specVersion(p as never) }, admin).ok, true);
   assert.equal(isEx(p, "card"), true);
   assert.equal(p.exampleCleared, undefined);
   // A private playground, and the built-in seed, are not touched.
   const priv = { domain: { id: "mine" }, owner: "user_ann" };
   assert.equal(unpublishOnRevision(priv, "mine", ann, "t2"), false);
   assert.equal(unpublishOnRevision({ domain: { id: DOMAIN.id } }, DOMAIN.id, ann, "t3"), false);
+});
+
+test("examples: a mark carries the version the operator reviewed; a stale one is refused", async () => {
+  const { markExample: mark, specVersion: version, unpublishOnRevision: unpublish } = await import("./accounts.ts");
+  const p = { domain: { id: "card", question: "A" }, owner: "user_ann", kit: { kit: { preview: { js: "OLD" } } } } as never as { domain: { id: string; question: string }; owner: string; example?: boolean; kit: { kit: { preview: { js: string } } } };
+  const reviewed = version(p);
+  assert.equal(mark({ card: p }, "card", { example: true }, admin).ok, false); // no version: 400
+  assert.equal((mark({ card: p }, "card", { example: true }, admin) as { status: number }).status, 400);
+  assert.equal(mark({ card: p }, "card", { example: true, version: reviewed }, admin).ok, true);
+  // The owner revises the code: the mark is cleared, and an approval of the old view is refused.
+  p.kit.kit.preview.js = "NEW";
+  unpublish(p, "card", ann, "t");
+  const stale = mark({ card: p }, "card", { example: true, version: reviewed }, admin);
+  assert.deepEqual([stale.ok, (stale as { status: number }).status], [false, 409]);
+  assert.equal(p.example, false);
+  // Words only change the version too; unmarking needs none.
+  const v2 = version(p);
+  p.domain.question = "B";
+  assert.notEqual(version(p), v2);
+  assert.equal(mark({ card: p }, "card", { example: false }, admin).ok, true);
 });

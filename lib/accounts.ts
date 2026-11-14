@@ -63,6 +63,12 @@ export function unpublishOnRevision(p: Owned & { featured?: boolean; exampleClea
   p.exampleCleared = now;
   return true;
 }
+/**
+ * The version of what a playground shows: a hash of its whole spec (the domain, and the kit of a preview), so it changes
+ * with code, outputs, words and price specs alike. The operator's mark carries the version they reviewed (markExample).
+ */
+export const specVersion = (p: { domain?: unknown; kit?: { kit?: unknown } | null } | undefined): string => createHash("sha256").update(JSON.stringify([p?.domain ?? null, p?.kit?.kit ?? null])).digest("hex").slice(0, 16);
+
 export const EXAMPLE_CLEARED = "This playground was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Clay deployment looks at it and marks it again.";
 
 /**
@@ -71,13 +77,20 @@ export const EXAMPLE_CLEARED = "This playground was an example. Because it was r
  * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
  * example also unfeatures it. Returns what the playground is now, or the refusal.
  */
-export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404; error: string } {
+export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown; version?: unknown }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
   if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
   const p = playgrounds[id];
   if (!p) return { ok: false, status: 404, error: "Playground not found." };
   // A field that is sent must be a boolean: {"example": "false"} is refused, not read as "leave it as it is".
   const sent = [mark.example, mark.featured].filter((v) => v !== undefined);
   if (!sent.length || sent.some((v) => typeof v !== "boolean")) return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };
+  // Publishing (marking or featuring) approves what the operator reviewed: the version of that view must still be the
+  // playground's version, checked here inside the same store update that publishes it. Unmarking needs no version.
+  if (mark.example === true || mark.featured === true) {
+    const now = specVersion(p as never);
+    if (typeof mark.version !== "string") return { ok: false, status: 400, error: `Send the version you reviewed with the mark: {"example": true, "version": "${now}"}. GET /api/p/${id}/state returns it as "version"; look at the playground before you mark it.` };
+    if (mark.version !== now) return { ok: false, status: 409, error: `This playground changed after the version you reviewed (${mark.version.slice(0, 16)}; it is now ${now}). Open it again, look at what changed, then mark it with the new version.` };
+  }
   const example = typeof mark.example === "boolean" ? mark.example : isExample(p, id);
   if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured: mark it as an example first, or send {"example": true, "featured": true}.' };
   if (typeof mark.example === "boolean") p.example = mark.example;

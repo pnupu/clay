@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, isExample, playgroundCapMessage, type Account } from "./accounts.ts";
+import { currentUserId, isExample, playgroundCapMessage, type Account, specVersion } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -246,7 +246,8 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
 export function publicState(s: Store, id: string, owner = true) {
   const p = s.playgrounds[id];
   const sources = Object.fromEntries(Object.entries(p.sources).map(([k, src]) => [k, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
-  return { id, sources, decision: p.decision, events: p.events, work: workStatus(p), leftOut: p.leftOut ?? [], demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
+  // `version`: what the operator sends when they mark this playground as an example (lib/accounts.ts, markExample).
+  return { id, version: specVersion(p), sources, decision: p.decision, events: p.events, work: workStatus(p), leftOut: p.leftOut ?? [], demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
 }
 export type PublicState = ReturnType<typeof publicState>;
 
