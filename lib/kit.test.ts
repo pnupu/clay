@@ -197,7 +197,12 @@ test("the worked example with live web facts passes the validator, and data.web 
   const errorsOf = (spec: unknown) => { const r = parseSpec(spec); return r.ok ? [] : r.errors; };
   const data = (web: unknown) => ({ ...MODEL_EXAMPLE, data: { ...MODEL_EXAMPLE.data, web } });
   // A source that the preview never reads would be read for nothing; a source that does not exist is a mistake in view.js.
-  assert.match(errorsOf(data([...MODEL_EXAMPLE.data!.web!, { id: "google", url: "https://ai.google.dev/pricing", fields: [{ id: "price", type: "number", describe: "price per million tokens" }] }])).join("\n"), /data\.web\.google: view\.js never reads clay\.data\.web\.google/);
+  const unused = parseSpec(data([...MODEL_EXAMPLE.data!.web!, { id: "google", url: "https://ai.google.dev/pricing", fields: [{ id: "price", type: "number", describe: "price per million tokens" }] }]));
+  assert.ok(unused.ok && unused.kind === "preview" && unused.warnings.some((w) => /data\.web\.google: view\.js does not seem to read/.test(w)));
+  // Code that reaches the sources through a variable is not refused: it is the first GPU spec a real agent wrote.
+  const viaVariable = parseSpec({ ...data([{ id: "runpod", url: "https://www.runpod.io/pricing", rows: MODEL_EXAMPLE.data!.web![0].rows }, { id: "vast", url: "https://vast.ai/pricing", rows: MODEL_EXAMPLE.data!.web![0].rows }]), view: { ...MODEL_EXAMPLE.view, js: 'const web = clay.data.web || {}; const out = document.getElementById("rows"); clay.onChange((v) => { out.textContent = ["runpod", "vast"].map((p) => (web[p] || []).length + " rows at " + v.tasks + v.cached_share + v.max_seconds + v.min_pass + v.model).join(", "); });' } });
+  assert.ok(viaVariable.ok && viaVariable.kind === "preview", viaVariable.ok ? "" : viaVariable.errors.join("\n"));
+  assert.deepEqual(viaVariable.ok && viaVariable.kind === "preview" ? viaVariable.warnings : null, []);
   assert.match(errorsOf(data([MODEL_EXAMPLE.data!.web![0]])).join("\n"), /clay\.data\.web\.openai reads a web source that does not exist/);
   // Bounds, before any element is validated.
   assert.deepEqual(errorsOf(data(Array.from({ length: 5000 }, () => ({})))), ["data.web: at most 6 entries, got 5000. Nothing was checked or created."]);

@@ -197,12 +197,26 @@ export function unknowns(withNulls: string | null): Check {
   return pass("unknowns", "with its web numbers missing, the preview says unknown and shows no broken number");
 }
 
+/**
+ * Does a sentence name this choice? The whole value; or one of its parts with a digit ("4090" of "RTX 4090 24GB",
+ * "H100" of "H100 80GB"); or, for a value without such a part, every word of it ("claude" and "sonnet").
+ */
+export function namedInProse(choice: string, text: string): boolean {
+  const said = text.toLowerCase();
+  if (said.includes(choice.toLowerCase())) return true;
+  const parts = choice.toLowerCase().split(/[^a-z0-9.]+/).filter((p) => p.length >= 3);
+  const codes = parts.filter((p) => /\d/.test(p));
+  return codes.length ? codes.some((p) => said.includes(p)) : parts.length > 0 && parts.every((p) => said.includes(p));
+}
+
 /** The hand-back of a choice: the file (or, without a file, the answer) must hold every choice the person settled. */
 export function choiceHandback(choices: string[], before: string | null, after: string | null, answer: string): Check {
   if (!choices.length) return na("handback_match", "the person had no choice to settle (the playground has no select)");
   const text = before != null ? after : answer;
   if (before != null && (after == null || after === before)) return fail("handback_match", "the file did not change");
-  const missing = choices.find((c) => !(text ?? "").toLowerCase().includes(c.toLowerCase()));
+  // In a file the choice must stand as it is. A spoken answer may name it more loosely: "RTX 4090" names "RTX 4090 24GB".
+  const said = (c: string) => (before != null ? (text ?? "").toLowerCase().includes(c.toLowerCase()) : namedInProse(c, text ?? ""));
+  const missing = choices.find((c) => !said(c));
   return missing ? fail("handback_match", `${before != null ? "the file" : "the answer"} does not hold the settled choice: ${cut(missing, 80)}`) : pass("handback_match", `${before != null ? "the file" : "the answer"} holds the settled choice(s): ${choices.map((c) => cut(c, 40)).join(", ")}`);
 }
 

@@ -227,6 +227,36 @@ Environment variables (Vercel project `clay`, Production):
 - Webhook URL: `<public base URL>/api/webhooks/context/<playgroundId>/<sourceId>`, set per monitor by "Start webhook monitors". A page monitor run costs 1 Context.dev credit.
 - Known limits: request pacing and the re-check queue are per function instance (see the `lean:` comments in `lib/contextdev.ts` and `lib/pipeline.ts`). `run/requests.jsonl` logging is skipped where the filesystem is read-only.
 
+## Live web facts for any playground (`data.web`)
+
+The price engine answers "which vendor or plan of one usage-priced product". It cannot express "which GPU" or "which model for our workload", where a live price must be multiplied by the person's own numbers. For those, a preview playground names the facts it wants from web pages, and its own code does the arithmetic:
+
+```json
+"data": {
+  "inline": { "models": [{ "model": "claude-opus-5-5", "input_tokens_per_task": 67169, "cached_input_tokens_per_task": 60546, "output_tokens_per_task": 2360, "pass_rate": 1 }] },
+  "web": [{
+    "id": "anthropic",
+    "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
+    "rows": { "describe": "one row per Claude model of the API", "fields": [
+      { "id": "model", "type": "text", "describe": "model name" },
+      { "id": "input", "type": "number", "unit": "USD per 1M tokens", "describe": "price of base input tokens per million" },
+      { "id": "cached_input", "type": "number", "unit": "USD per 1M tokens", "describe": "price of cache hits per million" },
+      { "id": "output", "type": "number", "unit": "USD per 1M tokens", "describe": "price of output tokens per million" }
+    ] }
+  }]
+}
+```
+
+- **What an agent may ask for** (`lib/web.ts`, `checkWeb`): at most 6 sources; each is a public https page (`url`, or `domain` with `find`, which search resolves) and either single `fields` or a table of `rows`; at most 20 fields per source, 60 rows, 200 characters per text value. Every collection is bounded before validation.
+- **The guard** (`guard`): Context.dev extracts the facts with a JSON Schema built from the source. A number that is not in the page text of the same capture is quarantined: the preview gets `null`, and the page and the agent see what was extracted and that it was not used. A missing fact is `null`. Text from a page is cut and stays data.
+- **In the preview**: `clay.data.web.<id>` is the fields (an object) or the rows (a list). The tool texts and `kit_reference` tell the agent to show `null` as unknown, never as 0, to keep the person's own measurements in `data.inline`, and to return the choice through a select control.
+- **On the page**: "Where the data comes from" lists each source with its link, the read time, every value, what was quarantined, and what changed since the person settled.
+- **Building**: as for prices, the create call answers within 20 seconds; sources arrive as tracked work; the page asks the server again while data is being read and loads the preview again when it arrives (also for a late brand read). `read_playground` reports per source what was read, what is unknown and what failed, with the repair.
+- **Staying live**: `recheck_playground` on a preview reads each page's text and compares its fingerprint; only when the text changed it extracts again, and a fact changes only when two fresh extractions agree. Each change is stored with the old value, the new value and the time. `read_playground` returns `web_changes`: what changed since the person settled. Clay has no rule for what a change means: the person's agent judges whether the settled result still holds.
+- **Accounting**: every read goes through the same client as the price engine, so it counts against the person's and the deployment's daily caps. A build of n sources costs n extractions (plus a search per source without a `url`); a re-check costs one text read per source, and up to two extractions for a source whose page changed.
+
+`evals/` has four cases of kind `data` for it. Their checks: the page lists web sources with a link and values read; with every web number missing the preview says "unknown" and shows no broken number (the checker alters the frame document on its way to the browser; nothing is stored); the choice the person settled is written into the file.
+
 ## Tested with
 
 Measured with `evals/` on 2026-11-14 against a local server of `master`:

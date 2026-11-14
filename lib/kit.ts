@@ -266,7 +266,9 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
     if (!w.ok) errors.push(...w.errors);
     else {
       web = w.sources;
-      for (const s of web) if (!new RegExp(`clay\\s*\\.\\s*data\\s*\\.\\s*web\\s*(\\.\\s*${s.id}(?![\\w$])|\\[\\s*["']${s.id}["']\\s*\\])`).test(js) && !/clay\s*\.\s*data\s*\.\s*web(?!\s*[.[])/.test(js)) errors.push(`data.web.${s.id}: view.js never reads clay.data.web.${s.id}, so the page would read it for nothing. Use it in view.js (fields: an object; rows: a list; unknown values are null), or remove the source.`);
+// A source that view.js does not seem to read: a warning, not an error. The code may reach it through a variable
+      // (const w = clay.data.web; w[id]), which no pattern can see for certain.
+      for (const s of web) if (!new RegExp(`(?<![\\w$])${s.id}(?![\\w$])`).test(js) && !/(?<![\w$])web(?![\w$])\s*(?![.[\w$])/.test(js)) warnings.push(`data.web.${s.id}: view.js does not seem to read clay.data.web.${s.id}. A source that the preview does not use is read for nothing: use it, or remove it.`);
     }
   }
   for (const m of js.matchAll(/clay\s*\.\s*data\s*\.\s*web\s*\.\s*([A-Za-z_$][\w$]*)/g)) if (!(web ?? []).some((s) => s.id === m[1])) errors.push(`view.js: clay.data.web.${m[1]} reads a web source that does not exist. Sources: ${(web ?? []).map((s) => s.id).join(", ") || "none (add data.web)"}.`);

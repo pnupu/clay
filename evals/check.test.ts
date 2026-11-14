@@ -1,7 +1,7 @@
 // Unit tests of the checker's pure parts. Run: node --test evals/check.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { choiceHandback, creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, sources, unknowns, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
+import { choiceHandback, namedInProse, creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, sources, unknowns, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
 import { dimensions, finalProblems, readFacts, withoutWebNumbers } from "./adapter.ts";
 import { HELD_OUT } from "./heldout.ts";
 import { CASES } from "./requests.ts";
@@ -234,6 +234,11 @@ test("data cases: the facts carry sources, an unknown is not a number, the choic
   assert.equal(choiceHandback(["H100", "RunPod"], null, null, "You settled on an H100 at RunPod for 300 hours.").status, "pass");
   assert.match(choiceHandback(["H100"], null, null, "You settled on an A100.").reason, /the answer does not hold/);
   assert.equal(choiceHandback([], null, null, "").status, "na");
+  // A spoken answer names a choice by its key word; a file must hold it as it is.
+  assert.deepEqual([namedInProse("RTX 4090 24GB", "an RTX 4090 at Lambda"), namedInProse("H100 80GB", "one H100"), namedInProse("claude-sonnet-5-5", "switch to Claude Sonnet 5.5"), namedInProse("claude-sonnet-5-5", "switch to Claude Opus"), namedInProse("Lambda", "rent it elsewhere")], [true, true, true, false, false]);
+  assert.equal(choiceHandback(["RTX 4090 24GB", "Lambda"], null, null, "You settled on RTX 4090 on Lambda, but that pair cannot be rented.").status, "pass");
+  assert.equal(choiceHandback(["RTX 4090 24GB"], null, null, "You settled on an A6000.").status, "fail");
+  assert.equal(choiceHandback(["claude-sonnet-5-5"], before, '{ "model": "sonnet" }', "").status, "fail");
   // What the harness reads from the server after the settle.
   const read = JSON.stringify({ settled: { values: { tasks: 3000, model: "claude-sonnet-5-5", accent: "#ff0000", on: true } }, data: [{ source: "web", status: "read", unknown: ["GPT-6 Luna / cached_input"] }, { source: "inline" }] });
   assert.deepEqual(readFacts(read), { choices: ["claude-sonnet-5-5"], anyUnknown: true });
