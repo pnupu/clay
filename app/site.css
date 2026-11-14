@@ -60,10 +60,7 @@ header.site nav a.button { padding: 4px 12px; }
 .auth-page > p { max-width: 400px; text-align: center; }
 pre.code { background: var(--page); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 6px 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .command { margin: 10px 0 14px; }
-.command-head { display: flex; justify-content: space-between; align-items: center; }
-h2.step { margin-top: 22px; }
 ul.plain { display: grid; gap: 6px; }
 .command.copyable { position: relative; margin: 6px 0 8px; }
 .command.copyable pre.code { padding-right: 72px; margin: 0; }
 .command.copyable button { position: absolute; top: 6px; right: 6px; }
-.narrow h3 { margin-top: 18px; }

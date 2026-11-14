@@ -48,7 +48,7 @@ codex mcp add clay --url https://<host>/api/mcp --bearer-token-env-var CLAY_AGEN
 - `codex exec` cannot ask, so Clay's tools are refused until `default_tools_approval_mode = "approve"` is under `[mcp_servers.clay]` in `~/.codex/config.toml`. It can only read files unless run with `-s workspace-write`; for a later turn the flag goes before `resume`: `codex exec -s workspace-write resume --last "I'm done."`.
 - Another MCP client: Streamable HTTP at `https://<host>/api/mcp` with the header `Authorization: Bearer <agent key>`.
 - The first request should name Clay ("Use Clay to …"): Codex's default model does not pick it on its own yet.
-- A lost key: create a new one on `/connect` (the old one stops working); in Claude Code remove Clay and add it again, in Codex change the export. Remove Clay with `claude mcp remove --scope user clay` or `codex mcp remove clay`.
+- A lost key: create a new one on `/connect` (the old one stops working); in Claude Code remove Clay and add it again, in Codex change the export. Remove Clay with `claude mcp remove clay` or `codex mcp remove clay`. When Clay is in more than one Claude Code scope (an earlier add without `--scope user`), `claude mcp remove clay` refuses and lists them; remove each with `--scope local` (in that folder) and `--scope user`.
 
 `/connect` shows these commands with the person's key filled in, each with a Copy button, and three example requests (look, feel, price).
 

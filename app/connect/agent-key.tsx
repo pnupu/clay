@@ -22,6 +22,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
     if (method === "DELETE" && !confirm("Revoke the key? An agent that uses it stops working.")) return;
     setBusy(true);
     setError(null);
+    setCopied(null);
     try {
       const r = await fetch("/api/agent-key", { method });
       const body = r.status === 204 ? null : await r.json();
@@ -36,12 +37,14 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
   }
 
   const shown = key ?? "<your agent key>";
-  const copy = (id: string, text: string) => navigator.clipboard?.writeText(text).then(() => setCopied(id), () => setCopied(null));
+  // Without a secure context (http on another machine's address) there is no clipboard: say so instead of doing nothing.
+  const copy = (id: string, text: string) => (navigator.clipboard ? navigator.clipboard.writeText(text).then(() => setCopied(id), () => setCopied(`failed:${id}`)) : setCopied(`failed:${id}`));
+  const label = (id: string) => (copied === id ? "Copied" : copied === `failed:${id}` ? "Select and copy by hand" : "Copy");
   /** A command or text block with its own Copy button. Commands with the key need the key first. */
   const block = (id: string, text: string, needsKey = true) => (
     <div className="command copyable">
       <pre className="code" data-command={id}>{text}</pre>
-      <button className="small-btn" onClick={() => copy(id, text)} disabled={needsKey && !key}>{copied === id ? "Copied" : "Copy"}</button>
+      <button className="small-btn" onClick={() => copy(id, text)} disabled={needsKey && !key}>{label(id)}</button>
     </div>
   );
 
@@ -52,10 +55,13 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         {key ? (
           <>
             <p className="ok">This is your new key. Copy it now: Clay shows it only once and keeps only a hash of it.</p>
-            <pre className="code" data-testid="agent-key">{key}</pre>
+            <div className="command copyable">
+              <pre className="code" data-testid="agent-key">{key}</pre>
+              <button className="small-btn" onClick={() => copy("key", key)}>{label("key")}</button>
+            </div>
           </>
         ) : since ? (
-          <p>You have a key, created {new Date(since).toUTCString()}. Clay cannot show it again. If you lost it, create a new one.</p>
+          <p>You have a key, created {new Date(since).toUTCString()}. Clay cannot show it again, so the commands below show a placeholder. To see them with a key filled in, create a new one (the old one then stops working).</p>
         ) : (
           <p>You have no key yet. Create one: the commands below then show it filled in.</p>
         )}
@@ -79,7 +85,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         <p className="small muted">For <code>codex exec</code> (no questions asked): add this line under <code>[mcp_servers.clay]</code> in <code>~/.codex/config.toml</code>, or Clay&apos;s tools are refused:</p>
         {block("codex-approve", `default_tools_approval_mode = "approve"`, false)}
         <p className="small muted"><code>codex exec</code> can only read files by default. To let it write your settled result into your code, run it with <code>-s workspace-write</code>:</p>
-        {block("codex-exec", `codex exec -s workspace-write "Use Clay to …"`, false)}
+        <pre className="code">{`codex exec -s workspace-write "Use Clay to <your request>"`}</pre>
         <p className="small muted">To answer it in the same session later, <code>-s</code> goes before <code>resume</code>:</p>
         {block("codex-resume", `codex exec -s workspace-write resume --last "I'm done."`, false)}
 
@@ -102,8 +108,8 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
       <section className="card">
         <h2>Later</h2>
         <ul className="plain">
-          <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: remove Clay and run the add command again. Codex: change the export line.</li>
-          <li><strong>Remove Clay:</strong> <code>claude mcp remove --scope user clay</code> or <code>codex mcp remove clay</code>.</li>
+          <li><strong>Lost your key?</strong> Create a new one above; the old one stops working. Claude Code: run <code>claude mcp remove clay</code>, then the add command again. Codex: change the export line.</li>
+          <li><strong>Remove Clay:</strong> <code>claude mcp remove clay</code> or <code>codex mcp remove clay</code>. If Claude Code says clay exists in several scopes (you also added it without <code>--scope user</code> in a folder), run <code>claude mcp remove --scope local clay</code> in that folder and <code>claude mcp remove --scope user clay</code>.</li>
         </ul>
       </section>
     </>
