@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
 import { cents, crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
 import { reasonOf, recordPath } from "@/lib/card";
+import { carriedPrice, carryPrice } from "@/lib/carry";
 import { changesAt, sayMetric, sayNumber } from "@/lib/quantity";
 import { changeSentence, effectSentence, fold, sourceWords } from "@/lib/history";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
@@ -57,11 +58,21 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   const h = useMemo(() => helpers(domain), [domain]);
   const [state, setState] = useState<PublicState | null>(null);
   // The controls start where the person left them, so the agent and the person see the same values.
-  const [usage, setUsage] = useState<Record<string, number>>(() => Object.fromEntries(domain.metrics.map((m) => [m.id, explored?.metrics[m.id]?.final ?? m.initial])));
-  const [required, setRequired] = useState<string[]>(() => domain.features.filter((f) => explored?.features[f.id]?.final).map((f) => f.id));
+  // After a revision by the agent this screen is mounted again (the page keys it by the spec): the person's values come
+  // along for the controls that still exist (lib/carry.ts). The new screen reads them while it renders, before the old
+  // one is taken away; on every other mount (a first load, a visit after leaving the page) `was` is null.
+  const spec = useMemo(() => JSON.stringify(domain), [domain]);
+  const carryKey = `${domain.id}:${embedded ? "embedded" : "page"}`;
+  const [was] = useState(() => carryPrice(domain, carriedPrice.get(carryKey), spec));
+  const [usage, setUsage] = useState<Record<string, number>>(() => Object.fromEntries(domain.metrics.map((m) => [m.id, was?.usage[m.id] ?? explored?.metrics[m.id]?.final ?? m.initial])));
+  const [required, setRequired] = useState<string[]>(() => was?.required ?? domain.features.filter((f) => explored?.features[f.id]?.final).map((f) => f.id));
   const [axis, setAxis] = useState(domain.metrics[0].id);
-  const [chosen, setChosen] = useState<string | null>(explored?.selected ?? null);
-  const [tolerance, setTolerance] = useState(0);
+  const [chosen, setChosen] = useState<string | null>(was ? was.chosen : (explored?.selected ?? null));
+  const [tolerance, setTolerance] = useState(was?.tolerance ?? 0);
+  useEffect(() => {
+    carriedPrice.set(carryKey, { spec, usage, required, chosen, tolerance, ranges: Object.fromEntries(domain.metrics.map((m) => [m.id, [m.min, m.max]])) });
+    return () => void carriedPrice.delete(carryKey);
+  }, [carryKey, spec, usage, required, chosen, tolerance, domain.metrics]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -92,7 +103,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   useEffect(() => {
     call(`${api}/state`).then((s) => {
       setState(s);
-      if (!s.decision) return;
+      // After a revision the person keeps the values they had on the page, not the saved assumptions.
+      if (!s.decision || was) return;
       // A playground with a saved decision opens on the saved assumptions, with no row selected: the ranking and the
       // verdict then speak about the same values, and the saved vendor shows only as "Your saved choice".
       rebase.current = true;
@@ -154,8 +166,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
   // It is sent after the person pauses, so no network call sits between a move and its result.
   const seen = useRef<Record<string, { min: number; max: number }>>({});
   const reported = useRef<string | null>(null);
-  /** The person changed something since the last report, also when the controls are back at the reported values. */
-  const moved = useRef(false);
+  /** The person changed something since the last report, also when the controls are back at the reported values. Values that came along over a revision count: the stored record of the revised playground does not have them yet. */
+  const moved = useRef(was != null);
   useEffect(() => {
     if (rebase.current) {
       // The controls were put on the saved values. That is no exploring (no range is added), but it is where the controls

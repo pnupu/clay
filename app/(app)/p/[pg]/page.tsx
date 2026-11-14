@@ -8,6 +8,8 @@ import { brandPending } from "@/lib/kit";
 import { MarkExample } from "@/app/manage";
 import { nonOwnerView, viewVersion } from "@/lib/report";
 import { load, workStatus } from "@/lib/store";
+import { SelfUpdate, Started } from "@/app/live";
+import { dataStamp, pageRev } from "@/lib/started";
 import { webStamp } from "@/lib/web";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +19,8 @@ async function find(pg: string) {
   const s = await load();
   const p = s.playgrounds[pg];
   const me = await viewer();
-  return { p: p && canRead(me, p, pg) ? p : null, exists: !!p, me, connected: agentConnected(me, s.users) };
+  // `now`: the server's clock when the store was read (a started playground shows the age of its last line).
+  return { p: p && canRead(me, p, pg) ? p : null, exists: !!p, me, connected: agentConnected(me, s.users), now: Date.now() };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ pg: string }> }) {
@@ -26,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ pg: strin
 
 export default async function Page({ params }: { params: Promise<{ pg: string }> }) {
   const { pg } = await params;
-  const { p, exists, me, connected } = await find(pg);
+  const { p, exists, me, connected, now } = await find(pg);
   if (!exists) notFound();
   // A private playground: the same answer whoever owns it, and nothing of its content.
   if (!p)
@@ -40,6 +43,9 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
         </p>
       </main>
     );
+  const builtByViewer = me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner;
+  // Started and not built: the page says what the agent is doing, and becomes the playground when the create lands.
+  if (p.started) return <Started id={pg} title={p.domain.question} workingOn={p.started.workingOn} at={p.started.at} now={now} own={builtByViewer} />;
   // The admin marks here, with the version of what this page renders; a person's preview frame is pinned to it.
   const version = me.kind === "admin" ? viewVersion(p) : null;
   const pinned = version && p.owner ? version : undefined;
@@ -47,8 +53,10 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
     <>
       {version && <MarkExample id={pg} version={version} example={isExample(p, pg)} featured={p.featured === true} />}
       {canWrite(me, p) && p.exampleCleared && !isExample(p, pg) && <p className="alert" role="status" style={{ maxWidth: 1440, margin: "12px auto 0" }}>{EXAMPLE_CLEARED}</p>}
+      {/* The open page shows a revision by the agent with no reload: this asks for the revision, the keys below remount the screen. Only for its owner and the operator: the visitors of an example do not poll (an example changes when the operator marks it again). */}
+      {canWrite(me, p) && <SelfUpdate id={pg} rev={pageRev(p)} data={dataStamp(p)} own={builtByViewer} />}
       {/* A preview playground has its own screen. Someone who does not own it starts on the start values (an example) and is not sent what the owner tried or settled. The key remounts the screen when the agent revises the playground. */}
-      {p.kit ? <Kit connected={connected} byTeam={!p.owner} key={`${JSON.stringify(p.kit.kit)}|${p.kit.brandData?.fetchedAt ?? ""}|${webStamp(p.kit.web)}|${pinned ?? ""}`} id={p.domain.id} version={pinned} title={p.domain.question} state={(canWrite(me, p) && !pinned ? p : nonOwnerView(p)).kit!} canWrite={canWrite(me, p)} builtByViewer={me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner} leftOut={p.leftOut} reading={workStatus(p)?.status === "running" || brandPending(p.kit)} /> : <Playground connected={connected} byTeam={!p.owner} builtByViewer={me.kind === "user" ? p.owner === me.userId : me.kind === "admin" && !p.owner} key={JSON.stringify(p.domain)} domain={p.domain} explored={(canWrite(me, p) ? p : nonOwnerView(p)).exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
+      {p.kit ? <Kit connected={connected} byTeam={!p.owner} key={`${JSON.stringify(p.kit.kit)}|${p.kit.brandData?.fetchedAt ?? ""}|${webStamp(p.kit.web)}|${pinned ?? ""}`} id={p.domain.id} version={pinned} title={p.domain.question} state={(canWrite(me, p) && !pinned ? p : nonOwnerView(p)).kit!} canWrite={canWrite(me, p)} builtByViewer={builtByViewer} leftOut={p.leftOut} reading={workStatus(p)?.status === "running" || brandPending(p.kit)} /> : <Playground connected={connected} byTeam={!p.owner} builtByViewer={builtByViewer} key={JSON.stringify(p.domain)} domain={p.domain} explored={(canWrite(me, p) ? p : nonOwnerView(p)).exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
     </>
   );
 }

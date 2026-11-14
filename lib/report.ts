@@ -245,7 +245,7 @@ export const BRAND_NOTE = "The brand title and colour names are text copied from
 export function previewStatus(k: KitState) {
   const s = k.preview;
   if (s.status === "ok") return { status: "ok", detail: `The preview loaded and ran without an error when the page was opened (${s.at}).` };
-  if (s.status === "failed") return { status: "failed", error: cut(s.error ?? "unknown error", 500), fix: "The person sees 'preview failed'. Repair view.html, view.css or view.js with revise_playground (send only the view field you repair), then ask the person to reload the page." };
+  if (s.status === "failed") return { status: "failed", error: cut(s.error ?? "unknown error", 500), fix: "The person sees 'preview failed'. Repair view.html, view.css or view.js with revise_playground (send only the view field you repair), then tell the person: the page they have open shows the repair by itself." };
   return { status: "unverified", detail: "The preview code has not run yet: it runs only in a browser. It is verified when the playground page is opened once by its owner. Call read_playground after that to see whether it ran." };
 }
 

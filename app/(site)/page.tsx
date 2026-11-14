@@ -78,7 +78,7 @@ export default async function Home() {
             {yours.map(([id, p]) => (
               <li key={id}>
                 <a href={`/p/${id}`} className="rows__name">{titleOf(p, id)}</a>
-                <p className="t-small muted">{kindOf(p, me.kind === "admin" && p.owner ? "theirs" : "yours")} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
+                <p className="t-small muted">{p.started ? "Started, not built yet" : kindOf(p, me.kind === "admin" && p.owner ? "theirs" : "yours")} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
                 <div className="rows__value"><Manage id={id} title={titleOf(p, id)} example={isExample(p, id)} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} /></div>
               </li>
             ))}

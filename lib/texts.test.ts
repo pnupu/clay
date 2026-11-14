@@ -7,11 +7,13 @@ import { readFileSync } from "node:fs";
 import { STANDING_INSTRUCTION } from "../connect/standing-instruction.ts";
 import { INSTRUCTIONS, PROMPTS, TOOLS } from "./texts.ts";
 
-test("the first 200 characters of the server instructions say what Clay is for, that the person asks for a playground, and the create tool", () => {
+test("the first 200 characters of the server instructions say what Clay is for, that the person asks for a playground, and the start and create tools", () => {
   // The trigger is explicit now: the person asks for a playground. (Before 9e the head held the unprompted trigger.)
+  // The first call is start_playground since the person gets a link before anything is built: the head names it, the
+  // link and the create tool, in that order. (It named only create_playground before.)
   const head = INSTRUCTIONS.slice(0, 200);
   assert.match(head, /^Clay builds playgrounds: web pages where a person tries the real thing/);
-  assert.match(head, /When a person asks for a playground, call create_playground\./);
+  assert.match(head, /When a person asks for a playground, call start_playground, give them its link, then create_playground\./);
   // Both sentences are complete inside that window: nothing of them is cut.
   assert.ok(INSTRUCTIONS.indexOf("\n") <= 200, "the first paragraph ends inside the first 200 characters");
   // The words a person uses, and the unprompted trigger as it was measured, follow inside the first 512 characters (Codex).
@@ -20,6 +22,19 @@ test("the first 200 characters of the server instructions say what Clay is for, 
   assert.match(next, /BEFORE you answer from memory or search the web when a person cannot say exactly what they want/);
   assert.match(next, /which one/);
   assert.match(next, /looks or feels off/);
+  // The link-first rules follow at once: the start in the first turn beside the first reads, the link in that turn, the
+  // line on what the agent is doing, then the create with the same id.
+  assert.match(INSTRUCTIONS, /In your first turn, call start_playground .* in the same turn as your first reads \(their file, kit_reference\), as parallel calls\. When their results are back, write the person a visible reply with its url before your next tool call: they cannot see tool results\./);
+  assert.match(INSTRUCTIONS, /When a long step starts \(research, reading pages\), call start_playground again with playground_id and a new working_on, not more often than about once a minute\./);
+  assert.match(INSTRUCTIONS, /Then build with create_playground, with that playground_id as the id of the spec\./);
+  assert.ok(INSTRUCTIONS.indexOf("Link first.") < 800, "the link-first paragraph is the third one");
+});
+
+test("no text tells the agent to ask for a reload: an open page shows a build and a revision by itself", () => {
+  for (const [name, text] of Object.entries({ INSTRUCTIONS, ...TOOLS, prompt: PROMPTS.playground.text("x") })) assert.doesNotMatch(text, /(?<!not )ask (the person|them) to reload|must reload|after a reload/i, name);
+  assert.match(TOOLS.revise_playground, /shows the revision by itself within a few seconds, with their control values kept/);
+  assert.match(TOOLS.start_playground, /^Call this first, before you read a file or a web page, when a person asks for a playground: it answers at once with a working link/);
+  assert.match(TOOLS.create_playground, /Start first: call start_playground in your first turn, give the person its url in that turn, and put its playground_id in the id of this spec\./);
 });
 
 test("the prompts: the person's own request with the whole loop, short, with and without what they want", () => {
@@ -29,9 +44,10 @@ test("the prompts: the person's own request with the whole loop, short, with and
   // person's whole line, which that client puts just above the prompt.
   assert.match(PROMPTS.playground.text("the"), /^Build me a Clay playground for this: the\n\(Some clients pass only the first word here: when my words after the command, just above, say more, they are my request\.\)/);
   assert.match(PROMPTS.recheck.text("the"), /about the still right\? \(Some clients pass only the first word here/);
-  // The loop, in order: the real file first, the reference and the build, the link at once, then the repairs and the
-  // wait, the hand-back. (The link came after the repairs before: the person then waited for the whole build.)
-  const order = ["read my real file", "longer research comes after the first link", "kit_reference", "create_playground", "price_ranking", "Write the spec straight into the call", "Give me the link when create_playground returns it, before any check or repair", 'Follow "next" in each tool result until the build is done and repaired', "wait until I say I am done", "read_playground", "or tell me the decision I saved", "decision_record"].map((x) => withWhat.indexOf(x));
+  // The loop, in order: the start and the real file in the first turn, the link at once, research later, the reference
+  // and the build with the started id, then the repairs and the wait, the hand-back. (The link came with the create
+  // result before, and after the repairs before that: the person then waited for the build with nothing to open.)
+  const order = ["In your first turn call start_playground", "read my real file", "in parallel", "give me its link at once", "Research comes later, with revise_playground", "Build with its id", "kit_reference", "create_playground", "price_ranking", "Write the spec straight into the call", 'Follow "next" in each tool result until the build is done and repaired', "wait until I say I am done", "read_playground", "or tell me the decision I saved", "decision_record"].map((x) => withWhat.indexOf(x));
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), JSON.stringify(order));
   assert.match(withWhat, /Do not guess, edit my files or answer the question before that/);
   // Without it, the agent asks first, then builds by the same loop.
@@ -72,6 +88,8 @@ test("the first sentence of every tool description says when to call it", () => 
     assert.ok(first.length <= 330, `${name}: the first sentence has ${first.length} characters`);
   }
   assert.match(TOOLS.create_playground.slice(0, 200), /before you answer from memory or search the web/);
+  // "first" belongs to the start tool now: the create builds what was started.
+  assert.match(TOOLS.create_playground, /^Call this to build the playground, /);
 });
 
 test("left_out: what was left out and why is part of a spec, bounded like the rest", () => {

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { fromFrame, limiter, TILES } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
+import { carriedKit, carryValues } from "@/lib/carry";
 import { hostsOf, joinNames, reasonOf, recordPath, rowNamed, type JoinNames } from "@/lib/card";
 import css from "./kit.module.css";
 
@@ -42,10 +43,15 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
   // unsatisfying state that the person asked about, whatever its owner tried later.
   // Per view: the owner's page, a visitor's page and the embedded example each keep their own.
   const heldKey = `${id}:${state.rev ?? ""}:${canWrite ? "owner" : "visitor"}:${embedded ? "embedded" : "page"}`;
-  const [values, setValues] = useState<Values>(() => held.get(heldKey) ?? (canWrite ? valuesNow(state) : initialValues(kit.controls)));
+  // After a revision by the agent (a new rev), the person's values come along for the controls that still allow them (lib/carry.ts).
+  const carryKey = `${id}:${embedded ? "embedded" : "page"}`;
+  const [values, setValues] = useState<Values>(() => held.get(heldKey) ?? carryValues(kit.controls, carriedKit.get(carryKey), state.rev ?? "", canWrite ? valuesNow(state) : initialValues(kit.controls)));
   useEffect(() => {
     held.set(heldKey, values);
-  }, [heldKey, values]);
+    carriedKit.set(carryKey, { rev: state.rev ?? "", values });
+    // Gone when this screen goes away: the screen that replaces it after a revision has read it while it rendered.
+    return () => void carriedKit.delete(carryKey);
+  }, [heldKey, carryKey, state.rev, values]);
   const [settled, setSettled] = useState(state.settled);
   const [frame, setFrame] = useState<Frame>({ status: "loading", error: null });
   const [busy, setBusy] = useState(false);
@@ -162,6 +168,15 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     note(c, v);
     setValues({ ...values, [c.id]: v });
   };
+  // Values carried over a revision (lib/carry.ts) are on the page but not in the stored exploration of the revised
+  // controls: they go into the next report, so read_playground says what the page shows.
+  useEffect(() => {
+    if (!canWrite) return;
+    const stored = valuesNow(state);
+    for (const c of kit.controls) if (values[c.id] !== stored[c.id]) note(c, values[c.id]);
+    // Once, with the values this screen was mounted with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!moved.current || !canWrite) return;
     const t = setTimeout(() => {
