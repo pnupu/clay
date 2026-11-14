@@ -64,7 +64,8 @@
   min-height: 40px; padding: 0 10px; font: 15px/1 var(--font-mono); color: var(--p-ink);
   background: var(--c-field); border: 1px solid var(--c-line-2); border-radius: var(--c-r-sm);
 }
-.clay select { font-family: var(--font-text); }
+/* The same weight of selector as the rule above, or its mono font wins: a dropdown holds words, not figures. */
+.clay select:not([class*="cl-"]) { font-family: var(--font-text); }
 .clay input[type="range"] { accent-color: var(--p-action); width: 100%; min-height: 28px; margin: 0; cursor: pointer; }
 .clay input[type="checkbox"]:not([class*="cl-"]) { accent-color: var(--p-action); width: 18px; height: 18px; margin: 0; flex: none; }
 .clay summary { cursor: pointer; }
