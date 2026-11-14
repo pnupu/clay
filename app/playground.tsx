@@ -89,6 +89,8 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     }
   }, []);
 
+  /** The full "Standing decision" panel: the one-line verdict at the top of a narrow screen scrolls to it. */
+  const standingPanel = useRef<HTMLElement>(null);
   /** Set when the controls are put on the saved assumptions: that is not the person exploring, so it is not reported. */
   const rebase = useRef(false);
   useEffect(() => {
@@ -266,7 +268,9 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               panel comes after the ranking and the chart, long after the "Saved choice" badge in the ranking. */}
           {decision && savedStand && (
             <p className={`verdict-bar ${savedStand.holds ? "ok" : "bad"}`} data-verdict-bar>
-              {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values. <a href="#standing">Details</a>
+              {savedStand.holds ? "✓" : "✕"} {canWrite ? "Your saved choice" : "Saved choice"} <b>{nameOf(decision.chosen)}</b> {savedStand.holds ? "holds" : "no longer holds"} at the saved values.{" "}
+              {/* A button, not a hash link: the screen is also embedded in the landing page, whose URL must not change. */}
+              <button className="link" onClick={() => standingPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>Details</button>
             </p>
           )}
           {/* Narrow screens only (globals.css): the answer in one line, in view while the controls are moved. */}
@@ -354,7 +358,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
           </section>
 
           <aside className="side">
-            <section className="card" id="standing">
+            <section className="card standing" ref={standingPanel} data-standing>
               <h2>Standing decision</h2>
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
@@ -588,7 +592,8 @@ function DemoEditor({ page, busy, onPublish }: { page: PricingModel | null; busy
 function Chart({ models, a, axis, cross, names }: { models: Record<string, PricingModel | null>; a: Assumptions; axis: MetricDef; cross: { at: number }[]; names: Record<string, string> }) {
   const { color } = useContext(Dom);
   // The chart is drawn at the width it has on the screen, so the labels keep their size on a phone (a fixed 640 px drawing
-  // scaled down to 310 px made them 5 px high).
+  // scaled down to 310 px made them 5 px high). Its height is fixed (the svg's style), so the first paint, which is drawn
+  // before the width is measured, has the final height and nothing below it moves.
   const plot = useRef<HTMLDivElement>(null);
   const [W, setW] = useState(640);
   useEffect(() => {
@@ -628,10 +633,10 @@ function Chart({ models, a, axis, cross, names }: { models: Record<string, Prici
         {series.map((s) => <li key={s.id}><span className="swatch" style={{ background: color(s.id) }} />{names[s.id]}</li>)}
       </ul>
       <div className="plot" ref={plot}>
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Monthly cost per vendor along ${lower(axis.label)}`}
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ height: H }} role="img" aria-label={`Monthly cost per vendor along ${lower(axis.label)}`}
           onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover(inv(((e.clientX - r.left) / r.width) * W)); }} onMouseLeave={() => setHover(null)}>
           {yt.map((y, i) => <g key={`${i}:${y}`}><line x1={L} x2={W - R} y1={sy(y)} y2={sy(y)} className="grid" /><text x={L - 8} y={sy(y) + 4} textAnchor="end" className="tick">${short(y)}</text></g>)}
-          {xt.map((x, i) => <text key={i} x={sx(x)} y={H - 8} textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"} className="tick">{short(x)} {i === 2 ? axis.unit : ""}</text>)}
+          {xt.map((x, i) => <text key={i} x={sx(x)} y={H - 8} textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"} className="tick">{short(x)} {i === 2 && (W >= 420 || axis.unit.length <= 6) ? axis.unit : ""}</text>)}
           {cross.filter((c) => c.at > lo && c.at < hi).map((c, i) => <line key={`${i}:${c.at}`} x1={sx(c.at)} x2={sx(c.at)} y1={T} y2={H - B} className="cross-line" />)}
           {v >= lo && v <= hi && <line x1={sx(v)} x2={sx(v)} y1={T} y2={H - B} className="here" />}
           {series.map((s) => <path key={s.id} d={path(s.ys)} fill="none" stroke={color(s.id)} strokeWidth={2} strokeLinejoin="round" />)}

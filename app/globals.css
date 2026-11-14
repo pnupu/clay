@@ -101,7 +101,7 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--page); border
 .vendor-head .plan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vendor .name { font-weight: 600; }
 .vendor .plan { font-size: 13px; }
-.vendor .cost { margin-left: auto; font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.vendor .cost { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
 ol.rank .vendor:first-child .cost { font-size: 30px; }
 ol.rank .vendor:first-child .name { font-size: 18px; }
 .vendor .name { font-size: 16px; }
@@ -189,19 +189,22 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
   .control .value { padding: 7px 8px; }
   .control input[type="range"] { min-height: 32px; }
   .chart-head select { padding: 7px 8px; }
-  button.link { padding: 6px 0; }
+  .tolerance input { padding: 6px 8px; }
 }
 /* The price screen on a narrow screen: the answer stays in view while the controls above the ranking are moved. */
 .answer-bar, .verdict-bar { display: none; }
+/* The cost and its Select button are one unit at the right end of a vendor row. */
 .vendor-head .buy { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-#standing { scroll-margin-top: 70px; }
-/* Where the standing decision is below the ranking (two columns or one): its verdict in one line at the top. */
-@media (max-width: 1100px) {
-  .verdict-bar { display: block; grid-column: 1 / -1; order: -2; margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 14px; }
-  .verdict-bar.ok { background: var(--ok-bg); color: var(--ok); }
-  .verdict-bar.bad { background: var(--bad-bg); color: var(--bad); }
-  .verdict-bar a { color: inherit; white-space: nowrap; }
-}
+/* The one-line verdict scrolls to the full panel; the panel stops below the sticky answer line of a narrow screen. */
+.standing { scroll-margin-top: 92px; }
+.verdict-bar { grid-column: 1 / -1; order: -2; margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+.verdict-bar.ok { background: var(--ok-bg); color: var(--ok); }
+.verdict-bar.bad { background: var(--bad-bg); color: var(--bad); }
+.verdict-bar button.link { color: inherit; font: inherit; white-space: nowrap; }
+/* Wherever the standing decision is below the ranking, its verdict is said in one line at the top: on a screen of up to
+   1100 px, and at every width inside another page, where the price screen always has its two-column form. */
+@media (max-width: 1100px) { .verdict-bar { display: block; } }
+.embedded-playground .verdict-bar { display: block; }
 @media (max-width: 700px) {
   .answer-bar { display: block; order: -1; position: sticky; top: 0; z-index: 5; margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 18px rgb(0 0 0 / 0.16); font-size: 15px; }
 }
@@ -218,9 +221,7 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
 @media (max-width: 700px) {
   .vendor-head .plan { flex-basis: 100%; margin-left: 18px; white-space: normal; }
   .vendor-head .buy { flex-basis: 100%; margin-left: 18px; justify-content: space-between; }
-  .vendor-head .buy .cost { margin-left: 0; }
   .vendor .cost, ol.rank .vendor:first-child .cost { font-size: 24px; }
-  .vendor details, .vendor > p { margin-left: 18px; }
   .chart-head { flex-wrap: wrap; }
   .top .actions { flex-wrap: wrap; }
 }

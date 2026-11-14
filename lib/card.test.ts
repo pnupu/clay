@@ -22,7 +22,7 @@ test("the cards of the seven live examples show the request or whole sentences, 
   assert.deepEqual(cardText(NOTES.button), { quote: "this signup button looks off and I can't say why. Our brand is stripe.com." });
   assert.deepEqual(cardText(NOTES.email), { quote: "we're about to launch and need to pick an email service for receipts and password resets. maybe 40k a month now, could be 300k by spring. which one?" });
   // The built-in example has no quoted request: its first whole sentence. Before, it ended "…can be changed on p…".
-  assert.deepEqual(cardText(NOTES.auth), { blurb: "Four real vendors, read from their own pricing pages, and one fictional vendor, Northwind Auth (marked Demo)." });
+  assert.deepEqual(cardText(NOTES.auth), { blurb: `${DOMAIN.note!.split(". ")[0]}.` });
   for (const [name, note] of Object.entries(NOTES)) {
     const said = cardText(note)!;
     const text = "quote" in said ? said.quote : said.blurb;
@@ -41,6 +41,12 @@ test("a note without the pattern gives whole sentences that fit; a single long s
   // Punctuation does not hang before the ellipsis, and one very long word is still cut to fit.
   assert.equal(atWord("alpha beta, gamma delta", 12), "alpha beta…");
   assert.equal(atWord("x".repeat(50), 10), `${"x".repeat(9)}…`);
+  // A long address after a short word is not cut inside: the card ends before it. A sentence end does not hang before the ellipsis.
+  assert.equal(atWord("See https://example.com/a/very/long/path/that/does/not/fit/on/a/card", 40), "See…");
+  assert.equal(atWord("Receipts and password resets. Then more words follow here", 31), "Receipts and password resets…");
+  // The full stop of an abbreviation does not end a sentence.
+  assert.equal(blurbOf("Compares hosts, e.g. Vercel and Netlify, at your traffic. Move the sliders.", 60), "Compares hosts, e.g. Vercel and Netlify, at your traffic.");
+  assert.equal(blurbOf("Clerk vs. WorkOS at approx. 40k users. Try it.", 40), "Clerk vs. WorkOS at approx. 40k users.");
   assert.equal(atWord("fits", 10), "fits");
   assert.equal(cardText(""), null);
   assert.equal(cardText("   "), null);
@@ -48,6 +54,10 @@ test("a note without the pattern gives whole sentences that fit; a single long s
 
 test("the request is the quoted text after the opening words, up to the quote that a new sentence follows", () => {
   assert.equal(requestOf('Someone told their agent: "make the "Buy" button pop" Their agent built it.'), 'make the "Buy" button pop');
+  assert.equal(requestOf('Someone told their agent: "make the "Buy" Button pop" Their agent built it.'), 'make the "Buy" Button pop');
+  assert.equal(requestOf('Someone told their agent: "which one?"'), "which one?");
+  // A note that goes on in lowercase after the quote gives no request: agent prose is never shown as the person's words.
+  assert.equal(requestOf('Someone told their agent: "fix the card" and then it built a page. See the "Preview" Box.'), null);
   assert.equal(requestOf('Someone told their agent: "The button feels off". It has a "ghost" look.'), "The button feels off");
   assert.equal(requestOf("Your card from src/PricingCard.tsx, as it is now."), null);
   // A very long request is shown cut at a word.
