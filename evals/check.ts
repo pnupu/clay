@@ -209,15 +209,21 @@ export function namedInProse(choice: string, text: string): boolean {
   return codes.length ? codes.some((p) => said.includes(p)) : parts.length > 0 && parts.every((p) => said.includes(p));
 }
 
-/** The hand-back of a choice: the file (or, without a file, the answer) must hold every choice the person settled. */
+/**
+ * The hand-back of a choice. With a file: the file must have changed and must hold every settled choice as it is.
+ * Without a file the agent answers in words, and a playground's selects hold assumptions as well as the choice itself
+ * (a method, a size), which a good answer need not all repeat: the answer must name at least half of the settled choices.
+ */
 export function choiceHandback(choices: string[], before: string | null, after: string | null, answer: string): Check {
   if (!choices.length) return na("handback_match", "the person had no choice to settle (the playground has no select)");
-  const text = before != null ? after : answer;
-  if (before != null && (after == null || after === before)) return fail("handback_match", "the file did not change");
-  // In a file the choice must stand as it is. A spoken answer may name it more loosely: "RTX 4090" names "RTX 4090 24GB".
-  const said = (c: string) => (before != null ? (text ?? "").toLowerCase().includes(c.toLowerCase()) : namedInProse(c, text ?? ""));
-  const missing = choices.find((c) => !said(c));
-  return missing ? fail("handback_match", `${before != null ? "the file" : "the answer"} does not hold the settled choice: ${cut(missing, 80)}`) : pass("handback_match", `${before != null ? "the file" : "the answer"} holds the settled choice(s): ${choices.map((c) => cut(c, 40)).join(", ")}`);
+  if (before != null) {
+    if (after == null || after === before) return fail("handback_match", "the file did not change");
+    const missing = choices.find((c) => !after.toLowerCase().includes(c.toLowerCase()));
+    return missing ? fail("handback_match", `the file does not hold the settled choice: ${cut(missing, 80)}`) : pass("handback_match", `the file holds the settled choice(s): ${choices.map((c) => cut(c, 40)).join(", ")}`);
+  }
+  const unique = [...new Set(choices)];
+  const named = unique.filter((c) => namedInProse(c, answer));
+  return named.length * 2 >= unique.length ? pass("handback_match", `the answer names ${named.length} of the ${unique.length} settled choice(s): ${named.map((c) => cut(c, 30)).join(", ")}`) : fail("handback_match", `the answer names only ${named.length} of the ${unique.length} settled choices; missing: ${unique.filter((c) => !named.includes(c)).map((c) => cut(c, 30)).join(", ")}`);
 }
 
 /** A case passes only if every applicable check passes. */
