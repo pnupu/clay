@@ -237,6 +237,9 @@ test("data cases: the facts carry sources, an unknown is not a number, the choic
   assert.equal(choiceHandback(["claude-sonnet-4.5", "batch"], null, null, "Use Claude Opus 4.5 with batch billing.").status, "fail");
   assert.equal(choiceHandback(["claude-sonnet-4.5", "batch"], null, null, "Use Claude Sonnet 4.5 with batch billing.").status, "pass");
   assert.equal(unknowns("Opus — 0.00 USD per task").status, "fail");
+  // A word form of the option names it ("moving to Paid now" for "move to Paid now"); another option does not.
+  assert.equal(choiceHandback(["move to Paid now"], null, null, "You settled on moving to Paid now.").status, "pass");
+  assert.equal(choiceHandback(["move to Paid now"], null, null, "You settled on staying on Free for now.").status, "fail");
   assert.equal(choiceHandback(["RTX 4090 24GB", "QLoRA (4-bit base)", "RTX 4090 24GB", "Lambda"], null, null, "You settled on RTX 4090 on Lambda with QLoRA.").status, "pass");
   assert.equal(choiceHandback(["RTX 4090 24GB", "QLoRA (4-bit base)", "Vast.ai", "Full fine-tune"], null, null, "You settled on an RTX 4090.").status, "fail");
   assert.equal(choiceHandback([], null, null, "").status, "na");

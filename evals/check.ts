@@ -210,7 +210,9 @@ export function namedInProse(choice: string, text: string): boolean {
   const codes = parts.filter((p) => (/[a-z]/.test(p) && /\d/.test(p)) || /^\d{4,}$/.test(p));
   // A code is matched as a whole word: "8gb" is not found in "128gb".
   const word = (p: string) => new RegExp(`(^|[^a-z0-9])${p.replace(/\./g, "\\.")}($|[^a-z0-9])`).test(said);
-  return codes.length ? codes.some(word) : parts.length > 0 && parts.every((p) => said.includes(p));
+  // Words are compared by their stem: "moving to Paid" names the option "move to Paid".
+  const stem = (p: string) => (p.length > 4 ? p.replace(/(ing|ed|es|e|s)$/, "") : p.replace(/e$/, ""));
+  return codes.length ? codes.some(word) : parts.length > 0 && parts.every((p) => said.includes(stem(p)));
 }
 
 /**
