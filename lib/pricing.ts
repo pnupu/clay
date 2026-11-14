@@ -47,6 +47,7 @@ export function meterCost(m: Meter, units: number): { amount: number; unknown?: 
 export const GAP_WORDS = {
   interactive: "the page shows this price only through an interactive slider or calculator, so it cannot be read from the text",
   configuration: "the page states several prices that depend on the product or configuration, so no single price applies",
+  trimmed: "the page lists more plans or price steps than Clay keeps, so a price may be missing",
 } as const;
 
 export function planCost(plan: Plan, a: Assumptions): PlanCost {
@@ -56,6 +57,8 @@ export function planCost(plan: Plan, a: Assumptions): PlanCost {
   const base = plan.price_gap === "interactive" && !plan.base_price ? null : plan.base_price;
   if (base == null) r.unknowns.push(gap ?? (plan.custom_pricing ? "custom pricing (contact sales)" : "base price not stated"));
   else r.cost += base;
+  // A read that was trimmed is never complete: a left-out plan or step could change the price or the winner.
+  if (plan.price_gap === "trimmed" && !r.unknowns.includes(GAP_WORDS.trimmed)) r.unknowns.push(GAP_WORDS.trimmed);
   r.lines.push({ label: "Base price", amount: base, key: "base" });
 
   for (const [metric, units] of Object.entries(a.usage)) {
@@ -117,6 +120,8 @@ export function rank(models: Record<string, PricingModel | null>, a: Assumptions
     .map((v) => {
       let effect: string;
       if (!v.best) effect = "No plan meets these requirements, so it is out of the ranking.";
+      // A trimmed read can hide a cheaper plan or step: it never "cannot change the winner".
+      else if (v.best.unknowns.includes(GAP_WORDS.trimmed)) effect = "Its page lists more plans or price steps than Clay keeps, so it cannot be ranked: a plan or step that was left out could be cheaper.";
       // No known cost at all: say the price is not stated, not "costs at least $0".
       else if (cents(v.best.cost) === 0) effect = top == null ? "Its price is not stated; nothing else can be ranked either." : `Its price is not stated. It would be the cheapest only if the missing facts add less than $${fmtN(Math.round(top))} per month. The winner depends on this.`;
       else if (top == null) effect = `Costs at least $${fmtN(Math.round(v.best.cost))}; nothing else can be ranked either.`;

@@ -83,7 +83,7 @@ export type Meter = {
 };
 export type FeatureFact = { feature: string; status: "included" | "addon" | "not_available" | null; addon_price: number | null; quote: string | null };
 /** Why a price cannot be read from the page text. interactive: it is shown only through a slider, dropdown or calculator. configuration: the page states several prices that depend on the product or configuration chosen. */
-export type PriceGap = "interactive" | "configuration";
+export type PriceGap = "interactive" | "configuration" | "trimmed";
 export type Plan = {
   name: string;
   base_price: number | null;
@@ -94,7 +94,7 @@ export type Plan = {
   features: FeatureFact[] | null;
 };
 /** `page_gap`: why the page gave no plan at all, when the extraction can tell. */
-export type PricingModel = { vendor: string | null; currency: string | null; plans: Plan[] | null; page_gap?: PriceGap | "not_pricing" | "contact_sales" | null };
+export type PricingModel = { vendor: string | null; currency: string | null; plans: Plan[] | null; page_gap?: "interactive" | "configuration" | "not_pricing" | "contact_sales" | null };
 
 const nullable = (type: string, description: string) => ({ type: [type, "null"], description });
 
@@ -200,51 +200,59 @@ type RawPlan = Omit<Plan, "meters" | "features"> & { meters?: Record<string, Raw
 export type RawModel = { vendor: string | null; currency: string | null; plans: RawPlan[] | null; page_gap?: string | null };
 
 const GAPS = ["interactive", "configuration"] as const;
-const gap = (x: unknown): PriceGap | null => (GAPS.includes(x as PriceGap) ? (x as PriceGap) : null);
+type ReadGap = (typeof GAPS)[number];
+const gap = (x: unknown): ReadGap | null => (GAPS.includes(x as ReadGap) ? (x as ReadGap) : null);
 
 /**
  * Bounds of one stored price read, as lib/web.ts bounds a web read: the extraction is page data, and a page can be very
- * long. Counts and texts are cut; a read that is still larger than `bytes` is refused (normalise throws), so the
- * previous snapshot stays and the source shows why. Per playground at most LIMITS.vendors sources of this size.
+ * long. Only the permitted fields are copied, at every level (an allow-list), and texts are cut. A read with more plans
+ * or more price steps than Clay keeps is never bridged: its plans are marked "trimmed", which makes the vendor "cannot be
+ * ranked" with that reason (lib/pricing.ts) and names it in the agent's problems list (lib/report.ts).
  */
 export const PRICE_LIMITS = { plans: 20, meters: 5, tiers: 12, features: 6, name: 80, quote: 200, short: 40, bytes: 64_000 } as const;
-const cutText = (t: unknown, n: number): string | null => (typeof t === "string" ? t.slice(0, n) : t == null ? null : String(t).slice(0, n));
+const cutText = (t: unknown, n: number): string | null => (typeof t === "string" ? t.slice(0, n) : null);
+const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
+const bool = (x: unknown): boolean | null => (typeof x === "boolean" ? x : null);
+const pick = <T extends string>(x: unknown, allowed: readonly T[]): T | null => (allowed.includes(x as T) ? (x as T) : null);
+const entries = (x: unknown): [string, unknown][] => (x && typeof x === "object" && !Array.isArray(x) ? Object.entries(x as object) : []);
+const list = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
 
 export function normalise(raw: RawModel): PricingModel {
-  // Still too large after the cuts: the quotes go first, then plans from the end, until it fits. No throw: a refused read
-  // made the collection try more pages, each a paid request.
-  let model = normaliseUnbounded(boundRaw(raw));
+  const { model: bounded, trimmed } = boundRaw(raw);
+  let model = normaliseUnbounded(bounded);
+  if (trimmed) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_gap: "trimmed" as const })) };
+  // Still too large: the quotes go first, then plans from the end (the read is then trimmed), until it fits; at the end
+  // even a single plan is dropped. No throw: a refused read made the collection try more pages, each a paid request.
   const size = () => JSON.stringify(model).length;
   if (size() > PRICE_LIMITS.bytes) model = { ...model, plans: (model.plans ?? []).map((p) => ({ ...p, price_quote: null, meters: (p.meters ?? []).map((m) => ({ ...m, quote: null })), features: (p.features ?? []).map((f) => ({ ...f, quote: null })) })) };
-  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 1) model = { ...model, plans: model.plans!.slice(0, -1) };
+  while (size() > PRICE_LIMITS.bytes && (model.plans?.length ?? 0) > 0) model = { ...model, plans: model.plans!.slice(0, -1).map((p) => ({ ...p, price_gap: "trimmed" as const })) };
   return model;
 }
 
-/**
- * At most PRICE_LIMITS.tiers tiers, keeping what the rules need: several open-ended prices (separate products) stay
- * several, so normaliseUnbounded() still sees a mixed read; graduated tiers keep their final open-ended step.
- */
-function cutTiers<T extends { up_to?: unknown }>(tiers: T[]): T[] {
-  if (tiers.length <= PRICE_LIMITS.tiers) return tiers;
-  const open = tiers.filter((t) => t.up_to == null);
-  if (open.length > 1) return open.slice(0, PRICE_LIMITS.tiers);
-  return [...tiers.filter((t) => t.up_to != null).slice(0, PRICE_LIMITS.tiers - open.length), ...open];
-}
-/** Cut the counts and texts of a raw extraction to PRICE_LIMITS. */
-function boundRaw(raw: RawModel): RawModel {
+/** Copy only the permitted fields of a raw extraction, within PRICE_LIMITS. `trimmed`: plans or price steps were left out. */
+function boundRaw(raw: RawModel): { model: RawModel; trimmed: boolean } {
   const q = (t: unknown) => cutText(t, PRICE_LIMITS.quote);
-  return {
-    ...raw,
-    vendor: cutText(raw.vendor, PRICE_LIMITS.name),
-    currency: cutText(raw.currency, PRICE_LIMITS.short),
-    plans: (raw.plans ?? []).slice(0, PRICE_LIMITS.plans).map((p) => ({
-      ...p,
-      name: cutText(p.name, PRICE_LIMITS.name) ?? "",
-      price_quote: q(p.price_quote),
-      meters: Object.fromEntries(Object.entries(p.meters ?? {}).slice(0, PRICE_LIMITS.meters).map(([k, m]) => [k, m ? { ...m, quote: q(m.quote), tiers: cutTiers(m.tiers ?? []) } : m])),
-      features: Object.fromEntries(Object.entries(p.features ?? {}).slice(0, PRICE_LIMITS.features).map(([k, f]) => [k, f ? { ...f, quote: q(f.quote) } : f])),
-    })),
-  } as RawModel;
+  const r = raw as unknown as Record<string, unknown>;
+  const plansIn = list(r.plans);
+  let trimmed = plansIn.length > PRICE_LIMITS.plans;
+  const plans = plansIn.slice(0, PRICE_LIMITS.plans).map((pv) => {
+    const p = (pv && typeof pv === "object" ? pv : {}) as Record<string, unknown>;
+    const meters = Object.fromEntries(entries(p.meters).slice(0, PRICE_LIMITS.meters).map(([k, mv]) => {
+      if (!mv || typeof mv !== "object") return [k.slice(0, PRICE_LIMITS.short), null];
+      const m = mv as Record<string, unknown>;
+      const tiersIn = list(m.tiers);
+      if (tiersIn.length > PRICE_LIMITS.tiers) trimmed = true; // its steps are dropped below, never bridged
+      const tiers = tiersIn.length > PRICE_LIMITS.tiers ? [] : tiersIn.map((tv) => { const t = (tv && typeof tv === "object" ? tv : {}) as Record<string, unknown>; return { up_to: num(t.up_to), price: num(t.price), per_units: num(t.per_units) }; });
+      return [k.slice(0, PRICE_LIMITS.short), { included: num(m.included), overage_allowed: bool(m.overage_allowed), tiers, quote: q(m.quote), status: pick(m.status, ["priced", "not_available"] as const), unlimited: bool(m.unlimited) }];
+    }));
+    const features = Object.fromEntries(entries(p.features).slice(0, PRICE_LIMITS.features).map(([k, fv]) => {
+      if (!fv || typeof fv !== "object") return [k.slice(0, PRICE_LIMITS.short), null];
+      const f = fv as Record<string, unknown>;
+      return [k.slice(0, PRICE_LIMITS.short), { status: pick(f.status, ["included", "addon", "not_available"] as const), addon_price: num(f.addon_price), quote: q(f.quote) }];
+    }));
+    return { name: cutText(p.name, PRICE_LIMITS.name) ?? "", base_price: num(p.base_price), custom_pricing: bool(p.custom_pricing), price_gap: cutText(p.price_gap, PRICE_LIMITS.short), price_quote: q(p.price_quote), meters, features };
+  });
+  return { model: { vendor: cutText(r.vendor, PRICE_LIMITS.name), currency: cutText(r.currency, PRICE_LIMITS.short), plans, page_gap: cutText(r.page_gap, PRICE_LIMITS.short) } as unknown as RawModel, trimmed };
 }
 
 function normaliseUnbounded(raw: RawModel): PricingModel {

@@ -113,6 +113,8 @@ export type Playground = {
   example?: boolean;
   /** The one example that the landing page embeds under "Try it here" (lib/accounts.ts, markExample). At most one playground has it. */
   featured?: boolean;
+  /** When a revision by its owner cleared the example mark (lib/accounts.ts, unpublishOnRevision); gone when marked again. */
+  exampleCleared?: string | null;
   /** What the agent left out of this playground and why, as it said (spec left_out). Text from the agent: shown as text. */
   leftOut?: { name: string; reason: string; at: string }[];
 };

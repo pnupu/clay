@@ -57,6 +57,20 @@ export const ownerOf = (p: Owned): string | null => p.owner ?? null;
  * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
  * example also unfeatures it. Returns what the playground is now, or the refusal.
  */
+/**
+ * The operator approves what they saw when they mark an example. A revision by anyone else (new code, new data sources,
+ * new words) takes the mark away, so visitors never run a version nobody approved; the operator marks it again after a
+ * look. The operator's own revisions keep the mark. Returns true when the mark was cleared.
+ */
+export function unpublishOnRevision(p: Owned & { featured?: boolean; exampleCleared?: string | null }, id: string, a: Actor | null, now: string): boolean {
+  if (a?.kind === "admin" || id === DOMAIN.id || !isExample(p, id)) return false;
+  p.example = false;
+  delete p.featured;
+  p.exampleCleared = now;
+  return true;
+}
+export const EXAMPLE_CLEARED = "This playground was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Clay deployment looks at it and marks it again.";
+
 export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404; error: string } {
   if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
   const p = playgrounds[id];
@@ -67,6 +81,7 @@ export function markExample(playgrounds: Record<string, Owned>, id: string, mark
   const example = typeof mark.example === "boolean" ? mark.example : isExample(p, id);
   if (mark.featured === true && !example) return { ok: false, status: 400, error: 'Only an example can be featured: mark it as an example first, or send {"example": true, "featured": true}.' };
   if (typeof mark.example === "boolean") p.example = mark.example;
+  if (mark.example === true) delete (p as { exampleCleared?: string | null }).exampleCleared;
   if (mark.featured === true) {
     for (const other of Object.values(playgrounds)) delete other.featured;
     p.featured = true;

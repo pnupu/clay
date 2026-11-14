@@ -88,11 +88,14 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   // The caps count requests SENT to Context.dev: every attempt, a retry after a 429 included, is reserved right before it
   // is sent. At the cap nothing more is sent, also in the middle of retries.
   // The UTC day is taken at each reservation, right before the send it is for, so a retry after midnight counts on the new
-  // day; spend() never lets an older day replace a newer one. Returns the day charged, or null when nothing was charged.
-  const reserve = async (): Promise<string | null> => {
-  const day = new Date().toISOString().slice(0, 10);
+  // day; spend() never lets an older day replace a newer one. Returns the day each counter was charged on (the global and
+  // the personal counter separately: they can be on different days), or null when nothing was charged.
+  type Reservation = { global: string | null; personal: string | null } | null;
+  const today = () => new Date().toISOString().slice(0, 10);
+  const reserve = async (): Promise<Reservation> => {
+  const day = today();
   if (!((daily > 0 || personal > 0) && method !== "DELETE")) return null;
-  let charged: string | null = null;
+  let charged: Reservation = null;
   const refusal = await update((s) => {
     const b = daily > 0 ? spend(s.budget, day, daily, units) : s.budget;
     if (!b && daily > 0) return "global";
@@ -100,7 +103,7 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
     if (user && personal > 0 && !u) return "user";
     s.budget = b;
     if (user && u) s.users[user] = { ...(s.users[user] ?? { keyHash: null, keyCreatedAt: null }), usage: u };
-    charged = b?.day ?? u?.day ?? day;
+    charged = { global: daily > 0 ? b!.day : null, personal: user && personal > 0 && u ? u.day : null };
     return null;
   });
   if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
@@ -108,11 +111,11 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
   return charged;
   };
   /** Give back a reservation whose request was NOT sent (the local request cap refused it). A sent request is never given back. */
-  const release = (day: string | null) =>
-    day == null ? Promise.resolve() : update((s) => {
-      if (daily > 0 && s.budget?.day === day) s.budget = { day, used: Math.max(0, s.budget.used - units) };
+  const release = (r: Reservation) =>
+    r == null ? Promise.resolve() : update((s) => {
+      if (r.global && s.budget?.day === r.global) s.budget = { day: r.global, used: Math.max(0, s.budget.used - units) };
       const u = user ? s.users[user]?.usage : null;
-      if (user && personal > 0 && u?.day === day) s.users[user] = { ...s.users[user], usage: { day, used: Math.max(0, u.used - units) } };
+      if (r.personal && user && u?.day === r.personal) s.users[user] = { ...s.users[user], usage: { day: r.personal, used: Math.max(0, u.used - units) } };
     });
   // The account's rate limit (10 request units per minute) is shared by every function instance and every person, so the
   // pacing in slot() cannot always prevent a 429. Builds run in the background (lib/mcp.ts answers the agent early), so a
@@ -125,6 +128,12 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown,
     // and a 429 is retried below like any other.
     if (opts.urgent) starts.push(Date.now());
     else await slot();
+    // The first reservation was made before the wait. When the day changed meanwhile, it is given back and made again on
+    // the new day, right before the send (nothing has been sent on it).
+    if (attempt === 0 && reserved && [reserved.global, reserved.personal].some((d) => d != null && d < today())) {
+      await release(reserved);
+      reserved = await reserve();
+    }
     // A retry is a new request sent: it is reserved too. Reached here, the earlier attempts were sent, and no more are.
     if (attempt > 0)
       reserved = await reserve().catch((e) => {

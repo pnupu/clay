@@ -11,7 +11,7 @@ import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems,
 import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
-import { canRead, canWrite, currentActor } from "./accounts";
+import { EXAMPLE_CLEARED, canRead, canWrite, currentActor } from "./accounts";
 
 /**
  * How long a tool call waits for web reads before it answers. An agent's client cuts a tool call at about 60 seconds
@@ -249,11 +249,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
           const r = await revisePreview(parsed.domain, parsed.kit);
           await within(Promise.all([r.brand, r.web]));
           const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the person must reload the page before they settle.";
-          return preview(playground_id, { settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings);
+          return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings);
         }
         const r = await revisePlayground(parsed.domain, origin);
         const w = await within(r.work);
-        return built(playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, w.done ? w.value : null, r.recollected);
+        return built(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, w.done ? w.value : null, r.recollected);
       } catch (e) {
         return fail(`The playground could not be revised: ${message(e)}`);
       }

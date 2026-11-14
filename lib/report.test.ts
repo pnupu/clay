@@ -23,7 +23,8 @@ test("non-owner view: a preview example shows its spec and start values, never t
   const failed = { ...(p as { kit: object }), kit: { ...(p as { kit: object }).kit, preview: { status: "failed", error: "Uncaught Error: Cannot render size 19", at: null } } } as never;
   const view = JSON.stringify(previewReport(nonOwnerView(failed), "u"));
   assert.ok(!view.includes("Cannot render size 19"));
-  assert.match(view, /"status":"failed"/);
+  assert.ok(!view.includes('"status":"failed"'));
+  assert.equal((nonOwnerView(failed) as { kit: { preview: unknown } }).kit.preview && JSON.stringify((nonOwnerView(failed) as { kit: { preview: unknown } }).kit.preview), JSON.stringify({ status: "unverified", error: null, at: null }));
 });
 
 test("non-owner view: a price example keeps its saved decision and events, not the owner's exploration", () => {

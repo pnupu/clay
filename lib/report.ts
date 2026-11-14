@@ -53,6 +53,7 @@ export function collectionReport(p: Playground) {
     else if (!plans.some((x) => x.meters?.length)) problems.push(`${v.id}: plans were found, but none states a quantity or price for any metric. Check that ${src.url} is the right page and that each metric's describe uses the words of that page.`);
     if (snap?.quarantined.length) problems.push(`${v.id}: ${snap.quarantined.length} extracted number(s) were not found in the page text. They are quarantined: shown as unknown and never used in a cost.`);
     if (snap?.truncated) problems.push(`${v.id}: the page was too long to read in full, so some values may be missing.`);
+    if (plans.some((x) => x.price_gap === "trimmed")) problems.push(`${v.id}: the page lists more plans or price steps than Clay keeps, so its prices may be incomplete and it cannot be ranked. Fix: give a pricing_url of a page for the plans this person needs, or drop the vendor.`);
     const quotes = plans.flatMap((x) => [x.price_quote ? { fact: `${cut(x.name, 60)} / base price`, untrusted_web_quote: cut(x.price_quote, 120) } : null, ...(x.meters ?? []).map((m) => (m.quote ? { fact: `${cut(x.name, 60)} / ${m.metric}`, untrusted_web_quote: cut(m.quote, 120) } : null))]).filter((q) => q != null);
     return {
       vendor: v.id,
@@ -179,9 +180,9 @@ export const eventReport = (e: ChangeEvent) => ({
  * that is its story, published when the admin marks it as an example.
  */
 export function nonOwnerView(p: Playground): Playground {
-  // The preview's saved error text is written by code that ran with the owner's values ("Cannot render size 19"): a
-  // non-owner learns that the preview has a problem, not the text.
-  const preview = p.kit ? { ...p.kit.preview, error: p.kit.preview.error ? "The preview reported an error." : null } : undefined;
+  // The preview's saved status, its error text and its time come from code that ran with the owner's values: even "failed"
+  // alone can tell which values the owner tried, when code fails only for some. A non-owner gets none of it.
+  const preview = p.kit ? { status: "unverified" as const, error: null, at: null } : undefined;
   return { ...p, exploration: null, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
 }
 /** Said to another person's agent that reads an example. */

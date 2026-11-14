@@ -60,7 +60,10 @@ export const HARDEN = `
   // without http-equiv does nothing, so the frame's own charset and viewport metas survive "head.innerHTML += ...").
   var BLOCKED = /^(link|meta|base|iframe|frame|frameset|object|embed|portal|applet|script)$/i;
   var TAGS = "link,meta[http-equiv],base,iframe,frame,frameset,object,embed,portal,applet";
-  function bad(n) { return n.nodeType === 1 && (/^(link|base|iframe|frame|frameset|object|embed|portal|applet)$/i.test(n.localName) || (n.localName === "meta" && n.hasAttribute("http-equiv"))); }
+  // Read through the original prototype getters: an element's own "localName" or "hasAttribute" property can be shadowed.
+  var nameOf = Object.getOwnPropertyDescriptor(Element.prototype, "localName").get, nsOf = Object.getOwnPropertyDescriptor(Element.prototype, "namespaceURI").get, hasAttr = Element.prototype.hasAttribute, nodeTypeGet = Object.getOwnPropertyDescriptor(Node.prototype, "nodeType").get;
+  var typeOf = { call: function (n) { try { return nodeTypeGet.call(n); } catch (e) { return 0; } } };
+  function bad(n) { if (!n || typeof n !== "object" || typeOf.call(n) !== 1) return false; var t = nameOf.call(n); return /^(link|base|iframe|frame|frameset|object|embed|portal|applet)$/i.test(t) || (t === "meta" && hasAttr.call(n, "http-equiv")); }
   var D = Document.prototype, E = Element.prototype, N = Node.prototype;
   function lock(o, k, v) { try { Object.defineProperty(o, k, { value: v, writable: false, configurable: false }); } catch (e) {} }
   function lockSetter(o, k, set) { var d = Object.getOwnPropertyDescriptor(o, k); if (!d || !d.set) return; try { Object.defineProperty(o, k, { get: d.get, set: set, configurable: false }); } catch (e) {} }
@@ -70,13 +73,13 @@ export const HARDEN = `
   function clean(node) {
     if (!node || typeof node !== "object") return true;
     if (bad(node)) return false;
-    var find = node.nodeType === 1 ? qsa : node.nodeType === 11 ? fqsa : null;
+    var kind = typeOf.call(node), find = kind === 1 ? qsa : kind === 11 ? fqsa : null;
     if (!find) return true;
     var all = find.call(node, TAGS), i;
     for (i = 0; i < all.length; i++) remove.call(all[i]);
     var tpl = find.call(node, "template");
     for (i = 0; i < tpl.length; i++) clean(tpl[i].content);
-    if (node.nodeType === 1 && node.localName === "template") clean(node.content);
+    if (kind === 1 && nameOf.call(node) === "template") clean(node.content);
     return true;
   }
   /** Clean the inserted nodes only: the argument at "only" (insertBefore's and replaceChild's first), or all of them. */
@@ -180,7 +183,7 @@ window.addEventListener("error", function (e) {
 }, true);
 window.addEventListener("unhandledrejection", function (e) { fail("Unhandled promise rejection: " + ((e.reason && e.reason.message) || e.reason)); });
 document.addEventListener("securitypolicyviolation", function (e) {
-  fail("Blocked by the sandbox (" + e.effectiveDirective + "): " + (e.blockedURI || "inline") + ". A preview cannot use the network, forms or popups. Put images in data: URLs and code inline; brand logos from clay.data.brand.logos are allowed.");
+  fail("Blocked by the sandbox (" + e.effectiveDirective + "): " + (e.blockedURI || "inline") + ". A preview must not use the network, forms or popups; the sandbox blocks this one. Put images in data: URLs and code inline; brand logos from clay.data.brand.logos are allowed.");
 });
 // Apply to the live DOM only what changed between two renders of the template, so what view.js did to the elements stays.
 function sync(live, was, next) {

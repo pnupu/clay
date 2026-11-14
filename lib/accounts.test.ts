@@ -182,3 +182,22 @@ test("budget: an older day never replaces a newer day's counter", () => {
   assert.deepEqual(spend({ day: "2026-11-14", used: 9 }, "2026-11-15", 2), { day: "2026-11-15", used: 1 });
   assert.deepEqual(spend({ day: "2026-11-20", used: 2 }, "2026-11-14", 2), { day: "2026-11-14", used: 1 }); // a far future day is not trusted
 });
+
+test("examples: a revision by the owner clears the mark; the operator's own revision keeps it", async () => {
+  const { unpublishOnRevision, markExample, isExample: isEx } = await import("./accounts.ts");
+  const p = { domain: { id: "card" }, owner: "user_ann", example: true, featured: true } as { domain: { id: string }; owner: string; example?: boolean; featured?: boolean; exampleCleared?: string | null };
+  assert.equal(unpublishOnRevision(p, "card", { kind: "admin" }, "t0"), false);
+  assert.equal(isEx(p, "card"), true);
+  assert.equal(unpublishOnRevision(p, "card", ann, "t1"), true);
+  assert.equal(isEx(p, "card"), false);
+  assert.equal(p.featured, undefined);
+  assert.equal(p.exampleCleared, "t1");
+  // Marking it again publishes the revision the operator has now seen, and the note goes away.
+  assert.equal(markExample({ card: p }, "card", { example: true }, admin).ok, true);
+  assert.equal(isEx(p, "card"), true);
+  assert.equal(p.exampleCleared, undefined);
+  // A private playground, and the built-in seed, are not touched.
+  const priv = { domain: { id: "mine" }, owner: "user_ann" };
+  assert.equal(unpublishOnRevision(priv, "mine", ann, "t2"), false);
+  assert.equal(unpublishOnRevision({ domain: { id: DOMAIN.id } }, DOMAIN.id, ann, "t3"), false);
+});

@@ -57,7 +57,7 @@ const view = z.strictObject({
   type: z.enum(["price_ranking", "preview"]).describe("price_ranking: vendors of one usage-priced product ranked by cost, on prices read from their pricing pages (needs data.price_pages). preview: the real artifact, running code you supply, bound to controls (needs controls and outputs)."),
   html: z.string().optional().describe("preview: the markup of the real thing, copied from the person's code. {{control_id}} is replaced by the control's value and updated in place on every move. No script tags."),
   css: z.string().optional().describe("preview: plain CSS. {{control_id}} works here too."),
-  js: z.string().optional().describe("preview: JavaScript for what markup cannot show, such as motion. It runs once. clay.values.<id> is the value now; clay.onChange((values) => { ... }) runs at once and on every move; clay.data.brand and clay.data.inline are the declared data. No network, no imports."),
+  js: z.string().optional().describe("preview: JavaScript for what markup cannot show, such as motion. It runs once. clay.values.<id> is the value now; clay.onChange((values) => { ... }) runs at once and on every move; clay.data.brand and clay.data.inline are the declared data. Rule for you: do not use the network or imports; the sandbox blocks most requests, not all, and the preview must work without any."),
   tailwind: z.boolean().optional().describe("preview: true loads the in-browser Tailwind v4 build, so Tailwind classes in html work, arbitrary values such as rounded-[7px] and bg-[#123456] included."),
   height: z.number().optional().describe("preview: height of the preview in px, 120 to 900, default 360."),
 });

@@ -1,4 +1,5 @@
 // Collect and re-check. Live sources and the demo source share every step except how the page is read.
+import { currentActor, unpublishOnRevision } from "./accounts.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, hasPrices, normalise, pricingCandidates, type Domain, type PricingModel, type RawModel } from "./domain";
@@ -487,7 +488,7 @@ async function recheckWebOnce(pg: string): Promise<{ changes: WebChange[]; stop:
  * unverified again, the settled result is cleared, and the exploration is kept for the controls whose definition did not
  * change. A new brand is read after the kit is stored: `brand` is that read (the tool answers within its deadline).
  */
-export async function revisePreview(domain: Domain, kit: Kit): Promise<{ previewKept: boolean; outputsKept: boolean; settledCleared: boolean; brand: Promise<void> | null; web: Promise<string | null> | null }> {
+export async function revisePreview(domain: Domain, kit: Kit): Promise<{ unpublished: boolean; previewKept: boolean; outputsKept: boolean; settledCleared: boolean; brand: Promise<void> | null; web: Promise<string | null> | null }> {
   const since = new Date().toISOString();
   const r = await update((s) => {
     const p = s.playgrounds[domain.id];
@@ -514,13 +515,14 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ preview
     // A source that the running build still reads (and that did not change) arrives by itself: it is not read twice.
     const arriving = new Set(workStatus(p)?.status === "running" ? p.work!.pending : []);
     const webToRead = (kit.web ?? []).filter((x) => !web[x.id]?.read && !(sameSource(x) && arriving.has(webWorkId(x.id)))).map((x) => x.id);
+    const unpublished = unpublishOnRevision(p, domain.id, currentActor(), since);
     p.domain = domain;
     p.kit = previewKept
       ? { ...p.kit, kit, ...read, web, rev: outputsKept ? p.kit.rev : randomUUID(), settled: outputsKept ? p.kit.settled : null }
       : { kit, rev: randomUUID(), ...read, web, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
-    return { previewKept, outputsKept, settledCleared, reread, webToRead };
+    return { previewKept, outputsKept, settledCleared, reread, webToRead, unpublished };
   });
-  return { previewKept: r.previewKept, outputsKept: r.outputsKept, settledCleared: r.settledCleared, brand: r.reread ? readBrandLater(domain.id, kit, since) : null, web: r.webToRead.length ? collectWeb(domain.id, r.webToRead) : null };
+  return { unpublished: r.unpublished, previewKept: r.previewKept, outputsKept: r.outputsKept, settledCleared: r.settledCleared, brand: r.reread ? readBrandLater(domain.id, kit, since) : null, web: r.webToRead.length ? collectWeb(domain.id, r.webToRead) : null };
 }
 
 /**
@@ -528,7 +530,7 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<{ preview
  * guidance changed, every page is extracted again; else only new vendors and vendors with a new page are collected.
  * The saved decision is kept only while its vendor and every control it names still exist.
  */
-export async function revisePlayground(domain: Domain, origin: string): Promise<{ recollected: string[]; decisionCleared: boolean; work: Promise<string | null> | null }> {
+export async function revisePlayground(domain: Domain, origin: string): Promise<{ recollected: string[]; decisionCleared: boolean; unpublished: boolean; work: Promise<string | null> | null }> {
   const sig = extractionSig;
   const plan = await update((s) => {
     const p = s.playgrounds[domain.id];
@@ -553,8 +555,9 @@ export async function revisePlayground(domain: Domain, origin: string): Promise<
       if (!domain.vendors.some((v) => v.id === p.exploration!.selected)) p.exploration.selected = null;
       p.exploration.features = Object.fromEntries(Object.entries(p.exploration.features).filter(([k]) => controls.has(k)));
     }
+    const unpublished = unpublishOnRevision(p, domain.id, currentActor(), new Date().toISOString());
     p.domain = domain;
-    return { recollected: schemaChanged ? domain.vendors.map((v) => v.id) : moved, decisionCleared };
+    return { recollected: schemaChanged ? domain.vendors.map((v) => v.id) : moved, decisionCleared, unpublished };
   });
   return { ...plan, work: plan.recollected.length ? collectAll(domain.id, origin, plan.recollected) : null };
 }
