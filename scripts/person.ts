@@ -31,10 +31,11 @@ if (steps.select) await page.locator("li.vendor", { hasText: steps.select }).get
 if (steps.tolerance != null) await page.getByLabel("Tolerance in dollars per month").fill(String(steps.tolerance));
 await page.waitForTimeout(1800); // the exploration report is sent after a pause
 if (steps.save) {
-  await page.getByRole("button", { name: /Save decision|Replace saved decision|Update saved decision/ }).click();
+  // Wait for the answer of the save itself: a verdict of an earlier decision may already be on the page.
+  await Promise.all([page.waitForResponse((r) => r.url().endsWith("/decision") && r.request().method() === "POST"), page.getByRole("button", { name: /Save decision|Replace saved decision|Update saved decision/ }).click()]);
   await page.waitForSelector(".verdict");
 }
 await page.waitForTimeout(500);
 await page.screenshot({ path: `run/shots/${shot}-2-done.png`, fullPage: true });
-console.log(JSON.stringify({ url: page.url(), notice: await page.locator("p", { hasText: "without the owner key" }).count(), disabledButtons: await page.locator("button:disabled").allInnerTexts(), saveButtons: await page.getByRole("button", { name: /Save decision|Replace saved decision|Update saved decision/ }).count(), answer: await page.locator(".answer").first().innerText().catch(() => null), verdict: await page.locator(".verdict").first().innerText().catch(() => null), rule: await page.locator(".verdict + p").first().innerText().catch(() => null), badges: await page.locator("li.vendor:has(.badge.saved) .name").allInnerTexts(), selected: await page.locator("li.vendor.chosen .name").allInnerTexts(), errors }, null, 1));
+console.log(JSON.stringify({ url: page.url(), exampleNote: await page.locator("[data-example]").allInnerTexts(), disabledButtons: await page.locator("button:disabled").allInnerTexts(), saveButtons: await page.getByRole("button", { name: /Save decision|Replace saved decision|Update saved decision/ }).count(), answer: await page.locator(".answer").first().innerText().catch(() => null), verdict: await page.locator(".verdict").first().innerText().catch(() => null), rule: await page.locator(".verdict + p").first().innerText().catch(() => null), badges: await page.locator("li.vendor:has(.badge.saved) .name").allInnerTexts(), selected: await page.locator("li.vendor.chosen .name").allInnerTexts(), errors }, null, 1));
 await browser.close();

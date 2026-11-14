@@ -49,7 +49,12 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
   return r.json();
 }
 
-export default function Playground({ domain, explored }: { domain: Domain; explored: Exploration | null }) {
+/**
+ * `canWrite`: this viewer owns the playground (or is the admin) and may save a decision and re-read the sources. Anyone else
+ * is looking at an example: every control, the ranking and the chart work for them in their browser, and nothing is saved.
+ * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
+ */
+export default function Playground({ domain, explored, canWrite, admin }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean }) {
   const api = `/api/p/${domain.id}`;
   const h = useMemo(() => helpers(domain), [domain]);
   const [state, setState] = useState<PublicState | null>(null);
@@ -102,8 +107,6 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     return () => clearInterval(t);
   }, [api]);
 
-  /** This browser holds the owner key. Without it the page is read-only: the controls work, nothing is saved or re-read. */
-  const owner = state?.owner ?? false;
   const sources = useMemo(() => state?.sources ?? {}, [state]);
   const models = useMemo(() => Object.fromEntries(Object.entries(sources).map(([id, s]) => [id, s.snapshot?.model ?? null])) as Record<string, PricingModel | null>, [sources]);
   const collected = Object.values(sources).filter((s) => s.snapshot);
@@ -141,7 +144,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     const now = JSON.stringify([usage, required, chosen]);
     reported.current ??= now;
     if (reported.current !== now) moved.current = true;
-    if (!moved.current || !owner) return;
+    if (!moved.current || !canWrite) return;
     const t = setTimeout(() => {
       const metrics = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, { ...seen.current[k], final: v }]));
       seen.current = {};
@@ -151,7 +154,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
     }, 1200);
     return () => clearTimeout(t);
     // `chosen` is the vendor the person clicked. The cheapest vendor that is shown as selected by default is not their choice.
-  }, [usage, required, chosen, pick, api, owner]);
+  }, [usage, required, chosen, pick, api, canWrite]);
 
   const decision = state?.decision ?? null;
   /** The controls differ from the saved decision, so saving again means something. */
@@ -175,12 +178,11 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
           {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (
             <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
           )}
-          {!collectedAll && <button className="primary" disabled={!!busy || !owner} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
-          {collected.length > 0 && <button disabled={!!busy || !owner} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
+          {!collectedAll && canWrite && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
+          {collected.length > 0 && canWrite && <button disabled={!!busy} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
-      {!owner && <p className="small muted">You are viewing this playground without the owner key. Move the controls freely: that runs in your browser. Saving a decision, re-checking sources and editing the demo page need the owner key.</p>}
 
       {collected.length === 0 ? (
         <section className="card empty">
@@ -205,7 +207,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
                 {f.label}
               </label>
             ))}
-            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop. A short summary of what you tried is kept for your agent.</p>
+            <p className="muted small">Every move recomputes in this browser. No network call and no agent is in the loop. {canWrite ? "A short summary of what you tried is kept for your agent." : "Nothing you try here is saved."}</p>
           </section>
 
           <section className="results">
@@ -264,11 +266,12 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
             <section className="card">
               <h2>Standing decision</h2>
               {!decision || !standing ? (
-                <p className="small">Settle the controls, select a vendor, then save. The app keeps the decision live: when a source changes, it recomputes under the saved assumptions.</p>
+                canWrite && <p className="small">Settle the controls, select a vendor, then save. The app keeps the decision live: when a source changes, it recomputes under the saved assumptions.</p>
               ) : (
-                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={owner ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
+                <Standing decision={decision} standing={standing} sources={sources} now={now} onLoad={() => { setUsage({ ...usage, ...decision.usage }); setRequired(decision.required); setChosen(decision.chosen); setTolerance(decision.tolerance ?? 0); }} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
-              {pick && unsaved && owner && (
+              {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
+              {pick && unsaved && canWrite && (
                 <div className="save">
                   {decision && <p className="small">{decision.chosen !== pick ? <>Selected now: <b>{sources[pick]?.name}</b>. It is not saved.</> : "The controls differ from the saved decision."}</p>}
                   <label className="small tolerance">
@@ -320,12 +323,13 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
                       </p>
                       {s.error && <p className="small bad">{s.error}</p>}
                     </div>
-                    <button className="small-btn" disabled={!!busy || !owner} onClick={() => run(`Re-checking ${s.name}`, `${api}/recheck`, "POST", { id: s.id })}>Re-check</button>
+                    {canWrite && <button className="small-btn" disabled={!!busy} onClick={() => run(`Re-checking ${s.name}`, `${api}/recheck`, "POST", { id: s.id })}>Re-check</button>}
                   </li>
                 ))}
               </ul>
-              {state.publicBaseUrl ? (
-                <button disabled={!!busy || !owner} onClick={() => run("Updating monitors", `${api}/watch`, Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
+              {/* Webhook monitors are the operator's: their runs are not counted against a person (app/api/respond.ts). */}
+              {!admin ? null : state.publicBaseUrl ? (
+                <button disabled={!!busy} onClick={() => run("Updating monitors", `${api}/watch`, Object.values(sources).some((s) => s.monitor) ? "DELETE" : "POST")}>
                   {Object.values(sources).some((s) => s.monitor) ? "Stop webhook monitors" : "Start webhook monitors"}
                 </button>
               ) : (
@@ -333,7 +337,7 @@ export default function Playground({ domain, explored }: { domain: Domain; explo
               )}
             </section>
 
-            {sources.demo?.demo && owner && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
+            {sources.demo?.demo && admin && <DemoEditor key={JSON.stringify(state.demoPage)} page={state.demoPage} busy={!!busy} onPublish={(f) => run("Publishing demo page", "/api/demo", "POST", demoModel(f))} />}
           </aside>
         </div>
       )}

@@ -46,10 +46,10 @@ if (steps.drag && frame) {
 const probe = steps.probe && frame ? await frame.locator(steps.probe).first().evaluate((el) => { const s = getComputedStyle(el); return { class: el.getAttribute("class"), style: el.getAttribute("style"), backgroundColor: s.backgroundColor, borderRadius: s.borderRadius, paddingLeft: s.paddingLeft, fontWeight: s.fontWeight, boxShadow: s.boxShadow.slice(0, 40), transform: s.transform }; }).catch((e) => String(e)) : undefined;
 await page.waitForTimeout(1600); // the exploration report is sent after a pause
 if (steps.settle) {
-  await page.getByRole("button", { name: /^Settle/ }).click();
+  await page.getByRole("button", { name: /^Settle/ }).click({ timeout: 5000 });
   await page.waitForSelector("[data-settled]");
 }
 await page.waitForTimeout(300);
 await page.screenshot({ path: shot });
-console.log(JSON.stringify({ url: page.url(), previewFailed: await page.locator('p[role="alert"]').allInnerTexts(), outputs: Object.fromEntries(await page.locator("[data-output]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-output"), e.textContent]))), settled: await page.locator("[data-settled]").count(), probe, errors }, null, 1));
+console.log(JSON.stringify({ url: page.url(), previewFailed: await page.locator('p[role="alert"]').allInnerTexts(), outputs: Object.fromEntries(await page.locator("[data-output]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-output"), e.textContent]))), settled: await page.locator("[data-settled]").count(), exampleNote: await page.locator("[data-example]").allInnerTexts(), settleButtons: await page.getByRole("button", { name: /^Settle/ }).count(), probe, errors }, null, 1));
 await browser.close();

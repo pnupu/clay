@@ -11,12 +11,15 @@ import css from "./kit.module.css";
 const noSubscription = () => () => {};
 type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
 
-export default function Kit({ id, title, state }: { id: string; title: string; state: KitState }) {
+/**
+ * `canWrite`: this viewer owns the playground (or is the admin). Anyone else is looking at an example: every control, the
+ * preview and the outputs work for them in their browser, and nothing is settled, reported or saved.
+ */
+export default function Kit({ id, title, state, canWrite }: { id: string; title: string; state: KitState; canWrite: boolean }) {
   const api = `/api/p/${id}`;
   const { kit } = state;
   const [values, setValues] = useState<Values>(() => valuesNow(state));
   const [settled, setSettled] = useState(state.settled);
-  const [owner, setOwner] = useState(false);
   const [frame, setFrame] = useState<Frame>({ status: "loading", error: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,10 +30,6 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
   const ready = useRef(false);
   const latest = useRef(values);
   const outputs = useMemo(() => renderOutputs(kit, values), [kit, values]);
-
-  useEffect(() => {
-    fetch(`${api}/state`).then((r) => r.json()).then((s: { owner?: boolean }) => setOwner(!!s.owner)).catch(() => {});
-  }, [api]);
 
   // ---- The bridge. A message counts only when it comes from this frame's window, from an opaque origin, in a known shape.
   // More than 30 messages in 10 seconds stops the preview: the bridge of an honest preview sends a handful per load.
@@ -68,16 +67,16 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
   };
   const stopped = frame.status === "failed" && /^The preview was stopped/.test(frame.error ?? "");
 
-  // What happened is stored for the agent, from the owner's browser only: "ok" once the preview has run 1.5 s without an error, else the error.
+  // What happened is stored for the agent, only from the browser of someone who may write the playground: "ok" once the preview has run 1.5 s without an error, else the error.
   const reports = useRef(0);
   useEffect(() => {
-    if (!owner || frame.status === "loading" || reports.current >= 3) return;
+    if (!canWrite || frame.status === "loading" || reports.current >= 3) return;
     const t = setTimeout(() => {
       reports.current++;
       fetch(`${api}/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(frame.status === "ok" ? { ok: true } : { error: frame.error }) }).catch(() => {});
     }, frame.status === "ok" ? 1500 : 0);
     return () => clearTimeout(t);
-  }, [frame, owner, api]);
+  }, [frame, canWrite, api]);
 
   // ---- The exploration summary for the agent: per control, what was tried since the last report. Sent after a pause.
   const seen = useRef<Record<string, { min?: number; max?: number; tried: Value[] }>>({});
@@ -92,7 +91,7 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
     setValues({ ...values, [c.id]: v });
   };
   useEffect(() => {
-    if (!moved.current || !owner) return;
+    if (!moved.current || !canWrite) return;
     const t = setTimeout(() => {
       const controls = Object.fromEntries(Object.entries(seen.current).map(([k, s]) => [k, { ...s, final: values[k] }]));
       seen.current = {};
@@ -100,7 +99,7 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
       fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ controls }) }).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
-  }, [values, owner, api]);
+  }, [values, canWrite, api]);
 
   const reset = () => {
     for (const c of kit.controls) if (c.initial !== values[c.id] && typeof c.initial !== "number") (seen.current[c.id] ??= { tried: [] }).tried.push(c.initial);
@@ -134,14 +133,13 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
-      {!owner && <p className="small muted">You are viewing this playground without the owner key. Move the controls freely: that runs in your browser. Only the owner can settle a result for the agent.</p>}
 
       <div className={css.grid}>
         <section className="card controls">
           <h2>Controls</h2>
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
           <button className="small-btn" disabled={atStart} onClick={reset}>Back to the start values</button>
-          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. A short summary of what you tried is kept for your agent.</p>
+          <p className="muted small" style={{ marginTop: 12 }}>Every move runs in this browser. No agent and no network call is in the loop. {canWrite ? "A short summary of what you tried is kept for your agent." : "Nothing you try here is saved."}</p>
         </section>
 
         <div className={css.main}>
@@ -152,7 +150,7 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
             </div>
             {frame.status === "failed" && (
               <p className={`alert ${css.failed}`} role="alert">
-                Preview failed: {frame.error} {owner ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : ""}
+                Preview failed: {frame.error} {canWrite ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : ""}
               </p>
             )}
             {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: kit.preview.height }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
@@ -169,16 +167,20 @@ export default function Kit({ id, title, state }: { id: string; title: string; s
                 <pre data-output={o.id}>{outputs[o.id]}</pre>
               </div>
             ))}
-            <div className={css.settle}>
-              <button className="primary" disabled={busy || !owner || isSettled} onClick={settle}>{isSettled ? "Settled" : settled ? "Settle again on these values" : "Settle on these values"}</button>
-              {isSettled ? (
-                <span className="small ok" data-settled>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.</span>
-              ) : settled ? (
-                <span className="small warn">The controls differ from what you settled.</span>
-              ) : (
-                <span className="small muted">When it is right, settle. Your agent gets the values, this text, and the range you tried.</span>
-              )}
-            </div>
+            {canWrite ? (
+              <div className={css.settle}>
+                <button className="primary" disabled={busy || isSettled} onClick={settle}>{isSettled ? "Settled" : settled ? "Settle again on these values" : "Settle on these values"}</button>
+                {isSettled ? (
+                  <span className="small ok" data-settled>✓ Settled. Tell your agent you are done: it reads these outputs and writes them into your code.</span>
+                ) : settled ? (
+                  <span className="small warn">The controls differ from what you settled.</span>
+                ) : (
+                  <span className="small muted">When it is right, settle. Your agent gets the values, this text, and the range you tried.</span>
+                )}
+              </div>
+            ) : (
+              <p className="small" data-example>This is an example, so there is nothing to settle here. <Link href="/connect">Connect your own agent</Link> to build and settle your own.</p>
+            )}
           </section>
 
           {(kit.brand || kit.inline) && (
