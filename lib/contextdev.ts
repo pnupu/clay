@@ -59,7 +59,7 @@ export function retryAfterMs(message: string, jitter = Math.random()): number {
 }
 
 /** One API call. Records method, path, status, latency and credits (never the key or the body) in run/requests.jsonl. */
-export async function cd<T = Json>(method: string, path: string, body?: unknown): Promise<T & { _ms: number }> {
+export async function cd<T = Json>(method: string, path: string, body?: unknown, opts: { urgent?: boolean } = {}): Promise<T & { _ms: number }> {
   const key = process.env.CONTEXT_DEV_API_KEY;
   if (!key) throw new ContextDevError(0, "NO_KEY", "CONTEXT_DEV_API_KEY is not set");
   // Optional hard cap on the number of logged requests (CONTEXT_DEV_REQUEST_CAP), so an agent in a loop cannot spend the budget.
@@ -101,7 +101,11 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   // pacing in slot() cannot always prevent a 429. Builds run in the background (lib/mcp.ts answers the agent early), so a
   // wait is cheap and a stopped build is not: a 429 RATE_LIMITED is sent again after the wait the API states, up to 3 times.
   for (let attempt = 0; ; attempt++) {
-    await slot();
+    // An urgent request does not queue behind the paced ones: it is a single request that a person is waiting for (the
+    // brand of a preview playground) while a price build may hold the queue for minutes. It is still counted as a start,
+    // and a 429 is retried below like any other.
+    if (opts.urgent) starts.push(Date.now());
+    else await slot();
     overCap();
     const t0 = Date.now();
     pending++;
@@ -168,7 +172,7 @@ export function scrape(url: string, json?: { schema: unknown; instructions: stri
  * Only colours, logos and the title are kept. Names and the title are text from the web: cut short, and treated as data.
  */
 export async function brand(domain: string): Promise<BrandData> {
-  const r = await cd<{ brand?: { title?: unknown; colors?: { hex?: unknown; name?: unknown }[]; logos?: { url?: unknown; mode?: unknown; type?: unknown }[] } }>("POST", "/brand/retrieve", { type: "by_domain", domain });
+  const r = await cd<{ brand?: { title?: unknown; colors?: { hex?: unknown; name?: unknown }[]; logos?: { url?: unknown; mode?: unknown; type?: unknown }[] } }>("POST", "/brand/retrieve", { type: "by_domain", domain }, { urgent: true });
   const cut = (x: unknown, n: number) => (typeof x === "string" ? x.replace(/\s+/g, " ").trim().slice(0, n) : "");
   const colors = (r.brand?.colors ?? []).flatMap((c) => (typeof c?.hex === "string" && /^#[0-9a-f]{6}$/i.test(c.hex) ? [{ hex: c.hex.toLowerCase(), name: cut(c.name, 40) }] : []));
   const logos = (r.brand?.logos ?? []).flatMap((l) => (typeof l?.url === "string" && /^https:\/\/[^\s"'<>]{4,500}$/.test(l.url) ? [{ url: l.url, mode: cut(l.mode, 30), type: cut(l.type, 10) }] : []));
