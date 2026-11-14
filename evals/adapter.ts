@@ -172,6 +172,8 @@ export async function webSources(page: Page): Promise<WebSourceOnPage[]> {
     const unknown = cells.filter((t) => /^unknown\b/.test(t.trim())).length;
     out.push({ id: (await el.getAttribute("data-web-source")) ?? "", link: (await el.locator('a[href^="https://"]').count()) > 0, read: cells.length - unknown, unknown, failed: /could not be read|No row was found/.test(await el.innerText()) });
   }
+  // A price playground has no data panel: each ranked vendor row links to the pricing page its prices were read from.
+  if (!out.length) for (const el of await page.locator(PAGE.ranked).all()) out.push({ id: (await el.locator(".name").innerText().catch(() => "vendor")).replace(/^\d+\.\s*/, "").trim(), link: (await el.locator('a[href^="http"]', { hasText: "source" }).count()) > 0, read: 1, unknown: 0, failed: false });
   return out;
 }
 /** The visible text of the preview, or null when the page has none. */

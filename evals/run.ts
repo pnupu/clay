@@ -240,7 +240,10 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   r.shot = page.shot ? relative(runDir, page.shot) : null;
   add(ranges(c.given, dims));
   // Kind "data": the facts carry sources, and an unknown is not shown as a number.
-  if (c.web) add(sources(page.web), unknowns(page.web.length ? await previewWithoutWebNumbers(browser, { baseUrl, url, key }) : null));
+  // A data case may be answered with a price playground ("where is this GPU cheapest"). Its facts are read from the
+  // vendors' pricing pages too, and it has no preview code to probe: a vendor it cannot price is listed as "cannot be ranked".
+  const pricePage = !!c.web && page.preview == null && page.web.length > 0;
+  if (c.web) add(sources(page.web), pricePage ? { id: "unknowns", status: "na", reason: "a price playground: there is no preview code, and a vendor without a price is listed as not rankable" } : unknowns(page.web.length ? await previewWithoutWebNumbers(browser, { baseUrl, url, key }) : null));
 
   // ---- Second leg: the person settles, then the same conversation continues.
   if (oneLeg.includes(c.id) || oneLeg.includes("all")) {
@@ -274,12 +277,12 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   const second = await leg("leg2", SECOND_LEG, first.sessionId);
   if (second.error === "not run") return finish();
   add(readBack(second.calls, built.id));
-  if (c.web) {
+  if (c.web && !pricePage) {
     // What the person chose, from the server (the values of the select controls they settled).
     const res = await mcp("tools/call", { name: TOOL.read, arguments: { playground_id: built.id } }).catch(() => null);
     const choices = readFacts(String((res?.content as { text?: string }[] | undefined)?.[0]?.text ?? "")).choices;
     add(choiceHandback(choices, c.targetFile ? (original(c.targetFile) ?? "") : null, c.targetFile ? read(join(ws, c.targetFile)) : null, second.allText));
-  } else if (c.targetFile) add(fileMatches(original(c.targetFile) ?? "", read(join(ws, c.targetFile)), person.outputs));
+  } else if (c.targetFile && !pricePage) add(fileMatches(original(c.targetFile) ?? "", read(join(ws, c.targetFile)), person.outputs));
   else if (person.chosen) add(namesChoice(second.allText, person.chosen, vendorId(first.calls, person.chosen)));
   return finish();
 }
