@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { MCP_PATH, SERVER, authHeader } from "./adapter.ts";
+import { LINK_TOOLS, MCP_PATH, SERVER, TOOL, authHeader, parseBuild } from "./adapter.ts";
 import type { Call } from "./check.ts";
 
 export type SubjectName = "claude" | "codex";
@@ -184,6 +184,53 @@ export function parseClaude(raw: string): Parsed {
   p.finalText ||= last;
   return p;
 }
+
+/**
+ * When the person can have the link, and when the playground is built, in seconds from the start of a leg.
+ * - `built`: the first create result with a URL.
+ * - `link`: the first start_playground result with a URL, when the playground it started is the one that was built (the
+ *   create returned the same id); else the create result. A start that no create filled leaves the person on a page
+ *   that never becomes the playground: it is not a link, and `orphanStart` says so.
+ * - `said`: the first visible reply of the agent that holds the URL of the built playground. The person cannot see a
+ *   tool result, so this is when they really have the link.
+ * - `startedFirst`: that start succeeded before the agent called the create tool.
+ * From the event timestamps of a `claude -p` transcript: the leg ends at its last message and lasted `duration_ms` of
+ * its result event. null when the transcript has no timestamps (codex).
+ */
+export function linkTimes(raw: string): { link: number | null; built: number | null; said: number | null; startedFirst: boolean; orphanStart: boolean } | null {
+  const events = lines(raw);
+  const at = (m: Json) => (typeof m.timestamp === "string" ? Date.parse(m.timestamp) : NaN);
+  const timed = events.filter((m) => (m.type === "assistant" || m.type === "user") && !Number.isNaN(at(m)));
+  const duration = events.find((m) => m.type === "result")?.duration_ms;
+  if (!timed.length || typeof duration !== "number") return null;
+  const start = at(timed[timed.length - 1]) - duration;
+  const seconds = (m: Json) => Math.max(0, Math.round((at(m) - start) / 1000));
+  const uses = new Map<string, string>();
+  const starts: { id: string; seconds: number; first: boolean }[] = [];
+  const texts: { text: string; seconds: number }[] = [];
+  let created: { id: string; seconds: number } | null = null;
+  let createCalled = false;
+  for (const m of timed)
+    for (const c of ((m.message as Json)?.content as Json[] | undefined) ?? []) {
+      const tool = LINK_TOOLS.find((t) => String(c?.name) === `mcp__${SERVER}__${t}`);
+      if (m.type === "assistant" && c?.type === "text") texts.push({ text: String(c.text ?? ""), seconds: seconds(m) });
+      else if (m.type === "assistant" && c?.type === "tool_use" && tool) {
+        uses.set(String(c.id), tool);
+        createCalled ||= tool === TOOL.create;
+      } else if (m.type === "user" && c?.type === "tool_result" && uses.has(String(c.tool_use_id)) && c.is_error !== true) {
+        const b = parseBuild(textOf(c.content));
+        if (!b.url || !b.id) continue;
+        if (uses.get(String(c.tool_use_id)) === TOOL.start) starts.push({ id: b.id, seconds: seconds(m), first: !createCalled });
+        else created ??= { id: b.id, seconds: seconds(m) };
+      }
+    }
+  const started = created ? starts.find((x) => x.id === created!.id) : undefined;
+  const link = started?.seconds ?? created?.seconds ?? null;
+  const said = created && link != null ? (texts.find((t) => t.seconds >= link && t.text.includes(`/p/${created!.id}`))?.seconds ?? null) : null;
+  return { link, built: created?.seconds ?? null, said, startedFirst: !!started?.first, orphanStart: starts.some((x) => x.id !== created?.id) };
+}
+/** Seconds to the link (linkTimes), or null when no start and no create returned a URL. */
+export const linkSeconds = (raw: string): number | null => linkTimes(raw)?.link ?? null;
 
 /** `codex exec --json`: thread.started, item.completed (agent_message, mcp_tool_call, file_change, command_execution), turn.completed. */
 export function parseCodex(raw: string): Parsed {

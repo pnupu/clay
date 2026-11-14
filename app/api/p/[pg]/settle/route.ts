@@ -11,7 +11,7 @@ export async function POST(req: Request, { params }: Ctx) {
   return update((s) => {
     const k = s.playgrounds[pg]?.kit;
     if (!k) return Response.json({ error: `Playground "${pg}" is not a preview playground.` }, { status: 404 });
-    if (!isCurrent(k, body?.rev)) return Response.json({ error: "Your agent has revised this playground. Reload the page, then settle." }, { status: 409 });
+    if (!isCurrent(k, body?.rev)) return Response.json({ error: "Your agent has revised this playground. This page shows the new version in a few seconds; then settle again." }, { status: 409 });
     const values = cleanValues(k.kit.controls, body?.values);
     if (!values) return Response.json({ error: "values must give every control a value it can have" }, { status: 400 });
     // Never store a notice in place of outputs (a kit stored before the limit): refuse, so the agent never writes it into code.

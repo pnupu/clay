@@ -251,3 +251,20 @@
 /* On a narrow app header there is no room beside the menu and the button; in the website's open menu the word stands at the left. */
 @media (max-width: 519px) { header.bar .who { display: none; } }
 .nav.is-open .nav__actions .who { align-self: flex-start; }
+
+/* A started playground (app/live.tsx): the title, one pane that says what the agent is doing, and nothing to press. */
+.clay .started { padding-top: 48px; }
+.clay .started > * { max-width: 100%; }
+.clay .started h1 { overflow-wrap: anywhere; }
+.clay .started__pane { display: grid; gap: 8px; width: min(100%, 640px); }
+.clay .started__pane > * { margin: 0; }
+.clay .started__pane h2.live { color: var(--p-ink); font: 500 18px/1.3 var(--font-text); display: flex; align-items: flex-start; }
+.clay .started__pane h2.live i { flex: none; margin-top: 8px; }
+.clay .started__line { font-size: 18px; line-height: 1.4; overflow-wrap: anywhere; }
+.clay .started__time { font-variant-numeric: tabular-nums; }
+/* The notice that the agent revised the open playground: short, quiet, out of the way of the controls. */
+.clay .updated { position: fixed; z-index: 30; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 10px 16px; border-radius: var(--c-r-md); background: var(--p-inv-bg); color: var(--p-inv-ink); font-size: 14px; line-height: 1.4; text-align: center; animation: clay-updated 8s ease-in-out both; pointer-events: none; }
+@keyframes clay-updated { 0%, 100% { opacity: 0; } 4%, 92% { opacity: 1; } }
+/* On a narrow screen the controls fill the lower half: the notice sits at the top, over the bar, not over a control. */
+@media (max-width: 700px) { .clay .started { padding-top: 24px; } .clay .updated { top: 12px; bottom: auto; } }
+@media (prefers-reduced-motion: reduce) { .clay .updated { animation: none; } }

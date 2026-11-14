@@ -60,3 +60,7 @@ run/demo-*.json
 # kit runs: transcripts, screenshots, store copies
 /run/kit-*
 run/accounts/
+
+# Jaru: local task, preference and form files of the agent harness; never part of the repository
+/.jaru/
+/jaru/

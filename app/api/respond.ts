@@ -233,6 +233,8 @@ export async function refused(req: Request): Promise<Response | null> {
   const p = pg ? s?.playgrounds[pg] : undefined;
   const published = p ? publishedRefusal(actor, p, pg!) : null;
   if (published) return Response.json({ error: published }, { status: 403 });
+  // Started and not built (lib/started.ts): there is nothing to settle, read or mark yet. Its owner may still delete it.
+  if (p?.started && canWrite(actor, p) && !(req.method === "DELETE" && /^\/api\/p\/[^/]+\/?$/.test(path))) return Response.json({ error: "This playground is started and not built yet. Its agent builds it with create_playground." }, { status: 409 });
   if (p && !canWrite(actor, p)) return canRead(actor, p, pg!) ? Response.json({ error: `This is an example playground: move the controls as you like, but only the operator can save or re-check it. ${agentConnected(actor, s?.users ?? {}) ? "Ask" : "Connect"} your agent to build your own.` }, { status: 403 }) : noAccess();
   return null;
 }

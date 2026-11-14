@@ -7,7 +7,9 @@ import type { Page } from "playwright-core";
 export const MCP_PATH = "/api/mcp";
 /** Name of the MCP server in the agent's config. Tool names in transcripts are `mcp__clay__<tool>` (claude) or server "clay" (codex). */
 export const SERVER = "clay";
-export const TOOL = { create: "create_playground", read: "read_playground", recheck: "recheck_playground", revise: "revise_playground" } as const;
+export const TOOL = { create: "create_playground", read: "read_playground", recheck: "recheck_playground", revise: "revise_playground", start: "start_playground" } as const;
+/** Tools whose result gives the person a link: a start (the link before anything is built) and a create. */
+export const LINK_TOOLS: string[] = [TOOL.start, TOOL.create];
 /** Tools whose result describes a build (the URL, what was read, the problems list). */
 export const BUILD_TOOLS: string[] = [TOOL.create, TOOL.revise];
 

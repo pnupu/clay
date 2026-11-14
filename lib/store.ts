@@ -134,7 +134,17 @@ export type Playground = {
   storageKept?: { at: string }[];
   /** Where to tell the owner that the saved decision stopped holding or holds again (lib/alert.ts). A secret: owner only. */
   alert?: Alert | null;
+  /**
+   * Started and not built (start_playground, lib/started.ts): the person has the link, the agent is still working, and
+   * the page shows this line. `domain` holds only the id and the title. A create by its owner with this id replaces the
+   * whole playground (insertPlayground), so no other field of a started playground outlives it. Text from the agent:
+   * shown as text.
+   */
+  started?: { workingOn: string; at: string };
 };
+
+/** A started playground that no create has filled is dropped this long after its last `working_on` line (parse()). */
+export const STARTED_TTL_MS = 24 * 3_600_000;
 
 export type Store = {
   playgrounds: Record<string, Playground>;
@@ -186,6 +196,8 @@ function parse(text: string | null): Store {
   // A store written before playgrounds existed has its sources at the top level; they belong to the seed.
   const seed = (s.playgrounds[DOMAIN.id] ??= { ...newPlayground(DOMAIN), owner: null, sources: raw.sources ?? {}, decision: raw.decision ?? null, events: raw.events ?? [] });
   seed.domain = DOMAIN;
+  // An abandoned start: nobody built it within STARTED_TTL_MS. It is gone for every reader, and the next write stores that.
+  for (const [id, p] of Object.entries(s.playgrounds)) if (p.started && !(Date.now() - Date.parse(p.started.at) < STARTED_TTL_MS)) delete s.playgrounds[id];
   return s;
 }
 
@@ -281,12 +293,18 @@ export function freeId(wanted: string, taken: (id: string) => boolean, random = 
   for (let id = wanted; ; id = `${wanted.slice(0, 33)}-${random()}`) if (!taken(id)) return id;
 }
 
+/** The refusal when the current caller may not hold one more playground (a create, or a start: lib/started.ts), or null: the person's cap, then the deployment's bounds. */
+export function oneMoreRefusal(s: Store): string | null {
+  const owner = currentUserId();
+  return playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length, undefined, Object.values(s.playgrounds).some((p) => owner && p.owner === owner));
+}
+
 /**
  * Insert a new playground in ONE store update: the owner's allowance is checked, a free id is taken and the playground is
  * stored together, so parallel creates by one person cannot pass the cap side by side. Nothing slow (a web read) happens
  * before it: a refused create has spent nothing.
  */
-export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean } | { refused: string }> {
+export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean; filled?: boolean } | { refused: string }> {
   // The storage bounds are checked on the size the insert leaves (update(), boundStorage): their refusal is an answer.
   return update((s) => {
     // A repeated create (the answer of the first one was lost): the caller's own playground with exactly this spec, under
@@ -297,9 +315,16 @@ export async function insertPlayground(domain: Domain, make: (d: Domain) => Play
     const wanted = make(domain);
     const spec = (p: Playground) => JSON.stringify([{ ...p.domain, id: "" }, p.kit?.kit ?? null]);
     const renamed = `${domain.id.slice(0, 33)}-`;
-    const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && (p.owner ?? null) === owner && spec(p) === spec(wanted));
+    const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && !p.started && (p.owner ?? null) === owner && spec(p) === spec(wanted));
     if (mine) return { id: mine.domain.id, existed: true };
-    const refused = playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length, undefined, Object.values(s.playgrounds).some((p) => owner && p.owner === owner));
+    // The caller's own started playground with this id (start_playground): the build lands in its place, at the link the
+    // person already has. It counted toward the cap since it was started; the storage bounds are checked as for a create.
+    const here = s.playgrounds[domain.id];
+    if (here?.started && (here.owner ?? null) === owner) {
+      s.playgrounds[domain.id] = make(domain);
+      return { id: domain.id, filled: true };
+    }
+    const refused = oneMoreRefusal(s);
     if (refused) return { refused };
     const id = freeId(domain.id, (x) => !!s.playgrounds[x]);
     s.playgrounds[id] = make({ ...domain, id });

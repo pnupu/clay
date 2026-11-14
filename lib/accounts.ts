@@ -80,6 +80,8 @@ export function markExample(playgrounds: Record<string, Owned>, id: string, mark
   if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
   const p = playgrounds[id];
   if (!p) return { ok: false, status: 404, error: "Playground not found." };
+  // A started playground (lib/started.ts) has nothing built to show: it can never be an example.
+  if ((p as { started?: unknown }).started) return { ok: false, status: 409, error: "This playground is started and not built yet: there is nothing to publish." };
   // A field that is sent must be a boolean: {"example": "false"} is refused, not read as "leave it as it is".
   const sent = [mark.example, mark.featured].filter((v) => v !== undefined);
   if (!sent.length || sent.some((v) => typeof v !== "boolean")) return { ok: false, status: 400, error: 'Send {"example": true|false}, {"featured": true|false}, or both.' };

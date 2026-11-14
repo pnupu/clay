@@ -40,11 +40,12 @@ export function toolUse(c: Case, calls: Call[], preparedId: string | null): Chec
   const instead = other.length ? `; instead it used ${other.join(", ")}` : clay.length ? "" : "; it answered in words, with no tool";
   if (c.expect === "build") return created.length ? pass("tool_use", `called ${TOOL.create}`) : fail("tool_use", `the agent never called ${TOOL.create}${clay.length ? ` (it called ${[...new Set(clay.map((x) => x.tool))].join(", ")})` : " or any Clay tool"}${instead}`);
   if (c.expect === "none") {
-    const built = clay.filter((x) => BUILD_TOOLS.includes(x.tool));
+    // A start gives the person a link to a playground that should not exist: it counts like a build.
+    const built = clay.filter((x) => BUILD_TOOLS.includes(x.tool) || x.tool === TOOL.start);
     return built.length ? fail("no_playground", `the agent called ${built[0].tool} where the simple thing was right`) : pass("no_playground", "no playground was built");
   }
   // Return visit: work on the prepared playground, do not build another.
-  if (created.length) return fail("tool_use", `the agent built a new playground instead of using ${preparedId}`);
+  if (created.length || clay.some((x) => x.tool === TOOL.start && !x.input.playground_id)) return fail("tool_use", `the agent built a new playground instead of using ${preparedId}`);
   for (const need of c.mustCall ?? []) {
     // A call that the server refused did nothing: only calls that succeeded count.
     const hit = clay.filter((x) => x.tool === TOOL[need] && callTarget(x.input) === preparedId && !x.isError);

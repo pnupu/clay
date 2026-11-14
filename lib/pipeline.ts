@@ -299,10 +299,10 @@ export async function collectAll(pg: string, origin: string, ids?: string[]): Pr
  * resolves to the stop error or null. A caller with a short deadline (the MCP tools) answers before it ends and must
  * keep the function alive for it (after() in the route); a caller without one awaits it.
  */
-export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> | null; existed?: boolean } | { refused: string }> {
+export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> | null; existed?: boolean; /** The build replaced the caller's started playground with this id (lib/started.ts). */ filled?: boolean } | { refused: string }> {
   const r = await insertPlayground(domain, (d) => newPlayground(d));
   if ("refused" in r) return r;
-  if (!r.existed) return { id: r.id, work: collectAll(r.id, origin) };
+  if (!r.existed) return { id: r.id, work: collectAll(r.id, origin), filled: r.filled };
   // The caller already has exactly this playground (a repeated call after a lost answer or a failed build). Pages that
   // were read stay; pages that are missing and that nothing reads now (a build that failed, stopped or was cut off) are
   // read again, so a retry repairs instead of returning a broken playground.
@@ -346,7 +346,7 @@ function readBrandLater(id: string, kit: Kit, since: string): Promise<void> {
  * stores its result when it ends. A playground without data.brand is complete at once. `existed`: the caller already has
  * exactly this playground (a repeated call): nothing was created or read.
  */
-export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null; web: Promise<string | null> | null; existed?: boolean } | { refused: string }> {
+export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null; web: Promise<string | null> | null; existed?: boolean; filled?: boolean } | { refused: string }> {
   const since = new Date().toISOString();
   const r = await insertPlayground(domain, (d) => ({ ...newPlayground(d), kit: { kit, rev: randomUUID(), brandData: null, brandError: kit.brand ? BRAND_PENDING : null, brandSince: kit.brand ? since : null, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } }));
   if ("refused" in r) return r;
@@ -354,7 +354,7 @@ export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: str
   const p = r.existed ? await playground(r.id) : null;
   const reading = new Set(p && workStatus(p)?.status === "running" ? p.work!.pending : []);
   const missing = (kit.web ?? []).filter((s) => !p || (!p.kit?.web?.[s.id]?.read && !reading.has(webWorkId(s.id)))).map((s) => s.id);
-  return { id: r.id, brand: kit.brand && !r.existed ? readBrandLater(r.id, kit, since) : null, web: missing.length ? collectWeb(r.id, missing) : null, existed: r.existed };
+  return { id: r.id, brand: kit.brand && !r.existed ? readBrandLater(r.id, kit, since) : null, web: missing.length ? collectWeb(r.id, missing) : null, existed: r.existed, filled: r.filled };
 }
 
 // ---- data.web: live facts from web pages for a preview playground (lib/web.ts has the validation and the guard).

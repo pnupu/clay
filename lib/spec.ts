@@ -210,8 +210,15 @@ export function toSpec(p: Playground): Spec {
   };
 }
 
-/** A revision: the parts given replace the same parts of the current spec; inside `data`, each source given replaces that source, and null removes it. */
-export function mergeSpec(current: Spec, change: Partial<Spec>): unknown {
-  const given = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
-  return { ...current, ...given, id: current.id, ...(current.data || change.data ? { data: { ...current.data, ...change.data } } : {}) };
+/** What a revision gives: any part of a spec, and of the view any field. */
+export type SpecChange = Partial<Omit<Spec, "view">> & { view?: Partial<Spec["view"]> };
+
+/**
+ * A revision: the parts given replace the same parts of the current spec. Two parts are merged field by field: inside
+ * `data`, each source given replaces that source, and null removes it; inside `view`, each field given replaces that
+ * field, so a repair of view.js does not send the html and css again.
+ */
+export function mergeSpec(current: Spec, change: SpecChange): unknown {
+  const defined = (o: object) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+  return { ...current, ...defined(change), id: current.id, ...(change.view ? { view: { ...current.view, ...defined(change.view) } } : {}), ...(current.data || change.data ? { data: { ...current.data, ...change.data } } : {}) };
 }
