@@ -11,7 +11,7 @@ import { NOT_YOURS, nonOwnerView, BRAND_NOTE, WEB_NOTE, webChanges, webProblems,
 import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, update, type Playground } from "./store";
 import type { LeftOut } from "./spec";
-import { EXAMPLE_CLEARED, canRead, canWrite, currentActor } from "./accounts";
+import { EXAMPLE_CLEARED, canRead, canWrite, currentActor, publishedRefusal } from "./accounts";
 import { decisionRecord, recheckFile, recheckVerdict } from "./record";
 
 /**
@@ -51,8 +51,11 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
   // Ownership: the caller sees their own playgrounds (the admin sees all) and may read the examples (lib/accounts.ts).
   const list = async () => Object.values((await load()).playgrounds).filter((p) => canWrite(currentActor(), p)).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
   /** The playground, or an error that names the ids that exist. */
-  const find = async (id: string, write = false): Promise<Playground | string> => {
+  /** `revising`: revise_playground, the one write an owner may do on a published example (it clears the mark). */
+  const find = async (id: string, write = false, revising = false): Promise<Playground | string> => {
     const p = (await load()).playgrounds[id];
+    const published = p && write && !revising ? publishedRefusal(currentActor(), p, id) : null;
+    if (published) return published;
     if (p && (write ? canWrite : canRead)(currentActor(), p)) return p;
     if (p && canRead(currentActor(), p)) return `Playground "${id}" is an example and cannot be changed. Build your own with create_playground.`;
     return missing(id);
@@ -245,7 +248,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       },
     },
     async ({ playground_id, ...change }) => {
-      const p = await find(playground_id, true);
+      const p = await find(playground_id, true, true);
       if (typeof p === "string") return fail(p);
       if (playground_id === DOMAIN.id) return fail(`"${DOMAIN.id}" is the built-in example and cannot be revised. Build your own with create_playground.`);
       const was = toSpec(p);

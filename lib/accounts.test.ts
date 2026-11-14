@@ -221,3 +221,17 @@ test("examples: a mark carries the version the operator reviewed; a stale one is
   assert.notEqual(version(p), v2);
   assert.equal(mark({ card: p }, "card", { example: false }, admin).ok, true);
 });
+
+test("published examples: only the operator writes; the owner may only revise, which clears the mark", async () => {
+  const { publishedRefusal: refusal, unpublishOnRevision: unpublish, isExample: isEx } = await import("./accounts.ts");
+  const ex = { domain: { id: "card" }, owner: "user_ann", example: true } as { domain: { id: string }; owner: string; example?: boolean };
+  assert.match(refusal(ann, ex, "card") ?? "", /published example/);
+  assert.equal(refusal(admin, ex, "card"), null);
+  assert.equal(refusal(bob, ex, "card"), null); // not the owner: refused anyway by canWrite, with the usual answer
+  assert.equal(refusal(ann, { ...ex, example: false }, "card"), null); // a private playground: the owner writes as before
+  // The owner's revision is the one way through, and it unpublishes.
+  assert.equal(unpublish(ex, "card", ann, "t"), true);
+  assert.equal(isEx(ex, "card"), false);
+  assert.equal(refusal(ann, ex, "card"), null);
+});
+

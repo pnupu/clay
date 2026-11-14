@@ -123,6 +123,17 @@ export function canWrite(a: Actor | null, p: Owned): boolean {
   return a?.kind === "user" && ownerOf(p) === a.userId;
 }
 
+/**
+ * A published example changes for visitors only through the operator: on a playground marked as an example, every
+ * write by anyone else (re-check, collect, settle, explore, a saved or deleted decision, a preview report, a delete) is
+ * refused, because new web values, a new decision or a new state would reach every visitor unseen. The owner may still
+ * revise it (revise_playground), which clears the mark (unpublishOnRevision). Returns the refusal, or null.
+ */
+export function publishedRefusal(a: Actor | null, p: Owned, id: string): string | null {
+  if (a?.kind === "admin" || !isExample(p, id) || !canWrite(a, p)) return null;
+  return "This playground is a published example: only the operator of this Clay deployment can change it now. Ask the operator to unpublish it, or revise it with revise_playground, which clears the example mark so that other people no longer see it.";
+}
+
 /** A limit from an environment variable. Only an explicit 0 turns it off; a missing, empty or malformed value gives the default. */
 export function limit(raw: string | undefined, fallback: number): number {
   const n = raw == null || raw.trim() === "" ? NaN : Number(raw);
