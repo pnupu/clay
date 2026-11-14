@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { creation, directAnswer, fileMatches, lastBuild, namesChoice, numbersIn, rangeProblem, ranges, readBack, toolUse, verdict, type Call } from "./check.ts";
 import { dimensions } from "./adapter.ts";
+import { HELD_OUT } from "./heldout.ts";
 import { CASES } from "./requests.ts";
 
 const dim = (id: string, min: number, max: number, initial: number, label = id, unit = "units") => ({ id, label, unit, min, max, initial });
@@ -15,6 +16,12 @@ test("the request set: 20 cases with unique ids, no product words in a request",
   for (const c of CASES) assert.doesNotMatch(c.request, /clay|playground|slider|create_|mcp/i, c.id);
   assert.deepEqual(Object.fromEntries(["price", "look", "feel", "none", "return"].map((k) => [k, CASES.filter((c) => c.kind === k).length])), { price: 6, look: 5, feel: 4, none: 3, return: 2 });
   assert.ok(CASES.filter((c) => c.kind === "look" || c.kind === "feel").every((c) => c.needsKit));
+});
+
+test("the held-out set: 6 requests (2 price, 2 look, 2 feel) with their own ids and no product words", () => {
+  assert.deepEqual(HELD_OUT.map((c) => c.kind), ["price", "price", "look", "look", "feel", "feel"]);
+  assert.equal(new Set([...HELD_OUT, ...CASES].map((c) => c.id)).size, 26);
+  for (const c of HELD_OUT) assert.doesNotMatch(c.request, /clay|playground|slider|create_|mcp/i, c.id);
 });
 
 test("range sanity: the given number must be the starting value", () => {

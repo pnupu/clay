@@ -108,7 +108,8 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     // A build that still reads pricing pages: wait for it to end, as the person would watch the vendors arrive.
     const stillBuilding = rendered && !(await page.waitForFunction((sel) => !document.querySelector(sel), PAGE.building, { timeout: PAGE.buildWaitMs }).then(() => true, () => false));
     // The ranking or the preview appears after hydration; a preview then needs time to run.
-    await page.locator(`${PAGE.preview}, ${PAGE.ranked}`).first().waitFor({ timeout: 5000 }).catch(() => {});
+    // A development server compiles a page on its first visit, which can take well over 5 seconds: wait long enough.
+    await page.locator(`${PAGE.preview}, ${PAGE.ranked}, ${PAGE.errors.join(", ")}`).first().waitFor({ timeout: 30000 }).catch(() => {});
     await page.waitForTimeout((await page.locator(PAGE.preview).count()) ? PAGE.previewSettleMs : 500);
     await page.screenshot({ path: o.shotPath }).then(() => (shot = o.shotPath), () => {});
     const shown: string[] = [];

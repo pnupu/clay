@@ -2,6 +2,7 @@
 //
 //   node evals/run.ts --base-url <url> [--subject claude|codex] [--model <id>] [--cases <id,id>] [--kind <price,none,...>]
 //                     [--one-leg <id,id|all>] [--concurrency 2] [--timeout 600] [--from <run dir>] [--label <text>]
+//                     [--set heldout]   the held-out requests of evals/heldout.ts instead of the fixed 20
 //   node evals/run.ts report <run dir> <run dir> ...        one report over several runs (for example live and fixture servers)
 //
 // The base URL and the agent key also come from the environment: CLAY_BASE_URL, CLAY_ACCESS_KEY. Prefer the environment
@@ -16,7 +17,8 @@ import { chromium, type Browser } from "playwright-core";
 import { MCP_PATH, TOOL, authHeader, dimensions, kitAvailable, parseBuild, preparedDimensions, preparedPlayground, vendorId, type Dimension } from "./adapter.ts";
 import { CAUSE, creation, directAnswer, fileMatches, lastBuild, namesChoice, ranges, readBack, toolUse, verdict, type Check } from "./check.ts";
 import { CHROME, checkPage, personSettles } from "./page.ts";
-import { CASES, type Case } from "./requests.ts";
+import { HELD_OUT } from "./heldout.ts";
+import { CASES as FIXED, type Case } from "./requests.ts";
 import { parseClaude, parseCodex, runAgent, type AgentRun, type SubjectName } from "./subjects.ts";
 
 const HERE = import.meta.dirname;
@@ -43,6 +45,7 @@ type Meta = { runId: string; startedAt: string; baseUrl: string; subject: Subjec
 // ---- Arguments
 const argv = process.argv.slice(2);
 const flag = (name: string) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
+const CASES = flag("set") === "heldout" ? HELD_OUT : FIXED;
 const list = (name: string) => flag(name)?.split(",").map((s) => s.trim()).filter(Boolean);
 const git = (...a: string[]) => { try { return execFileSync("git", ["-C", HERE, ...a], { encoding: "utf8" }).trim(); } catch { return "unknown"; } };
 const stamp = () => new Date().toISOString().replace(/[-:]|\.\d+/g, "");
