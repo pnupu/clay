@@ -48,20 +48,27 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
   const shown = !key ? KEY_PLACEHOLDER : visible ? key : maskKey(key);
   /** The text of a command with a key in it: for the page (the shown key) and for Copy (always the real key). */
   const withKey = (make: (k: string) => string) => ({ text: make(shown), real: make(key ?? KEY_PLACEHOLDER) });
-  // Without a clipboard (http on another machine's address, or a refusal) the person must select the text by hand. A
-  // masked command selected by hand would be a broken command, so the key is shown first, and the button says so.
-  const byHand = (id: string) => {
-    setCopied(`failed:${id}`);
-    if (key) setVisible(true);
-  };
-  const copy = (id: string, real: string) => (navigator.clipboard ? navigator.clipboard.writeText(real).then(() => setCopied(id), () => byHand(id)) : byHand(id));
-  const label = (id: string) => (copied === id ? "Copied" : copied === `failed:${id}` ? (key ? "Key shown: select and copy by hand" : "Select and copy by hand") : "Copy");
+  // Without a clipboard (http on another machine's address, or a refusal) the person must select the text by hand. The
+  // key is never shown because a copy failed (the page may be on a shared screen): the note under the block says that a
+  // hidden key must be shown first, so a masked command is not copied as if it were real.
+  const copy = (id: string, real: string) => (navigator.clipboard ? navigator.clipboard.writeText(real).then(() => setCopied(id), () => setCopied(`failed:${id}`)) : setCopied(`failed:${id}`));
+  const label = (id: string) => (copied === id ? "Copied" : "Copy");
+  /** What to do when Copy did not work, for a block that holds the key (`hasKey`) and for one that does not. */
+  const byHand = (id: string, hasKey: boolean) =>
+    copied === `failed:${id}` ? (
+      <p className="small warn" role="status" data-by-hand={id}>
+        Copying did not work in this browser. {hasKey && key && !visible ? "The key is hidden here: press “Show key” first, then select the text and copy it by hand." : "Select the text and copy it by hand."}
+      </p>
+    ) : null;
   /** A command or text block with its own Copy button. `real` is what Copy copies when it differs from what is shown. Commands with the key need the key first. */
   const block = (id: string, text: string, needsKey = true, real = text) => (
-    <div className="command copyable">
-      <pre className="code" data-command={id}>{text}</pre>
-      <button className="small-btn" onClick={() => copy(id, real)} disabled={needsKey && !key} title={needsKey && !key ? "Create a key first: the command needs it" : undefined}>{label(id)}</button>
-    </div>
+    <>
+      <div className="command copyable">
+        <pre className="code" data-command={id}>{text}</pre>
+        <button className="small-btn" onClick={() => copy(id, real)} disabled={needsKey && !key} title={needsKey && !key ? "Create a key first: the command needs it" : undefined}>{label(id)}</button>
+      </div>
+      {byHand(id, needsKey)}
+    </>
   );
   const claude = withKey((k) => `claude mcp add --scope user --transport http clay ${endpoint} --header "Authorization: Bearer ${k}"`);
   const codex = withKey((k) => `export CLAY_AGENT_KEY=${k}\ncodex mcp add clay --url ${endpoint} --bearer-token-env-var CLAY_AGENT_KEY`);
@@ -77,6 +84,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
               <pre className="code" data-testid="agent-key">{shown}</pre>
               <button className="small-btn primary" onClick={() => copy("key", key)}>{label("key")}</button>
             </div>
+            {byHand("key", true)}
             <p className="row wrap">
               <button className="small-btn" aria-pressed={visible} onClick={() => setVisible(!visible)} data-testid="show-key">{visible ? "Hide key" : "Show key"}</button>
               <span className="small muted">Copy puts the real key on your clipboard, also while it is hidden here and in the commands below.</span>
@@ -113,7 +121,7 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
         {block("codex-resume", `codex exec -s workspace-write resume --last "I'm done."`, false)}
 
         <h3>Another agent</h3>
-        <p className="small">Any MCP client that speaks Streamable HTTP: URL <code>{endpoint}</code>, header <code>Authorization: Bearer {shown}</code>.</p>
+        <p className="small">Any MCP client that speaks Streamable HTTP: URL <code>{endpoint}</code>, header <code>Authorization: Bearer {shown}</code>.{key && !visible ? " The key is hidden here: press “Show key” above to read it, or copy it from the key block." : ""}</p>
       </section>
 
       <section className="card">

@@ -19,6 +19,9 @@ test("short keys show nothing of themselves; a key without a prefix shows no pre
   // No underscore, or one that is far inside the key: no prefix is shown.
   assert.equal(maskKey("0123456789abcdefghijklmnop"), "••••••••••••mnop");
   assert.equal(maskKey("0123456789abcdef_ghijklmnopqrstuv"), "••••••••••••stuv");
+  // An underscore near the start of a secret is not a prefix: nothing before it is shown.
+  assert.equal(maskKey("aB3_xYz90123456789abcdefgh"), "••••••••••••efgh");
+  assert.equal(maskKey("abc_0123456789abcdefgh"), "••••••••••••efgh");
   // The owner key of a local server ("local-owner-...") has no underscore either.
   assert.equal(maskKey("local-owner-0123456789abcdef0123"), "••••••••••••0123");
   assert.equal(maskKey(KEY_PLACEHOLDER), "<your agent key>");
