@@ -59,7 +59,7 @@ def load(run_dirs):
         for r in own:
             r["disputed"] = (not r["passed"]) and any(
                 r["task"] == u["task"] and r["agent"] == u["agent"] and r["model"] == u["model"]
-                and all(x in (r.get("check_fail_line") or "") for x in u["fail_line_contains_all"]) for u in disputed)
+                and all(x in (r.get("check_fail_line") or "") for x in (u.get("fail_line_contains_all") or [u["fail_line_contains"]])) for u in disputed)
             r["pass_scored"] = not any(
                 r["task"] == u["task"] and r["repeat"] == u["repeat"] and fnmatch.fnmatch(r["agent"], u["agent"])
                 and fnmatch.fnmatch(r["model"], u["model"]) for u in unknown)
@@ -144,7 +144,9 @@ def markdown(rows, per_task, manifests, recs):
         out.append(f"| {t['task']} | {t['difficulty']} | {t['summary']} | " + " | ".join(t["passed_by_model"][m] for m in models) + " |")
     out += ["", "## Failure classes per model", "", "Read from the run record and the hidden check's first `FAIL` line, not judged by a model: "
             "`wrong-output` (the check found a wrong result), `broke-behaviour` (existing behaviour or tests broke), "
-            "`too-slow` (the performance limit was missed), `no-change (gave up)` (the agent ended without changing any file), "
+            "`too-slow` (the performance limit was missed), `incomplete` (a required structural change is missing), "
+            "`check-timeout` (the hidden check itself did not finish, for example on a hang), "
+            "`no-change (gave up)` (the agent ended without changing any file), "
             "or the run's error class (`timeout`, ...).", ""]
     out += [f"- {r['model']}: " + (", ".join(f"{k} {v}" for k, v in r["failures"].items()) or "no failures") for r in rows]
     failed = [r for r in recs if r["pass_scored"] and not r["passed"]]
@@ -180,6 +182,8 @@ def main():
     if not dirs:
         sys.exit(__doc__)
     outs = [os.path.join(dirs[-1], n) for n in ("summary.json", "SUMMARY.md", "clay-inline.json", "clay-inline-combined.json")]
+    if overwrite and not easy_dir and os.path.exists(outs[-1]):
+        sys.exit(f"{outs[-1]} exists: pass --combine-easy <easy run dir> too, so it is regenerated with the rest")
     if not overwrite and any(os.path.exists(o) for o in outs):
         sys.exit(f"refusing to overwrite the summary in {dirs[-1]}; pass --overwrite to regenerate it")
     recs = load(dirs)

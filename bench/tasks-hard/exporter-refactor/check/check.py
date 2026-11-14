@@ -19,7 +19,8 @@ for n in ("csv", "json", "xml"):
     if dup:
         print(f"FAIL incomplete: {n}_export.py still defines {sorted(dup)}"); sys.exit(1)
     uses = any(isinstance(x, ast.ImportFrom) and ((x.module or "").split(".")[-1] == "rows"
-                                                    or any(a.name == "rows" for a in x.names)) for x in ast.walk(tree)) or \
+                                                    or ((x.module or "reports") == "reports" and any(a.name == "rows" for a in x.names)))
+               for x in ast.walk(tree)) or \
         any(isinstance(x, ast.Import) and any(a.name.split(".")[-1] == "rows" for a in x.names) for x in ast.walk(tree))
     if not uses:
         print(f"FAIL incomplete: {n}_export.py does not import reports.rows"); sys.exit(1)

@@ -30,7 +30,7 @@ Run `20261114-hard` · source commit `3e94167` · 2026-11-14T01:54:03+00:00 to 2
 
 ## Failure classes per model
 
-Read from the run record and the hidden check's first `FAIL` line, not judged by a model: `wrong-output` (the check found a wrong result), `broke-behaviour` (existing behaviour or tests broke), `too-slow` (the performance limit was missed), `no-change (gave up)` (the agent ended without changing any file), or the run's error class (`timeout`, ...).
+Read from the run record and the hidden check's first `FAIL` line, not judged by a model: `wrong-output` (the check found a wrong result), `broke-behaviour` (existing behaviour or tests broke), `too-slow` (the performance limit was missed), `incomplete` (a required structural change is missing), `check-timeout` (the hidden check itself did not finish, for example on a hang), `no-change (gave up)` (the agent ended without changing any file), or the run's error class (`timeout`, ...).
 
 - claude-fable-5-2: no failures
 - claude-opus-5-5: no failures

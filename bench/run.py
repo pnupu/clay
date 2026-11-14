@@ -216,10 +216,15 @@ def classify(timed_out, exit_code, parsed, stderr):
 def run_check(task_dir, task, work):
     with tempfile.TemporaryDirectory(prefix="bench-check-") as chk:
         shutil.copytree(os.path.join(task_dir, "check"), chk, dirs_exist_ok=True)
+        p = subprocess.Popen(task["check"] + [work], cwd=chk, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, errors="replace", start_new_session=True)
         try:
-            r = subprocess.run(task["check"] + [work], cwd=chk, capture_output=True, text=True, timeout=600)
+            out, err = p.communicate(timeout=600)
         except subprocess.TimeoutExpired:
-            return False, "check timed out", "FAIL too-slow: the hidden check itself took over 600 s"
+            os.killpg(p.pid, signal.SIGKILL)  # also the agent's code that the check started
+            p.communicate()
+            return False, "check timed out", "FAIL check-timeout: the hidden check did not finish within 600 s"
+        r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
         return r.returncode == 0, (r.stdout + r.stderr)[-600:], next(
             (ln.strip() for ln in r.stdout.splitlines() if ln.startswith("FAIL")), None)
 

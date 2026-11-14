@@ -18,11 +18,11 @@ try:
     for seed in range(1, 9):
         p = os.path.join(tmp, f"s{seed}.csv")
         generate(p, 300 + seed * 37, seed)
-        want, _ = run(orig, p, 120)
+        want, _ = run(orig, p, 30)
         try:
             got, _ = run(os.path.join(work, "dedupe.py"), p, 30)
         except subprocess.TimeoutExpired:
-            print("FAIL too-slow: a 600-row input took over 30 s"); sys.exit(1)
+            print(f"FAIL too-slow: a {300 + seed * 37}-row input took over 30 s"); sys.exit(1)
         if got.stdout != want.stdout:
             print(f"FAIL wrong-output: output differs from the original job on a {300 + seed * 37}-row input (seed {seed})"); sys.exit(1)
     # Speed and correctness on the large input; expected output hash made with the reference solution.

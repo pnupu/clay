@@ -62,8 +62,9 @@ its `task.json`:
 
 `python3 bench/validate.py tasks-hard` proves for each task that the check fails on `start/` and passes
 on `ref/`. A failed check prints one `FAIL <kind>: <what>` line. The summary uses it to class each failure,
-together with the run record: `wrong-output`, `broke-behaviour`, `too-slow`, `no-change (gave up)` (the
-agent changed no file), or the run's error class, such as `timeout`.
+together with the run record: `wrong-output`, `broke-behaviour`, `too-slow`, `incomplete` (a required
+structural change is missing), `check-timeout`, `no-change (gave up)` (the agent changed no file), or the
+run's error class, such as `timeout`.
 
 **Calibration is a form of tuning, and it was done.** Before the full run, each hard task was tried
 once on Claude Opus 5.5 and once on gpt-6-luna (expected as the strongest and the weakest subject; 16
@@ -133,7 +134,8 @@ number with `-` became `null`; 1 × `job-queue`, a retry ran before its delay) a
 - the `dedupe-perf` check allows 30 s instead of 60 s per small input, so that its total stays well
   under the harness's check limit, which was raised from 180 s to 600 s (the one failed run of this
   task changed no file);
-- the harness now records a check timeout as `too-slow` instead of crashing that run, and keeps a
+- the harness now records a check timeout as `check-timeout` (and kills everything the check started)
+  instead of crashing that run, and keeps a
   run whose work directory holds links, sockets or unreadable files.
 
 So `bench_sha256` in the run's manifest is the hash of the task set before these changes. When the run started, `tasks-hard/` was not committed yet (`source_dirty` in the
