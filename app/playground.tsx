@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Domain, MetricDef, PricingModel } from "@/lib/domain";
 import { cents, crossovers, productLike, rank, sameAssumptions, savedAssumptions, stand, standSentence, vendorCost, type Assumptions, type PlanCost, type Stand, type VendorCost } from "@/lib/pricing";
 import { reasonOf, recordPath } from "@/lib/card";
+import { changeSentence, effectSentence, fold, sourceWords } from "@/lib/history";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { commitNumber, liveNumber } from "@/lib/numberbox";
 import type { Exploration, PublicState } from "@/lib/store";
@@ -232,9 +233,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     saveBox.current?.querySelector<HTMLButtonElement>("button.primary")?.focus({ preventScroll: true });
   };
   /** What a Select means, said at the selected row: where to save it, or that an example saves nothing. */
-  const selectedNext: ReactNode = !canWrite ? (
-    <p className="small select-next" data-select-next>This is an example, so a choice is not saved here. <Link href="/connect">Connect your agent</Link> to build your own and save it.</p>
-  ) : unsaved ? (
+  const selectedNext: ReactNode = !canWrite ? null : unsaved ? (
     <p className="small select-next" data-select-next>Not saved yet. <button className="link" onClick={toSave}>Save this choice ↓</button></p>
   ) : null;
   /**
@@ -343,7 +342,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               )}
               <ol className="rank">
                 {ranking.ranked.map((v, i) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={() => setChosen(pick === v.id ? null : v.id)} next={pick === v.id ? selectedNext : null} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={canWrite ? () => setChosen(pick === v.id ? null : v.id) : undefined} next={pick === v.id ? selectedNext : null} />
                 ))}
               </ol>
               {ranking.unranked.length > 0 && <h3>Cannot be ranked</h3>}
@@ -388,7 +387,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
               ) : (
-                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
+                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => x.lastCheckedAt ?? x.snapshot?.fetchedAt ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
               {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
@@ -408,31 +407,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
                   </button>
                 </div>
               )}
-              <h3>What changed</h3>
-              {state.events.length === 0 && <p className="muted small">No source has changed since collection.</p>}
-              <ul className="events">
-                {state.events.map((e) => (
-                  <li key={e.id} className={now - Date.parse(e.at) < 30000 ? "new" : undefined}>
-                    <p className="small muted">{sources[e.sourceId]?.name} · {ago(e.at, now)} · {e.trigger === "webhook" ? "webhook" : e.trigger === "auto" ? "demo page published" : "re-check"}</p>
-                    {e.changes.slice(0, 6).map((c, ci) => (
-                      <p className="change" key={`${ci}:${c.path}`}>{h.humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
-                    ))}
-                    {e.changes.length > 6 && <p className="small muted">and {e.changes.length - 6} more facts</p>}
-                    {e.unconfirmed ? <p className="small muted">Confirmed by a second read. {e.unconfirmed} more {e.unconfirmed === 1 ? "difference" : "differences"} appeared in only one of the two reads and {e.unconfirmed === 1 ? "is" : "are"} not reported.</p> : null}
-                    {/* A verdict speaks about the decision that was saved when the change came. After a new decision is
-                        saved, the older changes stay as facts, without a verdict that is about another choice. */}
-                    {e.verdict && decision && Date.parse(e.at) >= Date.parse(decision.savedAt) && (
-                      <p className={e.verdict.holds ? "verdict ok" : "verdict bad"}>
-                        {e.verdict.holds ? "✓ Decision holds. " : "✕ Decision no longer holds. "}
-                        {/* The stored reason speaks of "the chosen vendor" and "your tolerance": say the vendor, and to a visitor "the saved". */}
-                        {e.verdict.reason.replace(/^The chosen vendor/, nameOf(decision.chosen) ?? "The chosen vendor").replace(/\byour (tolerance|assumptions)/g, canWrite ? "your $1" : "the saved $1")}
-                        {e.verdict.chosenCostBefore != null && e.verdict.chosenCostNow != null && e.verdict.chosenCostBefore !== e.verdict.chosenCostNow && ` ${canWrite ? "Your choice" : "The saved choice"}: ${money(e.verdict.chosenCostBefore)} → ${money(e.verdict.chosenCostNow)} per month.`}
-                        {e.verdict.cheapestNow && e.verdict.cheapestNow !== e.verdict.cheapestBefore && e.verdict.cheapestNow !== decision.chosen && ` Cheapest is now ${sources[e.verdict.cheapestNow]?.name}.`}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <History events={state.events} sources={sources} decision={decision} own={canWrite} now={now} nameOf={nameOf} />
             </section>
 
             <section className="card">
@@ -570,8 +545,6 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
         <span className="dot" style={{ background: color(v.id) }} />
         <span className="name">{place ? `${place}. ` : ""}{src?.name}</span>
         {src?.demo && <span className="badge">Demo</span>}
-        {cheapest && <span className="badge" data-cheapest style={{ borderColor: "var(--axis)", color: "var(--ink-2)", whiteSpace: "nowrap" }}>Cheapest at these values</span>}
-        {saved && <span className="badge saved" style={{ whiteSpace: "nowrap" }}>{own ? "Your saved choice" : "Saved choice"}</span>}
         <span className="plan" title={p?.plan}>{p ? <>{products ? "product" : "plan"}: <b>{p.plan}</b></> : <span className="muted">no eligible plan</span>}</span>
         {/* The cost and its button are one unit: on a narrow screen they take a line of their own (globals.css). */}
         <span className="buy">
@@ -580,6 +553,12 @@ function VendorRow({ v, src, required, now, place, cheapest, chosen, saved, own,
           {onChoose && <button className="small-btn" onClick={onChoose} aria-pressed={chosen}>{chosen ? "Selected" : "Select"}</button>}
         </span>
       </div>
+      {/* What this row is, in one statement: the cheapest at the values on the page, the saved choice, or both. */}
+      {(cheapest || saved) && (
+        <p className="small standing-fact" data-cheapest={cheapest || undefined} data-saved={saved || undefined}>
+          {cheapest ? "Cheapest at these values" : ""}{cheapest && saved ? ", and " : ""}{saved ? `${cheapest ? (own ? "your" : "the") : own ? "Your" : "The"} saved choice` : ""}.
+        </p>
+      )}
       {next}
       {effect && <p className="small warn">{effect}</p>}
       {products && p && <p className="small warn" data-products>This price is for <b>{p.plan}</b>, the cheapest of {names.length} separate products on this page that fits your values. Also there: {others.slice(0, 4).join(", ")}{others.length > 4 ? ` and ${others.length - 4} more` : ""}.</p>}
@@ -642,22 +621,70 @@ function Lines({ p, model, evidence, url, age }: { p: PlanCost; model: PricingMo
  * The saved decision, always judged under the assumptions it was saved with, and always labelled with them. What the saved
  * vendor would cost under other values is said elsewhere (the "You are trying other values" notice above the ranking).
  */
-function Standing({ decision, st, name, cheapestName, savedWords, atSaved, own, now, file, onLoad, onClear }: { /** The owner's decision file in their repository (lib/record.ts); null for a visitor. */ file: string | null; decision: NonNullable<PublicState["decision"]>; st: Stand; name: string; cheapestName: string | null; savedWords: string; atSaved: boolean; own: boolean; now: number; onLoad: () => void; onClear: (() => void) | null }) {
+function Standing({ decision, st, name, cheapestName, savedWords, atSaved, own, now, file, checked, onLoad, onClear }: { /** When the prices were last checked: the oldest check among the pages. */ checked: string | null; /** The owner's decision file in their repository (lib/record.ts); null for a visitor. */ file: string | null; decision: NonNullable<PublicState["decision"]>; st: Stand; name: string; cheapestName: string | null; savedWords: string; atSaved: boolean; own: boolean; now: number; onLoad: () => void; onClear: (() => void) | null }) {
   return (
     <>
       <p className="small" style={{ margin: "0 0 6px" }}>{own ? "Your saved choice" : "The saved choice of this example"}: <b>{name}</b></p>
       <p className={st.holds ? "verdict ok" : "verdict bad"} data-verdict>
-        {st.holds ? "✓ Holds. " : "✕ No longer holds. "}At {own ? "your" : "the"} saved values ({savedWords}): {standSentence(st, name, cheapestName, false, undefined, own)}
+        {st.holds ? "✓ Holds now. " : "✕ Does not hold now. "}At {own ? "your" : "the"} saved values ({savedWords}): {standSentence(st, name, cheapestName, false, undefined, own)}
       </p>
       <p className="small">
         Rule: the decision holds while {name} costs {st.tolerance > 0 ? `at most ${money(st.tolerance)} per month more than the cheapest vendor` : "no more than the cheapest vendor"} at the saved values.
       </p>
-      <p className="small muted">Saved {ago(decision.savedAt, now)}. Judged against the prices as last read.{atSaved ? "" : " The ranking now shows other values than these."}</p>
+      <p className="small muted">Saved {ago(decision.savedAt, now)}. Judged against the prices as last read{checked ? `, last checked ${ago(checked, now)}` : ""}.{atSaved ? "" : " The ranking now shows other values than these."}</p>
       {file && <p className="small muted" data-record>Tell your agent you saved it: it keeps this decision in your repository ({file}), and any later session re-checks it from there.</p>}
       <div className="row">
         <button className="small-btn" disabled={atSaved} onClick={onLoad}>{own ? "Back to my saved values" : "Back to the saved values"}</button>
         {onClear && <button className="small-btn" onClick={onClear}>Clear</button>}
       </div>
+    </>
+  );
+}
+
+/**
+ * "What changed": the history of the sources as a quiet timeline, newest first, in the past tense. One row per change:
+ * what the vendor did, in a buyer's words; what that did to the saved choice at that time; where the change came from.
+ * The exact facts are behind a disclosure. No row uses the verdict colours: the state NOW is the verdict above this list.
+ * The same for the owner and for a visitor of an example (lib/history.ts holds the wording).
+ */
+function History({ events, sources, decision, own, now, nameOf }: { events: PublicState["events"]; sources: Record<string, Src>; decision: PublicState["decision"]; own: boolean; now: number; nameOf: (id: string | null) => string | null }) {
+  const { label, humanize } = useContext(Dom);
+  const [all, setAll] = useState(false);
+  const { shown, folded } = fold(events, all);
+  // A verdict speaks about the choice that was saved when the change came: "current" is the choice that is saved now.
+  const current = (e: PublicState["events"][number]) => !!decision && Date.parse(e.at) >= Date.parse(decision.savedAt);
+  return (
+    <>
+      <h3>What changed</h3>
+      {events.length === 0 ? (
+        <p className="muted small">No source has changed since collection.</p>
+      ) : (
+        <p className="muted small history-lead">Earlier changes, newest first, and what each did to the saved choice at that time. The state now is above.</p>
+      )}
+      <ul className="events">
+        {shown.map((e) => {
+          const i = events.indexOf(e);
+          // The change before this one that was judged for the same choice: it says whether the choice held until then.
+          const earlier = current(e) ? (events.slice(i + 1).find((x) => x.verdict && current(x))?.verdict ?? null) : null;
+          const src = sources[e.sourceId];
+          return (
+            <li key={e.id} className={now - Date.parse(e.at) < 30000 ? "new" : undefined}>
+              <p className="what">{changeSentence(src?.name ?? e.sourceId, e.changes, (id) => lower(label(id)))}</p>
+              <p className="effect" data-effect>{effectSentence(e.verdict, earlier, { current: current(e), own, chosenId: decision?.chosen ?? "", chosen: nameOf(decision?.chosen ?? null) ?? "the chosen vendor", nameOf })}</p>
+              <p className="small muted when">{ago(e.at, now)} · {sourceWords(e.trigger, !!src?.demo)}{src?.demo && <span className="badge">Demo</span>}</p>
+              <details>
+                <summary className="small muted">The exact {e.changes.length === 1 ? "fact" : `${e.changes.length} facts`}</summary>
+                {e.changes.slice(0, 12).map((c, ci) => (
+                  <p className="change" key={`${ci}:${c.path}`}>{humanize(c.path)}: <s>{String(c.before ?? "not stated")}</s> → <b>{String(c.after ?? "not stated")}</b></p>
+                ))}
+                {e.changes.length > 12 && <p className="small muted">and {e.changes.length - 12} more facts</p>}
+                {e.unconfirmed ? <p className="small muted">Confirmed by a second read. {e.unconfirmed} more {e.unconfirmed === 1 ? "difference" : "differences"} appeared in only one of the two reads and {e.unconfirmed === 1 ? "is" : "are"} not reported.</p> : null}
+              </details>
+            </li>
+          );
+        })}
+      </ul>
+      {folded > 0 && <button className="small-btn" onClick={() => setAll(true)}>Show earlier changes ({folded})</button>}
     </>
   );
 }
