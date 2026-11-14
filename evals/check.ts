@@ -89,12 +89,20 @@ const near = (a: number, b: number) => Math.abs(a - b) <= Math.abs(b) * 0.01;
 /** How much wider than the largest number the person mentioned a range may be. */
 export const MAX_WIDTH = 20;
 
-export function rangeProblem(g: Given, d: Dimension): string | null {
+/**
+ * A slider that multiplies the others: "Growth by spring, 1x to 8x". A playground may answer "40M now, 5 times that by
+ * spring" with such a control and show today and spring side by side; the later number is then reached as the base
+ * value times the multiplier, and the base slider need not run that far.
+ */
+export const isMultiplier = (d: Dimension) => /^(x|×|times)$/i.test(d.unit.trim()) || /growth|multipl|factor/i.test(`${d.id} ${d.label}`);
+
+export function rangeProblem(g: Given, d: Dimension, multipliers: Dimension[] = []): string | null {
   const k = SCALES.find((s) => near(d.initial * s, g.value));
   if (!k) return `${d.id} starts at ${fmt(d.initial)}, the person said ${fmt(g.value)}`;
   const mentioned = g.mentioned ?? [g.value];
   const [lo, hi] = [d.min * k, d.max * k];
-  const outside = mentioned.find((m) => m < lo || m > hi);
+  const reached = (m: number) => (m >= lo && m <= hi) || multipliers.some((x) => x !== d && m >= lo * x.min && m <= hi * x.max);
+  const outside = mentioned.find((m) => !reached(m));
   if (outside != null) return `${d.id} runs ${fmt(lo)} to ${fmt(hi)}, which leaves out ${fmt(outside)}`;
   const top = Math.max(...mentioned);
   if (hi - lo > MAX_WIDTH * top) return `${d.id} runs ${fmt(lo)} to ${fmt(hi)}, more than ${MAX_WIDTH} times the ${fmt(top)} the person mentioned`;
@@ -107,7 +115,7 @@ export function ranges(given: Given[] | undefined, dims: Dimension[] | null): Ch
   for (const g of given) {
     const matching = dims.filter((d) => g.about.test(`${d.id} ${d.label} ${d.unit}`));
     if (!matching.length) return fail("ranges", `no control for ${g.about} (the person said ${fmt(g.value)}); controls: ${dims.map((d) => d.id).join(", ")}`);
-    const problems = matching.map((d) => rangeProblem(g, d));
+    const problems = matching.map((d) => rangeProblem(g, d, dims.filter((x) => isMultiplier(x) && !g.about.test(`${x.id} ${x.label} ${x.unit}`))));
     if (!problems.includes(null)) return fail("ranges", problems[0]!);
   }
   return pass("ranges", `${given.length} given number(s) are the starting values, inside ranges of sane width`);

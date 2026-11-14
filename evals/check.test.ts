@@ -44,6 +44,19 @@ test("range sanity: a range more than 20 times what the person mentioned fails",
   assert.match(rangeProblem({ about: /email/i, value: 30_000 }, dim("emails", 0, 5_000_000, 30_000))!, /more than 20 times/);
 });
 
+test("range sanity: a growth multiplier control reaches the later number", () => {
+  const given = [{ about: /input|prompt/i, value: 40_000_000, mentioned: [40_000_000, 200_000_000] }];
+  const growth = { id: "growth", label: "Growth by spring", unit: "x", min: 1, max: 8, initial: 5 };
+  // "40M now, 5 times that by spring": a slider to 100M and a multiplier to 8x reach 200M.
+  assert.equal(ranges(given, [dim("input_m", 10, 100, 40), growth]).status, "pass");
+  // A multiplier that does not reach it, a slider that is no multiplier, and no multiplier at all still fail.
+  assert.match(ranges(given, [dim("input_m", 10, 100, 40), { ...growth, max: 1.5 }]).reason, /leaves out 200,000,000/);
+  assert.match(ranges(given, [dim("input_m", 10, 100, 40), { id: "budget", label: "Budget", unit: "USD", min: 1, max: 8, initial: 5 }]).reason, /leaves out 200,000,000/);
+  assert.match(ranges(given, [dim("input_m", 10, 100, 40)]).reason, /leaves out 200,000,000/);
+  // The starting value is still the person's own number, and the width limit still holds for the slider itself.
+  assert.match(ranges(given, [dim("input_m", 10, 100, 60), growth]).reason, /starts at 60/);
+});
+
 test("range sanity: a unit of thousands or millions is the same number", () => {
   const g = { about: /input/i, value: 40_000_000, mentioned: [40_000_000, 200_000_000] };
   assert.equal(rangeProblem(g, dim("input_mtok", 5, 400, 40)), null);
