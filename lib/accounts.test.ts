@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { specVersion, bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
+import { bindActor, canRead, canWrite, currentUserId, guessLimiter, hashKey, isExample, KEY_CHECK_MS, markExample, orderExamples, KEY_GRACE_MS, keyDecision, limit, needsCheck, newAgentKey, onlyTestAddresses, playgroundCapMessage, testAccountsAllowed, userOfKey, VISITOR, type Actor } from "./accounts.ts";
 import { newPlayground, spend } from "./store.ts";
 import { DOMAIN } from "./domain.ts";
+import { markLook, viewVersion } from "./report.ts";
+
+const look = (p: unknown) => markLook(p as never);
 
 const admin: Actor = { kind: "admin" };
 const ann: Actor = { kind: "user", userId: "user_ann", via: "session" };
@@ -148,32 +151,32 @@ test("examples: only the admin marks and features; one example is featured at a 
   // Nobody but the admin: not a visitor, not a signed-in person, not even the owner of the playground, not a missing caller.
   for (const who of [VISITOR, ann, bob, null]) {
     const s = store();
-    assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, who), { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." });
+    assert.deepEqual(markExample(s, "gpu", { example: true, featured: true }, who, look), { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." });
     assert.deepEqual(s, store());
   }
   const s = store();
   // Without a featured example the newest example comes first, as before.
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["models", "card"]);
-  assert.deepEqual(markExample(s, "card", { featured: true, version: specVersion(s["card"] as never) }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(markExample(s, "card", { featured: true, version: viewVersion(s["card"] as never) }, admin, look), { ok: true, example: true, featured: true });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["card", "models"]);
   // Featuring another one takes the mark from the first: one at a time.
-  assert.deepEqual(markExample(s, "models", { example: true, featured: true, version: specVersion(s["models"] as never) }, admin), { ok: true, example: true, featured: true });
+  assert.deepEqual(markExample(s, "models", { example: true, featured: true, version: viewVersion(s["models"] as never) }, admin, look), { ok: true, example: true, featured: true });
   assert.deepEqual(Object.entries(s).filter(([, p]) => (p as { featured?: boolean }).featured).map(([id]) => id), ["models"]);
   // Only an example can be featured; marking and featuring in one call works for a playground that is not one yet.
-  assert.equal((markExample(s, "gpu", { featured: true, version: specVersion(s["gpu"] as never) }, admin) as { status: number }).status, 400);
-  assert.deepEqual(markExample(s, "gpu", { example: true, featured: true, version: specVersion(s["gpu"] as never) }, admin), { ok: true, example: true, featured: true });
+  assert.equal((markExample(s, "gpu", { featured: true, version: viewVersion(s["gpu"] as never) }, admin, look) as { status: number }).status, 400);
+  assert.deepEqual(markExample(s, "gpu", { example: true, featured: true, version: viewVersion(s["gpu"] as never) }, admin, look), { ok: true, example: true, featured: true });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["gpu", "models", "card"]);
   // Unmarking the example also unfeatures it, and the newest example is first again.
-  assert.deepEqual(markExample(s, "gpu", { example: false }, admin), { ok: true, example: false, featured: false });
+  assert.deepEqual(markExample(s, "gpu", { example: false }, admin, look), { ok: true, example: false, featured: false });
   assert.deepEqual(orderExamples(s).map(([id]) => id), ["models", "card"]);
   // A plain mark leaves the featured one alone; unknown ids and empty bodies are refused.
-  markExample(s, "card", { featured: true, version: specVersion(s["card"] as never) }, admin);
-  assert.deepEqual(markExample(s, "models", { example: true, version: specVersion(s["models"] as never) }, admin), { ok: true, example: true, featured: false });
+  markExample(s, "card", { featured: true, version: viewVersion(s["card"] as never) }, admin, look);
+  assert.deepEqual(markExample(s, "models", { example: true, version: viewVersion(s["models"] as never) }, admin, look), { ok: true, example: true, featured: false });
   assert.equal(s.card.featured, true);
-  assert.equal((markExample(s, "nope", { example: true, version: specVersion(undefined) }, admin) as { status: number }).status, 404);
-  assert.equal((markExample(s, "card", {}, admin) as { status: number }).status, 400);
+  assert.equal((markExample(s, "nope", { example: true, version: "0" }, admin, look) as { status: number }).status, 404);
+  assert.equal((markExample(s, "card", {}, admin, look) as { status: number }).status, 400);
   // A field of the wrong type is refused, also beside a valid one.
-  assert.equal((markExample(s, "card", { example: "false", featured: false }, admin) as { status: number }).status, 400);
+  assert.equal((markExample(s, "card", { example: "false", featured: false }, admin, look) as { status: number }).status, 400);
 });
 
 test("budget: an older day never replaces a newer day's counter", () => {
@@ -193,7 +196,7 @@ test("examples: a revision by the owner clears the mark; the operator's own revi
   assert.equal(p.featured, undefined);
   assert.equal(p.exampleCleared, "t1");
   // Marking it again publishes the revision the operator has now seen, and the note goes away.
-  assert.equal(markExample({ card: p }, "card", { example: true, version: specVersion(p as never) }, admin).ok, true);
+  assert.equal(markExample({ card: p }, "card", { example: true, version: viewVersion(p as never) }, admin, look).ok, true);
   assert.equal(isEx(p, "card"), true);
   assert.equal(p.exampleCleared, undefined);
   // A private playground, and the built-in seed, are not touched.
@@ -203,23 +206,24 @@ test("examples: a revision by the owner clears the mark; the operator's own revi
 });
 
 test("examples: a mark carries the version the operator reviewed; a stale one is refused", async () => {
-  const { markExample: mark, specVersion: version, unpublishOnRevision: unpublish } = await import("./accounts.ts");
+  const { markExample: mark, unpublishOnRevision: unpublish } = await import("./accounts.ts");
+  const version = (p: unknown) => viewVersion(p as never);
   const p = { domain: { id: "card", question: "A" }, owner: "user_ann", kit: { kit: { preview: { js: "OLD" } } } } as never as { domain: { id: string; question: string }; owner: string; example?: boolean; kit: { kit: { preview: { js: string } } } };
   const reviewed = version(p);
-  assert.equal(mark({ card: p }, "card", { example: true }, admin).ok, false); // no version: 400
-  assert.equal((mark({ card: p }, "card", { example: true }, admin) as { status: number }).status, 400);
-  assert.equal(mark({ card: p }, "card", { example: true, version: reviewed }, admin).ok, true);
+  assert.equal(mark({ card: p }, "card", { example: true }, admin, look).ok, false); // no version: 400
+  assert.equal((mark({ card: p }, "card", { example: true }, admin, look) as { status: number }).status, 400);
+  assert.equal(mark({ card: p }, "card", { example: true, version: reviewed }, admin, look).ok, true);
   // The owner revises the code: the mark is cleared, and an approval of the old view is refused.
   p.kit.kit.preview.js = "NEW";
   unpublish(p, "card", ann, "t");
-  const stale = mark({ card: p }, "card", { example: true, version: reviewed }, admin);
+  const stale = mark({ card: p }, "card", { example: true, version: reviewed }, admin, look);
   assert.deepEqual([stale.ok, (stale as { status: number }).status], [false, 409]);
   assert.equal(p.example, false);
   // Words only change the version too; unmarking needs none.
   const v2 = version(p);
   p.domain.question = "B";
   assert.notEqual(version(p), v2);
-  assert.equal(mark({ card: p }, "card", { example: false }, admin).ok, true);
+  assert.equal(mark({ card: p }, "card", { example: false }, admin, look).ok, true);
 });
 
 test("published examples: only the operator writes; the owner may only revise, which clears the mark", async () => {
@@ -245,4 +249,75 @@ test("deployment bound: people cannot fill the one store; the operator can still
   assert.equal(cap(9999, 4, ann), null);
   assert.match(cap(1, 5, ann) ?? "", /storage is full/);
   delete process.env.CLAY_MAX_PLAYGROUNDS; delete process.env.CLAY_MAX_STORE_BYTES;
+});
+
+test("examples: the version covers what a visitor sees, and a mark waits for running web reads", async () => {
+  const { markExample: mark } = await import("./accounts.ts");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose test fixtures
+  const p = { domain: { id: "card", question: "A" }, owner: "user_ann", sources: { alpha: { snapshot: { textHash: "h1", fetchedAt: "t1" }, lastCheckedAt: "t1", monitor: { id: "m", secret: "s1", webhookUrl: "u" } } }, decision: null as unknown, events: [] as unknown[], leftOut: [] as unknown[], kit: { kit: { js: "x" }, web: { src: { read: { fields: { note: "plain" } } } }, brandData: null as unknown, brandError: null as string | null, brandSince: null as string | null, preview: { status: "ok" }, settled: { values: { a: 1 } }, exploration: null }, work: null as unknown } as never as Record<string, any>;
+  const v = () => viewVersion(p as never);
+  const seen = new Set([v()]);
+  const changes: [string, () => void][] = [
+    ["a web value", () => (p.kit.web.src.read.fields.note = "<img onerror>")],
+    ["the brand", () => (p.kit.brandData = { title: "B" })],
+    ["a price read", () => (p.sources.alpha.snapshot.textHash = "h2")],
+    ["a read time", () => (p.sources.alpha.snapshot.fetchedAt = "t2")],
+    ["the saved decision", () => (p.decision = { chosen: "beta", tolerance: 123 })],
+    ["left_out", () => p.leftOut.push({ name: "n", reason: "added after the look" })],
+    ["a change event", () => p.events.push({ id: "e" })],
+  ];
+  for (const [what, change] of changes) {
+    change();
+    assert.ok(!seen.has(v()), what);
+    seen.add(v());
+  }
+  // Not in it: the marks themselves, the webhook secret, and what only the owner sees (settled result, preview status).
+  const now = v();
+  Object.assign(p, { example: true, featured: true, exampleCleared: "t" });
+  p.sources.alpha.monitor.secret = "s2";
+  p.kit.settled = { values: { a: 2 } };
+  p.kit.preview = { status: "failed" };
+  assert.equal(v(), now);
+  // Running web reads (a build or a re-check, or a pending brand read): the mark is refused until they end.
+  p.example = false;
+  p.work = { id: "w", kind: "recheck", startedAt: new Date().toISOString(), pending: ["src"], finishedAt: null, stop: null };
+  const busy = mark({ card: p } as never, "card", { example: true, version: now }, admin, look);
+  assert.deepEqual([busy.ok, (busy as { status: number }).status, p.example], [false, 409, false]);
+  assert.match((busy as { error: string }).error, /still reading web pages/);
+  p.work.finishedAt = new Date().toISOString();
+  Object.assign(p.kit, { brandError: "pending", brandSince: new Date().toISOString() });
+  const { BRAND_PENDING } = await import("./kit.ts");
+  p.kit.brandError = BRAND_PENDING;
+  assert.equal((mark({ card: p } as never, "card", { example: true, version: v() }, admin, look) as { status: number }).status, 409);
+  p.kit.brandError = null;
+  assert.equal(mark({ card: p } as never, "card", { example: true, version: v() }, admin, look).ok, true);
+});
+
+test("published examples: a write that lands after the mark keeps what the operator approved", async () => {
+  const { keepPublished } = await import("./accounts.ts");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose test fixtures
+  const fresh = () => ({ card: { domain: { id: "card" }, owner: "user_ann", example: true, kit: { web: { note: "plain" } }, work: { finishedAt: null } }, mine: { domain: { id: "mine" }, owner: "user_ann", kit: { web: { note: "plain" } } } } as Record<string, any>);
+  // The owner's re-check stores a new web value on the published example and on a private playground.
+  let s = fresh();
+  let keep = keepPublished(s, ann);
+  s.card.kit.web.note = "NEW";
+  s.card.work = { finishedAt: "t" };
+  s.mine.kit.web.note = "NEW";
+  keep(s);
+  assert.deepEqual([s.card.kit.web.note, s.card.work, s.card.example, s.mine.kit.web.note], ["plain", { finishedAt: "t" }, true, "NEW"]);
+  // A delete by the owner is undone too.
+  s = fresh();
+  keep = keepPublished(s, ann);
+  delete s.card;
+  keep(s);
+  assert.equal(s.card?.kit.web.note, "plain");
+  // The owner's revision clears the mark: it passes. The operator's writes pass.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose test fixtures
+  for (const [who, change] of [[ann, (x: any) => Object.assign(x, { example: false, kit: { web: { note: "REVISED" } } })], [admin, (x: any) => (x.kit.web.note = "REVISED")]] as const) {
+    s = fresh();
+    keep = keepPublished(s, who);
+    change(s.card);
+    keep(s);
+    assert.equal(s.card.kit.web.note, "REVISED");
+  }
 });

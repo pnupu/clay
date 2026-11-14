@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, isExample, playgroundCapMessage, type Account, specVersion, deploymentCapMessage } from "./accounts.ts";
+import { currentUserId, isExample, keepPublished, playgroundCapMessage, type Account, deploymentCapMessage } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -207,7 +207,9 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
   const run = queue.then(async () => {
     if (!onBlob()) {
       const s = parse((await read()).text);
+      const keep = keepPublished(s.playgrounds);
       const out = await fn(s);
+      keep(s.playgrounds);
       mkdirSync(".data", { recursive: true });
       writeFileSync(FILE + ".tmp", JSON.stringify(s, null, 1));
       renameSync(FILE + ".tmp", FILE);
@@ -217,7 +219,9 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const { text, etag, header } = await read();
       const s = parse(text);
+      const keep = keepPublished(s.playgrounds);
       const out = await fn(s);
+      keep(s.playgrounds);
       if (JSON.stringify(s) === text) return out; // `fn` changed nothing: no write, and no new version for the other writers
       s.rev = randomUUID();
       const body = JSON.stringify(s);
@@ -246,8 +250,7 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
 export function publicState(s: Store, id: string, owner = true) {
   const p = s.playgrounds[id];
   const sources = Object.fromEntries(Object.entries(p.sources).map(([k, src]) => [k, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
-  // `version`: what the operator sends when they mark this playground as an example (lib/accounts.ts, markExample).
-  return { id, version: specVersion(p), sources, decision: p.decision, events: p.events, work: workStatus(p), leftOut: p.leftOut ?? [], demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
+  return { id, sources, decision: p.decision, events: p.events, work: workStatus(p), leftOut: p.leftOut ?? [], demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
 }
 export type PublicState = ReturnType<typeof publicState>;
 

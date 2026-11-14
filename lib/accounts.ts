@@ -63,12 +63,6 @@ export function unpublishOnRevision(p: Owned & { featured?: boolean; exampleClea
   p.exampleCleared = now;
   return true;
 }
-/**
- * The version of what a playground shows: a hash of its whole spec (the domain, and the kit of a preview), so it changes
- * with code, outputs, words and price specs alike. The operator's mark carries the version they reviewed (markExample).
- */
-export const specVersion = (p: { domain?: unknown; kit?: { kit?: unknown } | null } | undefined): string => createHash("sha256").update(JSON.stringify([p?.domain ?? null, p?.kit?.kit ?? null])).digest("hex").slice(0, 16);
-
 export const EXAMPLE_CLEARED = "This playground was an example. Because it was revised, the example mark was cleared: other people no longer see it until the operator of this Clay deployment looks at it and marks it again.";
 
 /**
@@ -77,7 +71,11 @@ export const EXAMPLE_CLEARED = "This playground was an example. Because it was r
  * Featuring needs an example, and takes the mark from every other playground, so at most one is featured. Unmarking an
  * example also unfeatures it. Returns what the playground is now, or the refusal.
  */
-export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown; version?: unknown }, a: Actor | null): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
+/**
+ * `look`: the version of what a visitor would see of the playground (lib/report.ts, viewVersion) and whether web reads
+ * still run on it (a build, a re-check or a brand read), whose results nobody has seen yet.
+ */
+export function markExample(playgrounds: Record<string, Owned>, id: string, mark: { example?: unknown; featured?: unknown; version?: unknown }, a: Actor | null, look: (p: Owned) => { version: string; busy: boolean }): { ok: true; example: boolean; featured: boolean } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
   if (a?.kind !== "admin") return { ok: false, status: 403, error: "Only the operator of this Clay deployment can mark or feature an example." };
   const p = playgrounds[id];
   if (!p) return { ok: false, status: 404, error: "Playground not found." };
@@ -87,7 +85,8 @@ export function markExample(playgrounds: Record<string, Owned>, id: string, mark
   // Publishing (marking or featuring) approves what the operator reviewed: the version of that view must still be the
   // playground's version, checked here inside the same store update that publishes it. Unmarking needs no version.
   if (mark.example === true || mark.featured === true) {
-    const now = specVersion(p as never);
+    const { version: now, busy } = look(p);
+    if (busy) return { ok: false, status: 409, error: "This playground is still reading web pages (a build, a re-check or a brand read runs), and what they bring has not been seen yet. Wait until the reads have ended, open the playground again, look at it, then mark it with the version it shows then." };
     if (typeof mark.version !== "string") return { ok: false, status: 400, error: `Send the version you reviewed with the mark: {"example": true, "version": "${now}"}. GET /api/p/${id}/state returns it as "version"; look at the playground before you mark it.` };
     if (mark.version !== now) return { ok: false, status: 409, error: `This playground changed after the version you reviewed (${mark.version.slice(0, 16)}; it is now ${now}). Open it again, look at what changed, then mark it with the new version.` };
   }
@@ -132,6 +131,28 @@ export function canWrite(a: Actor | null, p: Owned): boolean {
 export function publishedRefusal(a: Actor | null, p: Owned, id: string): string | null {
   if (a?.kind === "admin" || !isExample(p, id) || !canWrite(a, p)) return null;
   return "This playground is a published example: only the operator of this Clay deployment can change it now. Ask the operator to unpublish it, or revise it with revise_playground, which clears the example mark so that other people no longer see it.";
+}
+
+/**
+ * The in-update half of publishedRefusal: store.ts update() calls this before every write and the function it returns
+ * after it. A published example that the write changed, when a caller who is not the operator made the write (a request
+ * of its owner, or work that the request left running, such as a re-check whose pages arrive after the mark), gets
+ * back what it was before the write: the example keeps what the operator approved. The work bookkeeping (`work`) is
+ * kept, and a revision that clears the mark (unpublishOnRevision) passes.
+ */
+export function keepPublished<P extends Owned & { work?: unknown }>(playgrounds: Record<string, P>, a: Actor | null = currentActor()): (after: Record<string, P>) => void {
+  if (!a || a.kind === "admin") return () => {};
+  const seen = (p: P) => JSON.stringify({ ...p, work: undefined });
+  const before = new Map(Object.entries(playgrounds).filter(([id, p]) => isExample(p, id)).map(([id, p]) => [id, seen(p)]));
+  return (after) => {
+    for (const [id, was] of before) {
+      const p = after[id];
+      if ((p && !isExample(p, id)) || (p && seen(p) === was)) continue;
+      const kept = JSON.parse(was) as P;
+      if (p && p.work !== undefined) kept.work = p.work;
+      after[id] = kept;
+    }
+  };
 }
 
 /** A limit from an environment variable. Only an explicit 0 turns it off; a missing, empty or malformed value gives the default. */

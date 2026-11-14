@@ -1,6 +1,7 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
+import { viewVersion } from "@/lib/report";
 import { bindActor, canRead, canWrite, guessLimiter, KEY_CHECK_MS, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, TEST_ACCOUNT_LOOK_ONLY, userOfKey, VISITOR, type Actor, type ClerkVerdict, publishedRefusal } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
 import { load, publicBase, publicState, update } from "@/lib/store";
@@ -164,7 +165,8 @@ export type Ctx = { params: Promise<{ pg: string }> };
 export async function stateResponse(pg: string, error: string | null = null, status = error ? 502 : 200, owner = true) {
   const s = await load();
   if (!s.playgrounds[pg]) return Response.json({ error: `Playground "${pg}" does not exist.` }, { status: 404 });
-  return Response.json({ ...publicState(s, pg, owner), error }, { status });
+  // `version`: what the operator sends when they mark this playground as an example (lib/accounts.ts, markExample).
+  return Response.json({ ...publicState(s, pg, owner), version: viewVersion(s.playgrounds[pg]), error }, { status });
 }
 
 export const failure = (e: unknown) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: e instanceof NotFound ? 404 : 502 });

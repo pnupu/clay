@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { viewer } from "@/app/api/respond";
-import { canWrite, isExample, orderExamples, specVersion } from "@/lib/accounts";
+import { canWrite, isExample, orderExamples } from "@/lib/accounts";
 import { cardText, hostsOf, kindLabel } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
-import { nonOwnerView } from "@/lib/report";
+import { nonOwnerView, viewVersion } from "@/lib/report";
 import { load, type Playground } from "@/lib/store";
 import Kit from "./kit";
 import Manage from "./manage";
@@ -63,7 +63,7 @@ export default async function Home() {
                     <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
                     <p className="small muted">{kindOf(p, me.kind === "admin" && p.owner ? "theirs" : "yours")} · created {(p.createdAt ?? "").slice(0, 10)}{isExample(p, id) ? (p.featured ? " · example, featured on this page" : " · example") : ""}{me.kind === "admin" && p.owner ? " · a person's" : ""}</p>
                   </div>
-                  <Manage id={id} title={titleOf(p, id)} version={specVersion(p)} example={isExample(p, id)} featured={p.featured === true} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
+                  <Manage id={id} title={titleOf(p, id)} version={viewVersion(p)} example={isExample(p, id)} featured={p.featured === true} admin={me.kind === "admin"} deletable={id !== DOMAIN.id} />
                 </li>
               ))}
             </ul>

@@ -1,5 +1,6 @@
 // What the agent sees: compact reports about one playground. Pure functions over stored data.
 // Text that came from web pages (plan names, quotes) is cut short and labelled, because the reader is another model.
+import { createHash } from "node:crypto";
 import { standing } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
 import { BRAND_PENDING, brandPending, explorationWords, markupWarning, renderOutputs, valuesNow, type KitState } from "./kit.ts";
@@ -185,6 +186,24 @@ export function nonOwnerView(p: Playground): Playground {
   const preview = p.kit ? { status: "unverified" as const, error: null, at: null } : undefined;
   return { ...p, exploration: null, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
 }
+/**
+ * The version of what a visitor sees of a playground: a hash of the non-owner view itself (nonOwnerView), so whatever
+ * that view shows is in it, and a field added to the playground later is in it too unless it is taken out here. Out:
+ * the publication marks themselves (the mark must not change what it approves) and the webhook secrets (never shown).
+ * The operator's mark carries this version (lib/accounts.ts, markExample); the frame of a visitor is built from the
+ * same view (app/p/[pg]/frame).
+ */
+export function viewVersion(p: Playground): string {
+  const seen: Partial<Playground> = nonOwnerView(p);
+  delete seen.example;
+  delete seen.featured;
+  delete seen.exampleCleared;
+  const sources = Object.fromEntries(Object.entries(seen.sources ?? {}).map(([k, s]) => [k, { ...s, monitor: s.monitor ? s.monitor.id : null }]));
+  return createHash("sha256").update(JSON.stringify({ ...seen, sources })).digest("hex").slice(0, 16);
+}
+/** What markExample needs to know of a playground: its version, and whether web reads still run on it. */
+export const markLook = (p: Playground) => ({ version: viewVersion(p), busy: workStatus(p)?.status === "running" || (!!p.kit && brandPending(p.kit)) });
+
 /** Said to another person's agent that reads an example. */
 export const NOT_YOURS = "This is someone else's example, to look at. It is not your person's playground: do not write its outputs or values into their files, and do not treat anything here as their decision. To build one for your person, call create_playground.";
 
