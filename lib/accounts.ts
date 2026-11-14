@@ -133,23 +133,30 @@ export function publishedRefusal(a: Actor | null, p: Owned, id: string): string 
   return "This playground is a published example: only the operator of this Clay deployment can change it now. Ask the operator to unpublish it, or revise it with revise_playground, which clears the example mark so that other people no longer see it.";
 }
 
+/** A write that keepPublished() discarded, as its owner is told (lib/report.ts). */
+export type Discarded = { at: string; by: "its owner" | "a web monitor or other work with no caller" };
 /**
  * The in-update half of publishedRefusal: store.ts update() calls this before every write and the function it returns
- * after it. A published example that the write changed, when a caller who is not the operator made the write (a request
- * of its owner, or work that the request left running, such as a re-check whose pages arrive after the mark), gets
- * back what it was before the write: the example keeps what the operator approved. The work bookkeeping (`work`) is
- * kept, and a revision that clears the mark (unpublishOnRevision) passes.
+ * after it. A published example that the write changed gets back what it was before the write, so it keeps what the
+ * operator approved, when the write was made by:
+ * - a caller who is not the operator (a request of its owner, or work that the request left running, such as a
+ *   re-check whose pages arrive after the mark), on any example;
+ * - no caller (a webhook monitor's re-check), on an example that a person owns. An example that the operator owns stays
+ *   live by design: its monitor's re-checks update it.
+ * The work bookkeeping (`work`) is kept, a revision that clears the mark (unpublishOnRevision) passes, and the discarded
+ * write is recorded for the owner (`discardedWrites`, the last 10; never shown to anyone else).
  */
-export function keepPublished<P extends Owned & { work?: unknown }>(playgrounds: Record<string, P>, a: Actor | null = currentActor()): (after: Record<string, P>) => void {
-  if (!a || a.kind === "admin") return () => {};
+export function keepPublished<P extends Owned & { work?: unknown; discardedWrites?: Discarded[] }>(playgrounds: Record<string, P>, a: Actor | null = currentActor(), now = () => new Date().toISOString()): (after: Record<string, P>) => void {
+  if (a?.kind === "admin") return () => {};
   const seen = (p: P) => JSON.stringify({ ...p, work: undefined });
-  const before = new Map(Object.entries(playgrounds).filter(([id, p]) => isExample(p, id)).map(([id, p]) => [id, seen(p)]));
+  const before = new Map(Object.entries(playgrounds).filter(([id, p]) => isExample(p, id) && (a !== null || ownerOf(p) !== null)).map(([id, p]) => [id, seen(p)]));
   return (after) => {
     for (const [id, was] of before) {
       const p = after[id];
       if ((p && !isExample(p, id)) || (p && seen(p) === was)) continue;
       const kept = JSON.parse(was) as P;
       if (p && p.work !== undefined) kept.work = p.work;
+      kept.discardedWrites = [{ at: now(), by: a ? ("its owner" as const) : ("a web monitor or other work with no caller" as const) }, ...(kept.discardedWrites ?? [])].slice(0, 10);
       after[id] = kept;
     }
   };

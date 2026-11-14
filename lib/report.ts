@@ -184,7 +184,8 @@ export function nonOwnerView(p: Playground): Playground {
   // The preview's saved status, its error text and its time come from code that ran with the owner's values: even "failed"
   // alone can tell which values the owner tried, when code fails only for some. A non-owner gets none of it.
   const preview = p.kit ? { status: "unverified" as const, error: null, at: null } : undefined;
-  return { ...p, exploration: null, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
+  // discardedWrites: told to the owner only.
+  return { ...p, exploration: null, discardedWrites: undefined, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
 }
 /**
  * The version of what a visitor sees of a playground: a hash of the non-owner view itself (nonOwnerView), so whatever
@@ -207,9 +208,14 @@ export const markLook = (p: Playground) => ({ version: viewVersion(p), busy: wor
 /** Said to another person's agent that reads an example. */
 export const NOT_YOURS = "This is someone else's example, to look at. It is not your person's playground: do not write its outputs or values into their files, and do not treat anything here as their decision. To build one for your person, call create_playground.";
 
+/** Said to the owner when writes on their published example were discarded (accounts.ts, keepPublished). */
+export const discardedReport = (p: Playground) =>
+  p.discardedWrites?.length ? { published_example_kept: `While this playground was a published example, ${p.discardedWrites.length === 10 ? "10 or more" : p.discardedWrites.length} write(s) that arrived later were discarded, the last at ${p.discardedWrites[0].at} (by ${p.discardedWrites[0].by}): the example keeps what the operator approved. To change it, revise it with revise_playground (that unpublishes it), or ask the operator.` } : {};
+
 export function readReport(p: Playground, url: string, since: number | null) {
   const a = controlsNow(p);
   return {
+    ...discardedReport(p),
     playground_id: p.domain.id,
     url,
     question: p.domain.question,
@@ -317,6 +323,7 @@ export function previewReport(p: Playground, url: string) {
   const values = valuesNow(k);
   const settled = k.settled;
   return {
+    ...discardedReport(p),
     playground_id: p.domain.id,
     url,
     kind: "preview",

@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, isExample, keepPublished, playgroundCapMessage, type Account, deploymentCapMessage } from "./accounts.ts";
+import { currentUserId, isExample, keepPublished, playgroundCapMessage, type Account, type Discarded, deploymentCapMessage } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -123,6 +123,8 @@ export type Playground = {
   exampleCleared?: string | null;
   /** What the agent left out of this playground and why, as it said (spec left_out). Text from the agent: shown as text. */
   leftOut?: { name: string; reason: string; at: string }[];
+  /** Writes that arrived on this playground while it was a published example and were discarded (accounts.ts, keepPublished). Owner only. */
+  discardedWrites?: Discarded[];
 };
 
 export type Store = {

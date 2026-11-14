@@ -321,3 +321,25 @@ test("published examples: a write that lands after the mark keeps what the opera
     assert.equal(s.card.kit.web.note, "REVISED");
   }
 });
+
+test("published examples: a webhook write keeps a person's example; the operator's own example stays live; the owner is told", async () => {
+  const { keepPublished } = await import("./accounts.ts");
+  const { nonOwnerView, discardedReport } = await import("./report.ts");
+  const fresh = () => ({ theirs: { domain: { id: "theirs" }, owner: "user_ann", example: true, sources: { alpha: { price: 20 } } }, ours: { domain: { id: "ours" }, example: true, sources: { alpha: { price: 20 } } } }) as Record<string, { domain: { id: string }; owner?: string; example: boolean; sources: { alpha: { price: number } }; discardedWrites?: import("./accounts.ts").Discarded[] }>;
+  const s = fresh();
+  const keep = keepPublished(s, null, () => "t1"); // no caller: a monitor's re-check
+  s.theirs.sources.alpha.price = 70;
+  s.ours.sources.alpha.price = 70;
+  keep(s);
+  assert.deepEqual([s.theirs.sources.alpha.price, s.ours.sources.alpha.price], [20, 70]);
+  assert.deepEqual(s.theirs.discardedWrites, [{ at: "t1", by: "a web monitor or other work with no caller" }]);
+  assert.equal(s.ours.discardedWrites, undefined);
+  // The owner reads it; nobody else sees it.
+  assert.match(discardedReport(s.theirs as never).published_example_kept ?? "", /1 write\(s\) .* discarded, the last at t1/);
+  assert.equal((nonOwnerView(s.theirs as never) as { discardedWrites?: unknown }).discardedWrites, undefined);
+  // The owner's own write is recorded as theirs.
+  const k2 = keepPublished(s, ann, () => "t2");
+  s.theirs.sources.alpha.price = 99;
+  k2(s);
+  assert.deepEqual([s.theirs.sources.alpha.price, s.theirs.discardedWrites?.[0].by, s.theirs.discardedWrites?.length], [20, "its owner", 2]);
+});
