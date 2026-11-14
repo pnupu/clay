@@ -3,7 +3,11 @@
 // them. Pure functions over stored events, so the page and its tests share the wording.
 import type { FieldChange, Verdict } from "./diff.ts";
 
-const usd = (n: number) => "$" + (Math.round(n * 100) % 100 === 0 ? Math.round(n).toLocaleString("en-US") : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const usd = (n: number) => {
+  // A unit price under one cent keeps its digits ($0.0004): rounded to cents it would read as $0.
+  if (n !== 0 && Math.abs(n) < 0.01) return "$" + Number(n.toPrecision(2)).toString();
+  return "$" + (Math.round(n * 100) % 100 === 0 ? Math.round(n).toLocaleString("en-US") : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+};
 const count = (n: number) => n.toLocaleString("en-US");
 
 /** "raised" or "cut", by the two numbers. */
@@ -27,15 +31,17 @@ function clause(c: FieldChange, label: (id: string) => string): { rank: number; 
   if (parts.length === 2 && parts[1] === "base price") {
     if (typeof b === "number" && typeof a === "number") return { rank: 0, text: `${moved(b, a)} ${plan} from ${usd(b)} to ${usd(a)} a month` };
     if (typeof a === "number") return { rank: 0, text: `set a price for ${plan}: ${usd(a)} a month` };
-    return { rank: 0, text: `no longer stated a price for ${plan}` };
+    // Only a price that was stated can stop being stated: a new plan without a price has no plain form.
+    return typeof b === "number" ? { rank: 0, text: `no longer stated a price for ${plan}` } : null;
   }
   if (parts.length === 3 && /^tier \d+ price$/.test(parts[2])) {
     const [pb, pa] = [tierPrice(b), tierPrice(a)];
     const tier = parts[2] === "tier 1 price" ? "" : ` (${parts[2].replace(" price", "")})`;
     const what = `${label(parts[1])} on ${plan}${tier}`;
     if (pb && pa && pb.per === pa.per) return { rank: 1, text: `${moved(pb.price, pa.price)} ${what} from ${usd(pb.price)} to ${usd(pa.price)} ${pa.per}` };
+    if (pb && pa) return { rank: 1, text: `changed the price of ${what} from ${usd(pb.price)} ${pb.per} to ${usd(pa.price)} ${pa.per}` };
     if (pa) return { rank: 1, text: `set the price of ${what}: ${usd(pa.price)} ${pa.per}` };
-    return { rank: 1, text: `no longer stated a price for ${what}` };
+    return pb ? { rank: 1, text: `no longer stated a price for ${what}` } : null;
   }
   if (parts.length === 3 && parts[2] === "included") {
     if (typeof b === "number" && typeof a === "number") return { rank: 2, text: `changed the ${label(parts[1])} included in ${plan} from ${count(b)} to ${count(a)}` };
@@ -87,12 +93,15 @@ export function effectSentence(verdict: Verdict | null, earlier: Verdict | null,
   const gap = /\$([\d,]+) per month more than the cheapest, (within|above) your tolerance of \$([\d,]+)/.exec(verdict.reason);
   const cheapest = verdict.cheapestNow && verdict.cheapestNow !== o.chosenId ? o.nameOf(verdict.cheapestNow) : null;
   const cost = verdict.chosenCostBefore != null && verdict.chosenCostNow != null && verdict.chosenCostBefore !== verdict.chosenCostNow ? ` Its cost went from ${usd(verdict.chosenCostBefore)} to ${usd(verdict.chosenCostNow)} a month.` : "";
+  // How the choice stood before this change: by the change before it, else by the verdict's own "before" (the cheapest
+  // vendor holds for sure). Unknown otherwise: the row then says how it stood after the change, without "again" or "stopped".
+  const heldBefore = earlier ? earlier.holds : verdict.cheapestBefore === o.chosenId ? true : null;
   if (verdict.holds) {
-    const lead = earlier && !earlier.holds ? `${choice} held again` : `${choice} still held`;
+    const lead = heldBefore === false ? `${choice} held again` : heldBefore === true ? `${choice} still held` : `${choice} held`;
     if (gap) return `${lead}: ${o.chosen} was $${gap[1]} a month over the cheapest${cheapest ? ` (${cheapest})` : ""}, inside ${yours} $${gap[3]} tolerance.${cost}`;
     return `${lead}: ${o.chosen} ${verdict.cheapestBefore !== o.chosenId ? "became" : "was still"} the cheapest.${cost}`;
   }
-  const lead = earlier && !earlier.holds ? `${choice} still did not hold` : `${choice} stopped holding`;
+  const lead = heldBefore === false ? `${choice} still did not hold` : heldBefore === true ? `${choice} stopped holding` : `${choice} did not hold`;
   if (verdict.chosenCostNow == null) return `${lead}: ${o.chosen} could no longer be priced at ${yours} values.`;
   if (gap) return `${lead}: ${o.chosen} was $${gap[1]} a month over the cheapest${cheapest ? ` (${cheapest})` : ""}, above ${yours} $${gap[3]} tolerance.${cost}`;
   return `${lead}: ${o.chosen} was not the cheapest${cheapest ? ` (${cheapest} was)` : ""}.${cost}`;

@@ -342,7 +342,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               )}
               <ol className="rank">
                 {ranking.ranked.map((v, i) => (
-                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={canWrite ? () => setChosen(pick === v.id ? null : v.id) : undefined} next={pick === v.id ? selectedNext : null} />
+                  <VendorRow key={v.id} v={v} src={sources[v.id]} required={required} now={now} place={i + 1} cheapest={i === 0} chosen={canWrite && pick === v.id} saved={decision?.chosen === v.id} own={canWrite} onChoose={canWrite ? () => setChosen(pick === v.id ? null : v.id) : undefined} next={pick === v.id ? selectedNext : null} />
                 ))}
               </ol>
               {ranking.unranked.length > 0 && <h3>Cannot be ranked</h3>}
@@ -387,7 +387,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               {!decision || !savedStand ? (
                 canWrite && <p className="small">Move the controls to your situation, select a vendor in the ranking, then save it here. Clay keeps the decision live: when a price changes, it is judged again under the values you saved.</p>
               ) : (
-                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => x.lastCheckedAt ?? x.snapshot?.fetchedAt ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
+                <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => (x.error ? x.snapshot?.fetchedAt : (x.lastCheckedAt ?? x.snapshot?.fetchedAt)) ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
               {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. <Link href="/connect">Connect your own agent</Link> to build one and save your own.</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
@@ -659,7 +659,7 @@ function History({ events, sources, decision, own, now, nameOf }: { events: Publ
       {events.length === 0 ? (
         <p className="muted small">No source has changed since collection.</p>
       ) : (
-        <p className="muted small history-lead">Earlier changes, newest first, and what each did to the saved choice at that time. The state now is above.</p>
+        <p className="muted small history-lead">{decision ? "Earlier changes, newest first, and what each did to the saved choice at that time. The state now is above." : "Earlier changes, newest first."}</p>
       )}
       <ul className="events">
         {shown.map((e) => {
@@ -669,7 +669,7 @@ function History({ events, sources, decision, own, now, nameOf }: { events: Publ
           const src = sources[e.sourceId];
           return (
             <li key={e.id} className={now - Date.parse(e.at) < 30000 ? "new" : undefined}>
-              <p className="what">{changeSentence(src?.name ?? e.sourceId, e.changes, (id) => lower(label(id)))}</p>
+              <p className="what">{changeSentence(src?.name ?? e.sourceId, e.changes, (id) => (/^[A-Z][a-z]/.test(label(id)) ? lower(label(id)) : label(id)))}</p>
               <p className="effect" data-effect>{effectSentence(e.verdict, earlier, { current: current(e), own, chosenId: decision?.chosen ?? "", chosen: nameOf(decision?.chosen ?? null) ?? "the chosen vendor", nameOf })}</p>
               <p className="small muted when">{ago(e.at, now)} · {sourceWords(e.trigger, !!src?.demo)}{src?.demo && <span className="badge">Demo</span>}</p>
               <details>

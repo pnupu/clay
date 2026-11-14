@@ -24,6 +24,11 @@ test("what the vendor did: a plan's price and a unit price in plain words, no fa
   assert.equal(changeSentence("Clerk", [{ path: "Pro / mfa", before: "addon", after: "included" }], label), "Clerk changed multi-factor authentication on Pro: now included.");
   assert.equal(changeSentence("Clerk", [{ path: "Pro / base price", before: null, after: 25 }], label), "Clerk set a price for Pro: $25 a month.");
   assert.equal(changeSentence("Clerk", [{ path: "Pro / base price", before: 25, after: null }], label), "Clerk no longer stated a price for Pro.");
+  // A plan that is new and has no price says nothing about a price that went away; a unit that changed is said as a change;
+  // a unit price under one cent keeps its digits.
+  assert.equal(changeSentence("Clerk", [{ path: "Enterprise / base price", before: undefined, after: null }], label), "Clerk changed 1 fact on its pricing page.");
+  assert.equal(changeSentence("Resend", [{ path: "Pro / mau / tier 1 price", before: "1 per 1", after: "0.9 per 1000" }], label), "Resend changed the price of monthly active users on Pro from $1 each to $0.90 per 1,000.");
+  assert.equal(changeSentence("Resend", [{ path: "Pro / mau / tier 1 price", before: "0.0004 per 1", after: "0.0009 per 1" }], label), "Resend raised monthly active users on Pro from $0.0004 to $0.0009 each.");
   // A raise and a cut keep their verbs; more than two changes are counted, the price first.
   assert.equal(changeSentence("Clerk", [{ path: "Pro / mau / included", before: 1, after: 2 }, { path: "Pro / mau / tier 1 price", before: "2 per 1", after: "1 per 1" }, { path: "Pro / base price", before: 20, after: 25 }], label), "Clerk raised Pro from $20 to $25 a month, and cut monthly active users on Pro from $2 to $1 each, and changed 1 more fact.");
   // A fact with no plain form is counted, never shown as a path.
@@ -44,6 +49,10 @@ test("what a change did to the saved choice then: past tense, with the numbers, 
   // It did not hold before either; no tolerance; it could not be priced.
   assert.equal(effectSentence(verdict({ holds: false, cheapestNow: "northwind", reason: "The chosen vendor was not the cheapest before this change and still is not." }), STOPPED, { ...who, current: true, own: false }), "The saved choice still did not hold: Supabase Auth was not the cheapest (Northwind Auth was).");
   assert.equal(effectSentence(verdict({ holds: false, cheapestNow: "northwind", reason: "The chosen vendor is no longer the cheapest under your assumptions." }), null, { ...who, current: true, own: true }), "Your choice stopped holding: Supabase Auth was not the cheapest (Northwind Auth was).");
+  // The first change after a choice that was not the cheapest when it was saved: no change before it says how it stood,
+  // so the row claims no "stopped" and no "still".
+  assert.equal(effectSentence(verdict({ holds: false, cheapestBefore: "northwind", cheapestNow: "northwind", reason: "The chosen vendor was not the cheapest before this change and still is not." }), null, { ...who, current: true, own: true }), "Your choice did not hold: Supabase Auth was not the cheapest (Northwind Auth was).");
+  assert.equal(effectSentence(verdict({ cheapestBefore: "northwind", reason: "The chosen vendor is now the cheapest." }), null, { ...who, current: true, own: true }), "Your choice held: Supabase Auth became the cheapest.");
   assert.equal(effectSentence(verdict({ holds: false, chosenCostNow: null, reason: "The chosen vendor can no longer be priced under your assumptions." }), null, { ...who, current: true, own: true }), "Your choice stopped holding: Supabase Auth could no longer be priced at your values.");
   // Every event says its effect: an old one without a stored verdict, and one judged for a choice that was replaced.
   assert.equal(effectSentence(null, null, { ...who, current: false, own: false }), "Not judged at the time: no choice was saved then.");
