@@ -8,6 +8,7 @@
 // A playground with no owner (every playground created before accounts existed) belongs to the admin.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { isHosted } from "./access.ts";
 import { DOMAIN } from "./domain.ts";
 import type { Budget } from "./store.ts";
 
@@ -80,7 +81,8 @@ export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Acto
   const own = Object.values(playgrounds).filter((p) => ownerOf(p) === a.userId).length;
   return cap > 0 && own >= cap ? `You have reached the limit of ${cap} playgrounds per person. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.` : null;
 }
-export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC, and the playgrounds still work: moving the controls needs no web request.`;
+// No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").
+export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC, and the playgrounds still work: moving the controls needs no web request`;
 
 // Agent keys: "clay_" and 32 random bytes. Only the SHA-256 hash is stored; the key is shown once.
 const KEY_PREFIX = "clay_";
@@ -142,7 +144,7 @@ export function keyDecision(acc: Pick<Account, "checkedAt">, now: number, verdic
 // with them. A public app gives no agent key to an account whose only verified addresses are test addresses, unless
 // CLAY_ALLOW_TEST_ACCOUNTS=1 (the team's own local runs). The addresses are read from Clerk when needed and never stored.
 // Clerk test phone numbers are +1 (XXX) 555-0100 to 555-0199, with the same fixed code.
-export const isTestAddress = (address: string) => (address.includes("@") ? /\+clerk_test@/i.test(address) : /^1?\d{3}55501\d{2}$/.test(address.replace(/\D/g, "")));
+export const isTestAddress = (address: string) => (address.includes("@") ? /\+clerk_test@/i.test(address) : /^1\d{3}55501\d{2}$/.test(address.replace(/\D/g, "")));
 /** Does this account have verified email addresses or phone numbers, all of them Clerk test ones? */
 export const onlyTestAddresses = (emails: { address: string; verified: boolean }[]): boolean => {
   const verified = emails.filter((e) => e.verified);
@@ -150,4 +152,6 @@ export const onlyTestAddresses = (emails: { address: string; verified: boolean }
 };
 /** May an account with only test addresses hold an agent key? Only off a public deployment, or when explicitly allowed. */
 export const testAccountsAllowed = (hosted: boolean, env: Record<string, string | undefined> = process.env) => !hosted || env.CLAY_ALLOW_TEST_ACCOUNTS === "1";
+/** The one test-account rule, for the key check and the Clerk webhook: only test identifiers, on a public app, not allowed. */
+export const refusesTestAccount = (ids: { address: string; verified: boolean }[]): boolean => onlyTestAddresses(ids) && !testAccountsAllowed(isHosted());
 export const TEST_ACCOUNT_MESSAGE = "Clay gives no agent key to an account whose only email address is a Clerk test address (+clerk_test). Sign up with an email address you own";

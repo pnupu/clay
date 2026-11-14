@@ -124,6 +124,7 @@ test("Clerk test accounts: no agent key on a public app unless explicitly allowe
   assert.equal(onlyTestAddresses([v("+1 (201) 555-0123")]), true);
   assert.equal(onlyTestAddresses([v("+12015550199"), v("ann+clerk_test@example.com")]), true);
   assert.equal(onlyTestAddresses([v("+12015550200")]), false);
+  assert.equal(onlyTestAddresses([v("+45 15 55 01 23")]), false); // a real Danish number has the same last ten digits pattern
   assert.equal(onlyTestAddresses([v("ann2015550123@example.com")]), false);
   assert.equal(onlyTestAddresses([v("+12015550123"), v("+358401234567")]), false);
   assert.equal(testAccountsAllowed(true, {}), false);

@@ -1,7 +1,7 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { hasAccess, isHosted } from "@/lib/access";
-import { bindActor, canRead, canWrite, guessLimiter, keyDecision, looksLikeAgentKey, needsCheck, onlyTestAddresses, testAccountsAllowed, userOfKey, VISITOR, type Actor, type ClerkVerdict } from "@/lib/accounts";
+import { bindActor, canRead, canWrite, guessLimiter, keyDecision, looksLikeAgentKey, needsCheck, refusesTestAccount, userOfKey, VISITOR, type Actor, type ClerkVerdict } from "@/lib/accounts";
 import { NotFound } from "@/lib/pipeline";
 import { load, publicBase, publicState, update } from "@/lib/store";
 
@@ -25,7 +25,7 @@ export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
     const u = await Promise.race([(await clerkClient()).users.getUser(userId), timeout]);
     if (u.banned) return "gone";
     const ids = [...u.emailAddresses.map((e) => ({ address: e.emailAddress, verified: e.verification?.status === "verified" })), ...u.phoneNumbers.map((p) => ({ address: p.phoneNumber, verified: p.verification?.status === "verified" }))];
-    return onlyTestAddresses(ids) && !testAccountsAllowed(isHosted()) ? "test" : "ok";
+    return refusesTestAccount(ids) ? "test" : "ok";
   } catch (e) {
     return (e as { status?: unknown })?.status === 404 ? "gone" : "unknown";
   } finally {
@@ -38,22 +38,23 @@ export async function clerkVerdict(userId: string): Promise<ClerkVerdict> {
  * gone. Parallel requests of one person share one Clerk call. After Clerk failed to answer, this instance does not ask
  * again for 60 seconds (the grace rule decides meanwhile), so an outage does not make every request wait 5 seconds.
  */
-const pending = new Map<string, Promise<ClerkVerdict>>();
+const pending = new Map<string, Promise<"ok" | "revoked" | "unavailable">>();
 const unreachableUntil = new Map<string, number>();
 async function confirmKey(userId: string, checkedAt: string | null | undefined): Promise<"ok" | "revoked" | "unavailable"> {
-  const now = Date.now();
-  if (!needsCheck({ checkedAt }, now)) return "ok";
-  let verdict: ClerkVerdict = "unknown";
-  if (!((unreachableUntil.get(userId) ?? 0) > now)) {
-    let ask = pending.get(userId);
-    if (!ask) {
-      ask = clerkVerdict(userId).finally(() => pending.delete(userId));
-      pending.set(userId, ask);
-    }
-    verdict = await ask;
-    if (verdict === "unknown") unreachableUntil.set(userId, now + 60_000);
-    else unreachableUntil.delete(userId);
+  if (!needsCheck({ checkedAt }, Date.now())) return "ok";
+  let run = pending.get(userId);
+  if (!run) {
+    run = checkKey(userId, checkedAt).finally(() => pending.delete(userId));
+    pending.set(userId, run);
   }
+  return run;
+}
+/** One check: one Clerk call and at most one store write, shared by every request that waits for it. */
+async function checkKey(userId: string, checkedAt: string | null | undefined): Promise<"ok" | "revoked" | "unavailable"> {
+  const now = Date.now();
+  const verdict: ClerkVerdict = (unreachableUntil.get(userId) ?? 0) > now ? "unknown" : await clerkVerdict(userId);
+  if (verdict === "unknown") unreachableUntil.set(userId, now + 60_000);
+  else unreachableUntil.delete(userId);
   const d = keyDecision({ checkedAt }, now, verdict);
   if (d.revoke || d.checkedAt)
     await update((s) => {
@@ -99,9 +100,11 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
     // auth() throws where the Clerk proxy did not run (proxy.ts leaves out the MCP, webhook and preview frame routes).
     // With the request at hand, read the session cookie directly: this never redirects, and an expired session counts
     // as signed out. The browser keeps the session fresh while the page around the frame is open.
-    if (!req) return { actor: VISITOR, bad: null };
+    // Only the preview frame route reads the cookie this way; the MCP endpoint takes agent keys, never a browser session.
+    if (!req || !/^\/p\/[^/]+\/frame$/.test(new URL(req.url).pathname)) return { actor: VISITOR, bad: null };
     try {
-      const state = await (await clerkClient()).authenticateRequest(req);
+      const base = publicBase();
+      const state = await (await clerkClient()).authenticateRequest(req, base ? { authorizedParties: [base] } : {});
       const userId = state.isAuthenticated ? state.toAuth().userId : null;
       return { actor: userId ? { kind: "user", userId, via: "session" } : VISITOR, bad: null };
     } catch {
@@ -113,12 +116,11 @@ export async function identify(h: { get(name: string): string | null }, req?: Re
 /** The caller of the page being rendered (server components): the admin's owner cookie, a Clerk session, or a visitor. */
 export const viewer = async (): Promise<Actor> => (await identify(await headers())).actor;
 
-/** May this request open the playground, and change it? `null` when the playground does not exist. `bad`: see badKey(). */
-export async function access(req: Request, pg: string): Promise<{ read: boolean; write: boolean; bad: Bad } | null> {
-  const p = (await load()).playgrounds[pg];
-  if (!p) return null;
+/** May this request open the playground, and change it? Both false when it does not exist. `bad`: see badKey(), also for an unknown id. */
+export async function access(req: Request, pg: string): Promise<{ read: boolean; write: boolean; bad: Bad }> {
   const { actor, bad } = await identify(req.headers, req);
-  return { read: canRead(actor, p, pg), write: canWrite(actor, p), bad };
+  const p = (await load()).playgrounds[pg];
+  return { read: !!p && canRead(actor, p, pg), write: !!p && canWrite(actor, p), bad };
 }
 
 /** The answer to a bearer token that did not identify anyone, or null. Also for the read routes, so an agent learns that its key failed. */

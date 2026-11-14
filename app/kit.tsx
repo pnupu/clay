@@ -17,7 +17,13 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  */
 export default function Kit({ id, title, state, canWrite }: { id: string; title: string; state: KitState; canWrite: boolean }) {
   // The https logo hosts that the frame's img-src allows (lib/frame.ts): the preview can send requests there.
-  const logoHosts = (state.brandData?.logos ?? []).filter((l) => /^https:\/\//.test(l.url)).length;
+  const logoHosts = (state.brandData?.logos ?? []).filter((l) => {
+    try {
+      return new URL(l.url).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }).length;
   const api = `/api/p/${id}`;
   const { kit } = state;
   const [values, setValues] = useState<Values>(() => valuesNow(state));

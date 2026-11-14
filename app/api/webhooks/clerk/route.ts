@@ -1,7 +1,6 @@
 import { verifyWebhook } from "@clerk/nextjs/webhooks";
 import type { NextRequest } from "next/server";
-import { isHosted } from "@/lib/access";
-import { onlyTestAddresses, testAccountsAllowed } from "@/lib/accounts";
+import { refusesTestAccount } from "@/lib/accounts";
 import { update } from "@/lib/store";
 
 /**
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
   // A ban, or an update that leaves only Clerk test addresses on a public app, removes the key (as the 10-minute check would).
   const d = event.data as { banned?: unknown; email_addresses?: { email_address?: string; verification?: { status?: string } | null }[]; phone_numbers?: { phone_number?: string; verification?: { status?: string } | null }[] };
   const ids = [...(d.email_addresses ?? []).map((e) => ({ address: String(e.email_address ?? ""), verified: e.verification?.status === "verified" })), ...(d.phone_numbers ?? []).map((p) => ({ address: String(p.phone_number ?? ""), verified: p.verification?.status === "verified" }))];
-  if (id && event.type === "user.updated" && (d.banned === true || (onlyTestAddresses(ids) && !testAccountsAllowed(isHosted()))))
+  if (id && event.type === "user.updated" && (d.banned === true || refusesTestAccount(ids)))
     await update((s) => void (s.users[id] && (s.users[id] = { ...s.users[id], keyHash: null, keyCreatedAt: null, checkedAt: null })));
   return new Response(null, { status: 204 });
 }
