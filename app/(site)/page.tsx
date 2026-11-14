@@ -4,6 +4,7 @@ import { kindLabel, recordPath } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
 import { nonOwnerView } from "@/lib/report";
 import type { PricingModel } from "@/lib/domain";
+import { crossovers } from "@/lib/pricing";
 import { load, type Playground } from "@/lib/store";
 import Kit from "@/app/kit";
 import HeroRanking from "./hero-ranking";
@@ -25,24 +26,23 @@ const forVisitor = (p: Playground) => nonOwnerView(p).kit!;
 const NUMBER = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"];
 const Arrow = () => <svg className="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path className="m-arrow__stem" d="M1 6h8" /><path className="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5" /></svg>;
 
-/** What the hero's ranking needs of a price example: the read price models, the names, the first metric a page prices. Null when it cannot rank two vendors. */
+/**
+ * What the hero's ranking needs of a price example: the read price models of its real vendors (a demo vendor is fictional
+ * and stays out of the hero), their names, and one control. The control is the first metric along which the cheapest
+ * vendor changes inside its range, so that moving it changes who is on top; else the first metric a page prices.
+ * Null when two real vendors cannot be ranked.
+ */
 function priceHeroOf(example: [string, AnyPlayground] | undefined) {
   if (!example || example[1].kit) return null;
   const [id, p] = example;
-  const read = Object.entries(nonOwnerView(p).sources ?? {}).filter(([, s]) => s.snapshot);
-  const metric = (p.domain.metrics ?? []).find((m) => read.some(([, s]) => s.snapshot!.model.plans?.some((x) => x.meters?.some((y) => y.metric === m.id))));
-  if (read.length < 2 || !metric) return null;
+  const read = Object.entries(nonOwnerView(p).sources ?? {}).filter(([, s]) => s.snapshot && !s.demo);
+  const priced = (p.domain.metrics ?? []).filter((m) => read.some(([, s]) => s.snapshot!.model.plans?.some((x) => x.meters?.some((y) => y.metric === m.id))));
+  if (read.length < 2 || !priced.length) return null;
+  const usage = Object.fromEntries(p.domain.metrics.map((m) => [m.id, m.initial]));
+  const models = Object.fromEntries(read.map(([k, s]) => [k, s.snapshot!.model])) as Record<string, PricingModel | null>;
+  const metric = priced.find((m) => crossovers(models, { usage, required: [] }, m.id, m.min, m.max).length > 0) ?? priced[0];
   const times = read.map(([, s]) => s.snapshot!.fetchedAt).sort();
-  return {
-    id,
-    question: p.domain.question,
-    metric,
-    usage: Object.fromEntries(p.domain.metrics.map((m) => [m.id, m.initial])),
-    models: Object.fromEntries(read.map(([k, s]) => [k, s.snapshot!.model])) as Record<string, PricingModel | null>,
-    names: Object.fromEntries(read.map(([k, s]) => [k, s.name])),
-    readAt: times[0] ?? null,
-    byTeam: !p.owner,
-  };
+  return { id, question: p.domain.question, metric, usage, models, names: Object.fromEntries(read.map(([k, s]) => [k, s.name])), readAt: times[0] ?? null, byTeam: !p.owner };
 }
 
 export default async function Home() {

@@ -122,7 +122,8 @@ html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8))
 .rank2__control output { font: 500 16px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
 .rank2__track { grid-column: 1 / -1; position: relative; }
 .rank2__track input { display: block; width: 100%; height: 32px; margin: 0; accent-color: var(--p-action); cursor: pointer; }
-.rank2__track i { position: absolute; top: calc(50% - 9px); width: 2px; height: 18px; margin-left: -1px; background: var(--p-ink); border-radius: 1px; pointer-events: none; }
+.rank2__track i { position: absolute; top: calc(50% - 7px); width: 2px; height: 14px; margin-left: -1px; background: var(--c-line-2); border-radius: 1px; pointer-events: none; }
+.rank2__track i[data-lead] { top: calc(50% - 11px); height: 22px; background: var(--p-ink); }
 .rank2__flip { grid-column: 1 / -1; }
 .rank2__rows { list-style: none; margin: 0; padding: 0; display: grid; }
 .rank2__rows > li { display: grid; grid-template-columns: minmax(96px, 22%) minmax(0, 1fr) auto; gap: var(--s-4); align-items: center; padding: 10px 0; border-top: 1px solid var(--c-line); background: var(--c-pane); }

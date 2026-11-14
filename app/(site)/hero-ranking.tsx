@@ -46,7 +46,20 @@ export default function HeroRanking({ id, question, metric, usage, models, names
   const first = ranking.ranked[0];
   const next = flips.find((c) => c.at > value);
   const widest = Math.max(1, ...ranking.ranked.map((v) => v.best!.cost));
-  const becomesCheapest = (at: number) => cheapestFlips.some((c) => Math.abs(c.at - at) <= at * 0.03);
+  // One line under the slider: first where the cheapest vendor changes (ahead of the value, else behind it), and only
+  // when it never changes, where two other vendors change places.
+  const name = (id: string | null) => (id ? (names[id] ?? id) : "no vendor");
+  const leadAhead = cheapestFlips.find((c) => c.at > value);
+  const leadBehind = [...cheapestFlips].reverse().find((c) => c.at <= value);
+  const flipLine = leadAhead
+    ? `The cheapest changes at ${num(leadAhead.at)} ${metric.unit}: ${name(leadAhead.to)} takes over from ${name(leadAhead.from)}.`
+    : leadBehind
+      ? `Below ${num(leadBehind.at)} ${metric.unit} the cheapest is ${name(leadBehind.from)}.`
+      : flips.length === 0
+        ? `The order stays the same from ${num(metric.min)} to ${num(metric.max)} ${metric.unit}.`
+        : next
+          ? `The order changes at about ${num(next.at)} ${metric.unit}: ${name(next.up)} becomes cheaper than ${name(next.down)}.`
+          : `Below about ${num(flips[flips.length - 1].at)} ${metric.unit} the order is another: ${name(flips[flips.length - 1].down)} is cheaper than ${name(flips[flips.length - 1].up)} there.`;
   const unit = lower(metric.label);
   return (
     <div className="rank2" data-price-hero={id}>
@@ -60,16 +73,11 @@ export default function HeroRanking({ id, question, metric, usage, models, names
         <output htmlFor={`hero-${metric.id}`}>{num(value)}</output>
         <div className="rank2__track">
           <input id={`hero-${metric.id}`} type="range" min={0} max={1000} value={pos} aria-valuetext={`${num(value)} ${metric.unit}`} onChange={(e) => { setPos(Number(e.target.value)); setTouched(true); }} />
-          {/* A mark on the track at each value where the order changes. */}
-          {flips.map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at about ${num(c.at)} ${metric.unit}`} />)}
+          {/* Marks on the track: a strong one where the cheapest vendor changes, a light one where two others change places. */}
+          {cheapestFlips.map((c) => <i key={`lead-${c.at}`} data-lead style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The cheapest changes at ${num(c.at)} ${metric.unit}`} />)}
+          {flips.filter((c) => !cheapestFlips.some((l) => Math.abs(l.at - c.at) <= c.at * 0.03)).map((c) => <i key={c.at} style={{ left: `${toPos(metric, c.at) / 10}%` }} title={`The order changes at about ${num(c.at)} ${metric.unit}`} />)}
         </div>
-        <p className="rank2__flip">
-          {flips.length === 0
-            ? `The order stays the same from ${num(metric.min)} to ${num(metric.max)} ${metric.unit}.`
-            : next
-              ? `The order changes at about ${num(next.at)} ${metric.unit}: ${names[next.up] ?? next.up} ${becomesCheapest(next.at) ? "becomes the cheapest" : `becomes cheaper than ${names[next.down] ?? next.down}`}.`
-              : `Below about ${num(flips[flips.length - 1].at)} ${metric.unit} the order is another: ${names[flips[flips.length - 1].down] ?? flips[flips.length - 1].down} is cheaper than ${names[flips[flips.length - 1].up] ?? flips[flips.length - 1].up} there.`}
-        </p>
+        <p className="rank2__flip">{flipLine}</p>
       </div>
       <ol className="rank2__rows" ref={list}>
         {ranking.ranked.map((v, i) => (
