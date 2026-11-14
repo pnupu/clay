@@ -290,7 +290,7 @@ A page of data that an agent styles by hand comes out in a typeface, sizes and c
 
 The parts (class names):
 - p.lead: the answer, one sentence, first on the page. It changes with the controls.
-- table with th and td. Class "num" on a th or td of numbers: right-aligned. tr.pick: the option the person chose (the value of their select). tr.out: an option outside their limits. Class "stack" on the table and data-label="<column name>" on each td: on a phone every row is then a card of its own. A table that must stay a table on a phone goes in <div class="scroll">.
+- table with th and td. Class "num" on a th or td of numbers: right-aligned, and a number in a td stays on one line (so "num" is for a number with its unit, not for a phrase); the head of the column may wrap. tr.pick: the option the person chose (the value of their select). tr.out: an option outside their limits. Class "stack" on the table and data-label="<column name>" on each td: on a phone every row is then a card of its own. A table that must stay a table on a phone goes in <div class="scroll">.
 - div.cards with div.card in it, an h3 for the name of each: one card per option, when an option has more to say than a row holds. .card.pick and .card.out as for rows.
 - span.badge, plain or with "ok", "warn", "bad" or "pick": a mark next to a name ("Cheapest inside your limits").
 - div.stat: one number with its label, <div class="stat"><span>Per month</span><b>$218</b></div>.

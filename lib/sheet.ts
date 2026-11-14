@@ -45,10 +45,11 @@ table { width: calc(100% + 20px); margin-left: -10px; margin-right: -10px; borde
 .scroll > table { width: 100%; margin-left: 0; margin-right: 0; }
 th { text-align: left; font-size: 13px; line-height: 1.3; font-weight: 500; color: var(--muted); padding: 0 10px 6px; vertical-align: bottom; border-bottom: 1px solid var(--line-2); }
 td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-/* A number stays on one line; the head of its column may wrap, so five columns fit a frame of about 500 px.
-   Both rules weigh one class, so a line of view.css for .num still wins. */
+/* A number stays on one line; a th may wrap (the head of a column, with or without a thead), so five columns fit a
+   frame of about 500 px. Both rules weigh one class and the second comes later, so it wins over the first, and a
+   line of view.css for .num wins over both. */
 .num { text-align: right; white-space: nowrap; }
-:where(thead th).num { white-space: normal; }
+:where(th).num { white-space: normal; }
 tr.pick > td { background: var(--accent-bg); font-weight: 600; }
 tr.pick > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 tr.out > td, .card.out { color: var(--muted); }
