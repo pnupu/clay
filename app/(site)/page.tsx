@@ -4,8 +4,10 @@ import { kindLabel, recordPath } from "@/lib/card";
 import { DOMAIN } from "@/lib/domain";
 import { initialValues, renderOutputs } from "@/lib/kit";
 import { nonOwnerView } from "@/lib/report";
+import type { PricingModel } from "@/lib/domain";
 import { load, type Playground } from "@/lib/store";
 import Kit from "@/app/kit";
+import HeroRanking from "./hero-ranking";
 import Manage from "@/app/manage";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,26 @@ const forVisitor = (p: Playground) => nonOwnerView(p).kit!;
 const NUMBER = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"];
 const Arrow = () => <svg className="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path className="m-arrow__stem" d="M1 6h8" /><path className="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5" /></svg>;
 
+/** What the hero's ranking needs of a price example: the read price models, the names, the first metric a page prices. Null when it cannot rank two vendors. */
+function priceHeroOf(example: [string, AnyPlayground] | undefined) {
+  if (!example || example[1].kit) return null;
+  const [id, p] = example;
+  const read = Object.entries(nonOwnerView(p).sources ?? {}).filter(([, s]) => s.snapshot);
+  const metric = (p.domain.metrics ?? []).find((m) => read.some(([, s]) => s.snapshot!.model.plans?.some((x) => x.meters?.some((y) => y.metric === m.id))));
+  if (read.length < 2 || !metric) return null;
+  const times = read.map(([, s]) => s.snapshot!.fetchedAt).sort();
+  return {
+    id,
+    question: p.domain.question,
+    metric,
+    usage: Object.fromEntries(p.domain.metrics.map((m) => [m.id, m.initial])),
+    models: Object.fromEntries(read.map(([k, s]) => [k, s.snapshot!.model])) as Record<string, PricingModel | null>,
+    names: Object.fromEntries(read.map(([k, s]) => [k, s.name])),
+    readAt: times[0] ?? null,
+    byTeam: !p.owner,
+  };
+}
+
 export default async function Home() {
   const me = await viewer();
   const playgrounds = (await load()).playgrounds as Record<string, AnyPlayground>;
@@ -31,8 +53,10 @@ export default async function Home() {
   // The featured example first (the admin chooses it), then the newest first. The first one runs in the hero.
   const examples = orderExamples(playgrounds);
   const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
-  // The hero runs a preview playground: the featured example when it is one, else the first preview example. A price
-  // playground is a full page of its own and has no place in the hero's collage.
+  // The hero. When the first example (the one the operator features) is a price decision with read prices, the hero is
+  // its ranking on live web data, and the first preview example follows as the second thing a visitor meets. Otherwise
+  // the hero is that preview example, as before.
+  const priceHero = priceHeroOf(examples[0]);
   const hero = examples.find(([, p]) => p.kit) ?? null;
   const first = hero?.[0];
   const firstKit = hero?.[1].kit;
@@ -77,17 +101,38 @@ export default async function Home() {
               <h1 id="hero-h">Playgrounds your own agent builds</h1>
               <p className="hero__lead">Say it to Claude Code or Codex:</p>
               <p className="say">build me a playground for …</p>
-              <p className="hero__lead">It builds a page where your real component runs under a few controls. One command connects it.</p>
+              <p className="hero__lead">It builds a page where the real thing runs under a few controls: a price choice read live from the vendors’ own pages, your component, an animation. One command connects it.</p>
               <div className="btn-row">
                 <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>
                 <a className="btn btn--secondary" href="#examples">See the examples</a>
               </div>
             </div>
-            <div className="span-7 start-6 live ui">
-              {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />}
-            </div>
+            {priceHero ? (
+              <div className="span-7 start-6 ui"><HeroRanking {...priceHero} /></div>
+            ) : (
+              <div className="span-7 start-6 live ui">
+                {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />}
+              </div>
+            )}
           </div></div>
         </section>
+
+        {priceHero && hero && (
+          <section className="section feel" id="feel" aria-labelledby="feel-h">
+            <div className="wrap">
+              <div className="grid grid--top">
+                <div className="span-4 feel__words">
+                  <h2 id="feel-h">Or shape how a component feels</h2>
+                  <p className="t-lead">The same works for a look or a motion. Your agent builds the real component with a few controls. Drag the card, let go, then move a slider.</p>
+                  <a className="link" href={`/p/${hero[0]}`}>Open this example</a>
+                </div>
+                <div className="span-8 start-5 live ui">
+                  <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {yoursFirst && yoursSection}
 

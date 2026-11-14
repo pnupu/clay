@@ -120,3 +120,39 @@ html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8))
    prints from real playgrounds (titles, control names, the text an agent would write), square brackets are real. */
 .clay [data-placeholder], .live [data-placeholder] { outline: none !important; }
 :is(.shot, .gallery, .mine, .asked, .nav__menu, .rank2) [data-placeholder], :is(.shot, .gallery, .mine, .asked, .nav__menu)[data-placeholder] { outline: none !important; }
+
+/* ---- The hero's price ranking (hero-ranking.tsx): Clay's own UI, as tall as its rows. */
+.rank2 { display: grid; gap: var(--s-4); padding: var(--s-6); background: var(--c-pane); border: 1px solid var(--c-line); border-radius: var(--r-md); color: var(--p-ink); font: 16px/1.5 var(--font-text); }
+.rank2 p { margin: 0; }
+.rank2__label, .rank2__note, .rank2__flip { font-size: 14px; color: var(--p-muted); }
+.rank2__question { font-weight: 500; }
+.rank2__answer { font: var(--display-weight) clamp(22px, 1.2vw + 12px, 30px)/1.2 var(--font-display); letter-spacing: -0.02em; text-wrap: balance; min-height: 2.4em; }
+.rank2__answer b { font-weight: 500; }
+.rank2__control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--s-4); align-items: baseline; }
+.rank2__control label { font-weight: 500; }
+.rank2__control output { font: 500 16px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.rank2__track { grid-column: 1 / -1; position: relative; }
+.rank2__track input { display: block; width: 100%; height: 32px; margin: 0; accent-color: var(--p-action); cursor: pointer; }
+.rank2__track i { position: absolute; top: calc(50% - 9px); width: 2px; height: 18px; margin-left: -1px; background: var(--p-ink); border-radius: 1px; pointer-events: none; }
+.rank2__flip { grid-column: 1 / -1; }
+.rank2__rows { list-style: none; margin: 0; padding: 0; display: grid; }
+.rank2__rows > li { display: grid; grid-template-columns: minmax(96px, 22%) minmax(0, 1fr) auto; gap: var(--s-4); align-items: center; padding: 10px 0; border-top: 1px solid var(--c-line); background: var(--c-pane); }
+.rank2__name { font-weight: 500; }
+.rank2__bar { height: 12px; border-radius: 2px; background: color-mix(in oklab, var(--p-ink) 7%, transparent); overflow: hidden; }
+.rank2__bar i { display: block; height: 100%; border-radius: 2px; background: color-mix(in oklab, var(--p-ink) 42%, var(--c-pane)); transition: width 0.25s var(--ease, ease); }
+.rank2__rows > li[data-cheapest] .rank2__bar i { background: var(--p-action); }
+.rank2__cost { font: 500 17px/1 var(--font-mono); font-variant-numeric: tabular-nums; min-width: 9ch; text-align: right; }
+.rank2__cost small { font: 13px/1 var(--font-text); color: var(--p-muted); }
+.rank2__note a { text-decoration: underline; text-decoration-color: var(--c-line-2); text-underline-offset: 3px; white-space: nowrap; }
+@media (max-width: 639px) {
+  .rank2 { padding: var(--s-4); gap: var(--s-3); }
+  .rank2__track input { height: 44px; }
+  .rank2__rows > li { grid-template-columns: minmax(0, 1fr) auto; gap: 4px var(--s-3); }
+  .rank2__bar { grid-column: 1 / -1; grid-row: 2; }
+  .rank2__note a { display: inline-flex; min-height: 44px; align-items: center; }
+}
+@media (prefers-reduced-motion: reduce) { .rank2__bar i { transition: none; } }
+
+/* ---- The second thing a visitor meets: a preview playground, beside its words. */
+.feel__words { display: grid; gap: var(--s-5); align-content: start; justify-items: start; }
+@media (max-width: 1023px) { .feel .live { margin-top: var(--s-7); } }

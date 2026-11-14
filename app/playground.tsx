@@ -8,6 +8,8 @@ import { reasonOf, recordPath } from "@/lib/card";
 import { changeSentence, effectSentence, fold, sourceWords } from "@/lib/history";
 import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { commitNumber, liveNumber } from "@/lib/numberbox";
+import { isCubic, isLog, toPos, toValue } from "./scale";
+import { useFlip } from "./flip";
 import type { Exploration, PublicState } from "@/lib/store";
 
 type Src = PublicState["sources"][string];
@@ -34,19 +36,6 @@ function ago(iso: string | null | undefined, now: number) {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86400)} d ago`;
 }
-
-// ---- Slider scales: a wide range needs a non-linear slider. Values always stay inside [min, max].
-const isLog = (m: MetricDef) => m.min > 0 && m.max / m.min > 50;
-const isCubic = (m: MetricDef) => m.min === 0 && m.max > 1000;
-const round2 = (x: number) => {
-  if (x < 100) return Math.round(x);
-  const p = Math.pow(10, Math.floor(Math.log10(x)) - 1);
-  return Math.round(x / p) * p;
-};
-const clamp = (m: MetricDef, v: number) => Math.min(m.max, Math.max(m.min, v));
-// A small range keeps every whole number; a large one moves in steps of two significant digits (the number field takes exact values).
-const toValue = (m: MetricDef, pos: number) => clamp(m, (m.max <= 1000 ? Math.round : round2)(isLog(m) ? m.min * Math.pow(m.max / m.min, pos / 1000) : isCubic(m) ? m.max * Math.pow(pos / 1000, 3) : m.min + ((m.max - m.min) * pos) / 1000));
-const toPos = (m: MetricDef, v: number) => (isLog(m) ? (1000 * Math.log(clamp(m, v) / m.min)) / Math.log(m.max / m.min) : isCubic(m) ? 1000 * Math.cbrt(clamp(m, v) / m.max) : (1000 * (clamp(m, v) - m.min)) / (m.max - m.min));
 
 async function call(path: string, method = "GET", body?: unknown): Promise<PublicState & { error?: string | null }> {
   const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
