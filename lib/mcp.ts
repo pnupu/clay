@@ -20,14 +20,16 @@ import { decisionRecord, guardDecision, priceGaps, recheckFile, recheckVerdict }
  * (Claude Code and Codex both), and a cut call looks like a failure although the server finished. So every tool answers
  * well inside that, and says "running" when the reads go on.
  */
-const WAIT_MS = Number(process.env.CLAY_TOOL_WAIT_MS ?? 20_000);
+// A value that is not a number of milliseconds (a typo in the environment) counts as not set: NaN would make every wait 1 ms.
+const waitMs = (value: string | undefined, standard: number) => (value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : standard);
+const WAIT_MS = waitMs(process.env.CLAY_TOOL_WAIT_MS, 20_000);
 /**
  * How long a create or a revise waits for its own web reads (pricing pages, data.web) before it answers. The person waits
  * for the URL, and the page fills in by itself, so the call answers at once: a read that is already done or cached still
  * answers "done" in one call, and every other build says "running" up to 17 seconds sooner. read_playground and
  * recheck_playground keep WAIT_MS; so does the brand of a preview whose web sources are read (firstAnswer below).
  */
-const FIRST_WAIT_MS = Math.min(WAIT_MS, Number(process.env.CLAY_FIRST_WAIT_MS ?? 3_000));
+const FIRST_WAIT_MS = Math.min(WAIT_MS, waitMs(process.env.CLAY_FIRST_WAIT_MS, 3_000));
 
 /** The largest request the MCP endpoint reads: one spec at its size limit plus the JSON-RPC envelope. */
 export const MAX_MCP_BYTES = MAX_SPEC_BYTES + 20_000;
