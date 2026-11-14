@@ -30,7 +30,8 @@
 .live [data-control] label, .live label.check { font-size: 14px; color: var(--p-ink); }
 .live input[type="range"] { accent-color: var(--p-action); width: 100%; height: 24px; margin: 0; }
 /* In the hero the value is text and the two small buttons are left out: the exact-value box, Copy and the reset are on the example's own page. */
-.live input[type="number"], .live .k-root button { display: none; }
+.live input[type="number"], .live .k-controls > button, .live .k-out button { display: none; }
+.live .k-controls [data-control]:nth-of-type(n + 5) { display: none; }
 .live .k-value { display: block; font: 500 14px/1 var(--font-mono); text-align: right; }
 .live label.check { display: flex; gap: 8px; align-items: center; min-height: 28px; }
 .live label.check input { accent-color: var(--p-action); width: 16px; height: 16px; margin: 0; }
@@ -111,6 +112,8 @@ main > .section.doc > .wrap { height: auto; }
 /* The kit's script outlines any [bracketed] text as a forgotten placeholder. In Clay's own blocks square brackets are
    real code (a TOML table name, an array), so no outline there. */
 .clay [data-placeholder], .live [data-placeholder] { outline: none !important; }
+/* The same for what the page prints from real playgrounds: titles, control names, the text an agent would write. */
+:is(.shot, .gallery, .mine, .asked, .nav__menu) [data-placeholder], :is(.shot, .gallery, .mine, .asked, .nav__menu)[data-placeholder] { outline: none !important; }
 
 /* A screen shorter or narrower than the one the sections are cut for (a 13-inch laptop, a tablet): a section keeps its
    one screen as the least height and grows with what it holds, so nothing ever lies on the next section. At 1440x900

@@ -89,7 +89,9 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     const io = new IntersectionObserver(([e]) => {
       stageSeen.current = e.isIntersecting;
       if (e.isIntersecting) setUnseenChange(false);
-    }, { threshold: 0.15 });
+      // Seen: any part of the preview is in the middle half of the screen (a share of its own height would never be
+      // reached by a preview several screens tall).
+    }, { rootMargin: "-25% 0px -25% 0px", threshold: 0 });
     io.observe(el);
     return () => io.disconnect();
   }, []);
@@ -160,9 +162,9 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     moved.current = true;
   };
   const set = (c: Control, raw: unknown) => {
-    if (!stageSeen.current) setUnseenChange(true);
     const v = cleanValue(c, raw);
     if (v === undefined || v === values[c.id]) return;
+    if (!stageSeen.current) setUnseenChange(true);
     note(c, v);
     setValues({ ...values, [c.id]: v });
   };
@@ -188,6 +190,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
 
   const reset = () => {
     for (const c of kit.controls) if (c.initial !== values[c.id]) note(c, c.initial);
+    if (!stageSeen.current && !atStart) setUnseenChange(true);
     setValues(initialValues(kit.controls));
   };
   const settle = async () => {

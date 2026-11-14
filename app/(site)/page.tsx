@@ -7,7 +7,6 @@ import { nonOwnerView } from "@/lib/report";
 import { load, type Playground } from "@/lib/store";
 import Kit from "@/app/kit";
 import Manage from "@/app/manage";
-import PricePlayground from "@/app/playground";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +31,15 @@ export default async function Home() {
   // The featured example first (the admin chooses it), then the newest first. The first one runs in the hero.
   const examples = orderExamples(playgrounds);
   const yours = me.kind === "visitor" ? [] : all.filter(([, p]) => canWrite(me, p));
-  const first = examples[0]?.[0];
-  const firstKit = examples[0]?.[1].kit;
+  // The hero runs a preview playground: the featured example when it is one, else the first preview example. A price
+  // playground is a full page of its own and has no place in the hero's collage.
+  const hero = examples.find(([, p]) => p.kit) ?? null;
+  const first = hero?.[0];
+  const firstKit = hero?.[1].kit;
   // The text the agent would write for the hero's example at its start values: step 3 shows it.
   const written = firstKit ? Object.values(renderOutputs(firstKit.kit, initialValues(firstKit.kit.controls)))[0] : null;
-  const sliders = (firstKit?.kit.controls ?? []).filter((c) => c.type === "slider").slice(0, 3);
-  // A price example whose decision can be kept in a repository: its file path is real.
+  // Step 2 shows the hero example's own controls at their start values: its sliders, else whatever controls it has.
+  const shown = (firstKit?.kit.controls ?? []).slice().sort((x, y) => Number(y.type === "slider") - Number(x.type === "slider")).slice(0, 3);
   // The marquee's words: the first two controls of each preview example, short ones only, each once.
   const moved = [...new Set(examples.flatMap(([, p]) => (p.kit?.kit.controls ?? []).map((c) => c.label).filter((l) => l.length <= 22).slice(0, 2)))].slice(0, 14);
   // A second example, running beside the list: a preview that needs no web data, other than the hero's.
@@ -78,11 +80,7 @@ export default async function Home() {
             </div>
             <div className="ly-collage span-6 start-4 live">
               <div className="ly-collage__set is-on ui">
-                {first && examples[0][1].kit ? (
-                  <Kit key={JSON.stringify(examples[0][1].kit.kit)} id={first} title={titleOf(examples[0][1], first)} state={forVisitor(examples[0][1])} canWrite={false} leftOut={examples[0][1].leftOut} embedded />
-                ) : first ? (
-                  <PricePlayground key={JSON.stringify(examples[0][1].domain)} domain={examples[0][1].domain} explored={null} canWrite={false} admin={false} embedded />
-                ) : null}
+                {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} embedded />}
               </div>
             </div>
             <div className="span-3 start-10 hero__cta"><a className="btn btn--primary" href="/connect">Connect your agent</a></div>
@@ -110,9 +108,10 @@ export default async function Home() {
                 <h3>2. Shape it by hand</h3>
                 <p>Move the controls and the real thing follows at once. No agent and no network call sits between a move and its result.</p>
                 <div className="panel"><div className="shot shot--sliders" role="img" aria-label="The controls of the example in the hero, at their start values">
-                  {sliders.map((c) => c.type === "slider" && (
-                    <div key={c.id}><span>{c.label}</span><b>{c.initial}</b><i style={{ ["--at" as string]: `${Math.round(((c.initial - c.min) / (c.max - c.min)) * 100)}%` }} /></div>
+                  {shown.map((c) => (
+                    <div key={c.id}><span>{c.label}</span><b>{String(c.initial)}</b>{c.type === "slider" && c.max > c.min && <i style={{ ["--at" as string]: `${Math.round(((c.initial - c.min) / (c.max - c.min)) * 100)}%` }} />}</div>
                   ))}
+                  {shown.length === 0 && <div><span>Stiffness</span><b>60</b><i style={{ ["--at" as string]: "7%" }} /></div>}
                 </div></div>
               </article>
               <article className="card card--row card--open span-4">
