@@ -237,12 +237,25 @@ for (const path of ["/", "/connect", "/sign-in", `/p/sbx-probe-${tag}`]) {
   const page = await context.newPage();
   await page.goto(`${base}/p/sbx-hints-${tag}`, { waitUntil: "load" });
   const doc = (await page.waitForSelector("iframe")).contentFrame().then((f) => f!);
-  await (await doc).waitForFunction(() => document.getElementById("report")?.textContent?.startsWith("{"), null, { timeout: 15000 }).catch(() => {});
+  const reported = await (await doc).waitForFunction(() => document.getElementById("report")?.textContent?.startsWith("{"), null, { timeout: 15000 }).then(() => true, () => false);
+  check("the hint probe reported within 15 seconds", reported);
   const out = JSON.parse((await (await doc).locator("#report").textContent().catch(() => "{}")) || "{}") as Record<string, string>;
   for (const [k, v] of Object.entries(out)) check(`resource hint, ${k}`, v.startsWith("blocked") || v.startsWith("ok"), v);
+  // Every result the probe must give, for what the browser under test supports, is present: a probe that ran nothing
+  // (an empty report) fails here instead of passing with fewer checks. The page's own window says what is supported.
+  const api = await page.evaluate(() => ({ setHTML: typeof (Element.prototype as unknown as { setHTML?: unknown }).setHTML === "function", unsafe: typeof (Element.prototype as unknown as { setHTMLUnsafe?: unknown }).setHTMLUnsafe === "function" }));
+  const expected = [
+    ...["prerender", "prefetch", "preload", "modulepreload", "dns-prefetch", "preconnect"].map((rel) => "js " + rel),
+    ...[...HINTS.matchAll(/^ {2}"([^"]+)": \(\) =>/gm)].map((m) => m[1]),
+    "head.innerHTML keeps the viewport meta (not a hint)", "innerHTML script stays inert", "innerHTML onerror handler as natively", "setHTML sanitizes",
+    "table insertAdjacentHTML keeps the implicit tbody", "tbody innerHTML parses rows", "textarea innerHTML decodes entities as natively", "title innerHTML decodes entities as natively",
+    ...(api.setHTML ? ["tbody setHTML keeps rows", "ShadowRoot setHTML works", "setHTML with a permissive sanitizer", "template setHTML fills its content"] : []),
+    ...(api.unsafe ? ["template setHTMLUnsafe fills its content", "textarea setHTMLUnsafe keeps text", "title setHTMLUnsafe keeps text"] : []),
+  ];
+  const missing = expected.filter((k) => typeof out[k] !== "string");
+  check(`the hint probe gave all ${expected.length} expected results`, missing.length === 0, missing.length ? "missing: " + missing.slice(0, 5).join("; ") : `setHTML ${api.setHTML ? "supported" : "not supported"}, setHTMLUnsafe ${api.unsafe ? "supported" : "not supported"}`);
   // The sanitizer checks must run wherever the browser under test has setHTML.
-  const supported = await page.evaluate(() => typeof (Element.prototype as unknown as { setHTML?: unknown }).setHTML === "function");
-  check("setHTML checks ran where the browser supports setHTML", !supported || !String(out["setHTML sanitizes"]).includes("not supported"), supported ? "supported" : "not supported");
+  check("setHTML checks ran where the browser supports setHTML", typeof out["setHTML sanitizes"] === "string" && (!api.setHTML || !out["setHTML sanitizes"].includes("not supported")), api.setHTML ? "supported" : "not supported");
   await page.waitForTimeout(3500);
   check("no resource hint reached the outside receiver", leaks.length === 0, leaks.slice(0, 4).join(", "));
   await page.close();
