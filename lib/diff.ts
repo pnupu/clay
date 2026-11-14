@@ -98,6 +98,24 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
 }
 
 /** `tolerance`: the decision is still fine while the chosen vendor costs at most this much more per month than the cheapest. */
+/** How long apart two re-checks must be that both read no price, before a vendor that had prices is taken to have none. */
+export const NO_PRICE_GAP_MS = 10 * 60_000;
+
+/**
+ * What a re-check does with a read that states no price at all. A page that fills in its prices by script can be
+ * captured before they are there, and such a capture looks exactly like a page without prices: of 18 fresh captures of
+ * vast.ai/pricing on 2026-11-14, one had no price cards. Both reads of one re-check can be such captures (they are
+ * seconds apart), so one re-check does not take the prices of a vendor away:
+ * - "none": nothing special (the vendor had no price before, or the read states a price);
+ * - "hold": the earlier prices stay, with a note, and the next re-check reads the page again;
+ * - "accept": an earlier re-check, at least NO_PRICE_GAP_MS before this one, also read no price. The page states none.
+ */
+export function noPriceRead(hadPrices: boolean, hasPricesNow: boolean, seenAt: string | null | undefined, now: number): "none" | "hold" | "accept" {
+  if (!hadPrices || hasPricesNow) return "none";
+  const earlier = seenAt ? Date.parse(seenAt) : NaN;
+  return Number.isFinite(earlier) && now - earlier >= NO_PRICE_GAP_MS ? "accept" : "hold";
+}
+
 export type Decision = Assumptions & { chosen: string; savedAt: string; tolerance?: number };
 
 export type Standing = { holds: boolean; chosenCost: number | null; cheapest: string | null; cheapestCost: number | null; /** Chosen cost minus cheapest cost. */ gap: number | null; tolerance: number };

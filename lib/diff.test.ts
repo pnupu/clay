@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmed, diffModels, standing, verdict, type Decision } from "./diff.ts";
+import { confirmed, diffModels, noPriceRead, NO_PRICE_GAP_MS, standing, verdict, type Decision } from "./diff.ts";
 import type { PricingModel } from "./domain.ts";
 
 const model = (base: number | null, price: number | null, quote = "q"): PricingModel => ({
@@ -70,6 +70,25 @@ test("tolerance: the decision holds while the choice is within the tolerance of 
   assert.match(v.reason, /within your tolerance of \$100/);
   // A tolerance never rescues a choice that cannot be priced.
   assert.equal(standing({ ...decision, tolerance: 1e9 }, { a: model(25, null), b }).holds, false);
+});
+
+test("one re-check that reads no price does not take a vendor's prices away", () => {
+  const first = Date.parse("2026-11-14T11:18:24.000Z");
+  const iso = (ms: number) => new Date(ms).toISOString();
+  // The vendor had prices and this check reads none (a capture before the page filled them in): the prices stay.
+  assert.equal(noPriceRead(true, false, null, first), "hold");
+  assert.equal(noPriceRead(true, false, undefined, first), "hold");
+  // A second check seconds later is the same slow moment of the page: still held.
+  assert.equal(noPriceRead(true, false, iso(first), first + 30_000), "hold");
+  assert.equal(noPriceRead(true, false, iso(first), first + NO_PRICE_GAP_MS - 1), "hold");
+  // A check at least ten minutes after the first one that also reads no price: the page states none now.
+  assert.equal(noPriceRead(true, false, iso(first), first + NO_PRICE_GAP_MS), "accept");
+  assert.equal(noPriceRead(true, false, iso(first), first + 3_600_000), "accept");
+  // A read with prices, or a vendor that had none before, is not this case.
+  assert.equal(noPriceRead(true, true, iso(first), first + 3_600_000), "none");
+  assert.equal(noPriceRead(false, false, null, first), "none");
+  // A stored time that is not a time never accepts.
+  assert.equal(noPriceRead(true, false, "soon", first + 3_600_000), "hold");
 });
 
 test("agreement: a fact changes only when two fresh extractions state the same thing", () => {

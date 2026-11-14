@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, hasPrices, normalise, pricingCandidates, type Domain, type PricingModel, type RawModel } from "./domain";
 import { brand, cd, ContextDevError, scrape, capturedAt, servedFromCache } from "./contextdev";
-import { confirmed, diffModels, verdict } from "./diff";
+import { confirmed, diffModels, noPriceRead, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState, CACHED_FACTS, oldestCapture, staleCapture } from "./web";
 import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
@@ -619,6 +619,8 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   let note: string | null = null;
   /** When the page of this re-check was captured: the oldest of the text read and the extraction or extractions (lib/web.ts). */
   let readAt: string | null = null;
+  /** This check read no price on a page that stated prices, and no earlier check agrees yet: the prices stay (noPriceRead). */
+  let held = false;
   const began = Date.now();
   try {
     const page = await readText(src, origin);
@@ -648,8 +650,11 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       // As for a preview: the oldest capture counts, and an extraction of unknown age stores nothing and reports no change.
       readAt = oldestCapture(readAt, first.fetchedAt, next.fetchedAt);
       if (staleCapture(readAt, began)) throw new Error(CACHED_FACTS);
-      const changes = diffModels(src.snapshot.model, next.model);
-      snapshot = next;
+      held = noPriceRead(hasPrices(src.snapshot.model), hasPrices(next.model), src.noPriceSeenAt, Date.now()) === "hold";
+      // Held: nothing of this read is stored. The old page hash stays, so the next re-check reads the page again.
+      if (held) note = `This check read no price on the pricing page of ${src.name}, which stated prices before. A page can be captured before it shows its prices, so one check does not take them away: the prices stay as they were, and the next re-check reads the page again.`;
+      const changes = held ? [] : diffModels(src.snapshot.model, next.model);
+      if (!held) snapshot = next;
       if (changes.length) {
         const models = (s: typeof before, own: PricingModel) => Object.fromEntries(Object.entries(s.sources).map(([k, x]) => [k, k === id ? own : (x.snapshot?.model ?? null)]));
         event = {
@@ -684,6 +689,9 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       const why = noPrice ? (stored.unpriced ? stored.error : `No price is stated on the pricing page of ${stored.name} (${emptyReason(snapshot.model)}).`) : null;
       // Since when it has had no price: as stored, else since the read before this one when that had none either.
       const since = !noPrice ? null : (stored.unpricedSince ?? (hasPrices(src.snapshot!.model) ? new Date().toISOString() : src.snapshot!.fetchedAt));
+      // The first check that read no price is remembered; a check that failed changes nothing; any other check clears it.
+      if (held) stored.noPriceSeenAt ??= new Date().toISOString();
+      else if (error == null) stored.noPriceSeenAt = null;
       Object.assign(stored, { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? why, unpriced: read && noPrice, ...(read ? { unpricedSince: since } : {}), ...(error == null && readAt ? { readAt } : {}), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
     });

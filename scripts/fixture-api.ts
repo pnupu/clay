@@ -1,14 +1,15 @@
 // A local stand-in for the Context.dev scrape endpoint, for checks that must not spend real requests.
 // It serves one fictional pricing page per vendor URL. POST /control sets the page text and a queue of reads. A read is a
 // base price, or [base price, price per 1,000 extra emails]. Each structured extraction takes the next read from the queue
-// (the last one repeats), so two extractions can disagree, fully or on one fact only. The read "fail" answers 500.
+// (the last one repeats), so two extractions can disagree, fully or on one fact only. The read "fail" answers 500. The read
+// "none" answers with no plan at all, as a capture does that was taken before a page filled in its prices.
 // Usage: node scripts/fixture-api.ts <port>, then start the app with
 //   CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture pnpm dev
 import { createServer } from "node:http";
 
 const port = Number(process.argv[2] ?? 0);
 let text = "Fixture Mail pricing. Pro plan: $20 per month. 50,000 emails included, then $1 per 1,000 emails.";
-let prices: (number | [number, number] | "fail")[] = [20];
+let prices: (number | [number, number] | "fail" | "none")[] = [20];
 
 const body = (req: import("node:http").IncomingMessage) =>
   new Promise<Record<string, unknown>>((resolve) => {
@@ -32,6 +33,7 @@ createServer(async (req, res) => {
   const read = wantsJson ? (prices.length > 1 ? prices.shift()! : prices[0]) : null;
   if (read === "fail") return res.writeHead(500, { "Content-Type": "application/json" }).end(JSON.stringify({ error_code: "FIXTURE_FAILURE", message: "fixture read failed" }));
   const [price, extra] = Array.isArray(read) ? read : [read, 1];
+  const none = read === "none";
   // The meter is keyed by the first metric of the playground's extraction schema, so any agent-built price spec gets a price.
   const metric = Object.keys((b.jsonParams as { schema?: { properties?: { plans?: { items?: { properties?: { meters?: { properties?: object } } } } } } } | undefined)?.schema?.properties?.plans?.items?.properties?.meters?.properties ?? {})[0] ?? "emails";
   send({
@@ -47,7 +49,7 @@ createServer(async (req, res) => {
           data: {
             vendor: "Fixture Mail",
             currency: "USD",
-            plans: [{ name: "Pro", base_price: price, custom_pricing: false, price_quote: null, meters: { [metric]: { status: "priced", included: 50000, overage_allowed: true, tiers: [{ up_to: null, price: extra, per_units: 1000 }], quote: "50,000 emails included, then $1 per 1,000 emails" } }, features: {} }],
+            plans: none ? [] : [{ name: "Pro", base_price: price, custom_pricing: false, price_quote: null, meters: { [metric]: { status: "priced", included: 50000, overage_allowed: true, tiers: [{ up_to: null, price: extra, per_units: 1000 }], quote: "50,000 emails included, then $1 per 1,000 emails" } }, features: {} }],
           },
         }
       : { requested: false, success: null, data: null },

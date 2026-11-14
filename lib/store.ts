@@ -40,6 +40,8 @@ export type Source = {
   unpriced?: boolean;
   /** Since when the page has been read without a price. Kept over a failed read; cleared when a read finds a price. */
   unpricedSince?: string | null;
+  /** When a re-check first read no price on a page that stated prices; the prices stay until a later re-check agrees (noPriceRead in lib/diff.ts). Cleared by a read with prices. */
+  noPriceSeenAt?: string | null;
   monitor: { id: string; secret: string; webhookUrl: string } | null;
 };
 
