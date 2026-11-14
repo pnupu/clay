@@ -69,11 +69,12 @@ export const MODEL_EXAMPLE: Spec = {
   notes: "The question was whether the team's coding agent is on the right model. Tokens, time and pass rate per task are the team's own measurements (bench.json); the prices per million tokens are read live from the providers' pricing pages. Set your volume and limits, then choose a model.",
   data: {
     inline: {
-      measured: "bench.json: 10 tasks, 2 repeats per model, measured by the team on 2026-11-14",
+      measured: "bench.json: 10 easy and 12 hard tasks, 2 repeats per model, measured by the team on 2026-11-14",
+      limits: "Each pass rate is from 24 runs: a gap of one or two tasks between two models is within the noise.",
       models: [
-        { model: "claude-opus-5-5", pass_rate: 1, median_seconds: 22.1, input_tokens_per_task: 67169, cached_input_tokens_per_task: 60546, output_tokens_per_task: 2360 },
-        { model: "claude-sonnet-5-5", pass_rate: 0.95, median_seconds: 11.1, input_tokens_per_task: 57201, cached_input_tokens_per_task: 51478, output_tokens_per_task: 1690 },
-        { model: "gpt-6-luna", pass_rate: 0.9, median_seconds: 21.6, input_tokens_per_task: 78673, cached_input_tokens_per_task: 68115, output_tokens_per_task: 1032 },
+        { model: "claude-opus-5-5", easy_pass_rate: 1, hard_pass_rate: 1, median_seconds: 22.1, input_tokens_per_task: 67169, cached_input_tokens_per_task: 60546, output_tokens_per_task: 2360 },
+        { model: "claude-sonnet-5-5", easy_pass_rate: 1, hard_pass_rate: 0.96, median_seconds: 11.1, input_tokens_per_task: 57201, cached_input_tokens_per_task: 51478, output_tokens_per_task: 1690 },
+        { model: "gpt-6-luna", easy_pass_rate: 1, hard_pass_rate: 0.71, median_seconds: 21.6, input_tokens_per_task: 78673, cached_input_tokens_per_task: 68115, output_tokens_per_task: 1032 },
       ],
     },
     web: [
@@ -85,19 +86,51 @@ export const MODEL_EXAMPLE: Spec = {
     { id: "tasks", type: "slider", label: "Tasks per month", meaning: "how many agent tasks the team runs per month", min: 100, max: 20000, step: 100, initial: 2000 },
     { id: "cached_share", type: "slider", label: "Cached input that hits the cache", meaning: "share of the measured cached input tokens that is billed at the cached price", min: 0, max: 100, step: 5, initial: 100, unit: "%" },
     { id: "max_seconds", type: "slider", label: "Time limit per task", meaning: "longest median time per task the team accepts", min: 5, max: 60, step: 1, initial: 30, unit: "s" },
-    { id: "min_pass", type: "slider", label: "Minimum pass rate", meaning: "lowest pass rate the team accepts", min: 50, max: 100, step: 1, initial: 90, unit: "%" },
+    { id: "min_pass", type: "slider", label: "Minimum pass rate on the hard tasks", meaning: "lowest pass rate on the hard tasks the team accepts", min: 50, max: 100, step: 1, initial: 90, unit: "%" },
     { id: "model", type: "select", label: "Model to use", meaning: "the model written into agent.config.json", initial: "claude-opus-5-5", options: [{ value: "claude-opus-5-5" }, { value: "claude-sonnet-5-5" }, { value: "gpt-6-luna" }] },
   ],
   view: {
     type: "preview",
-    height: 300,
-    html: '<table><thead><tr><th>Model</th><th>Pass rate</th><th>Median time</th><th>Cost per task</th><th>Per successful task</th><th>Per month</th><th></th></tr></thead><tbody id="rows"></tbody></table>',
-    css: "table { border-collapse: collapse; font: 14px system-ui; margin: 16px; max-width: 100%; } th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; } tr.out td { color: #9ca3af; } tr.chosen td { font-weight: 600; background: #eff6ff; }",
-    js: "const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, \"\");\nconst rows = [...clay.data.web.anthropic, ...clay.data.web.openai];\n// Join a measured model to its price row by name. No row, or a missing price, is unknown: never 0.\nconst price = (model) => rows.find((r) => r.model && norm(r.model) === norm(model)) || null;\nconst usd = (n) => (n == null ? \"unknown\" : \"$\" + n.toFixed(n < 1 ? 3 : 2));\nconst body = document.getElementById(\"rows\");\nclay.onChange((v) => {\n  body.textContent = \"\";\n  for (const m of clay.data.inline.models) {\n    const p = price(m.model);\n    const cached = m.cached_input_tokens_per_task * (v.cached_share / 100);\n    const fresh = m.input_tokens_per_task - cached;\n    // Cached input has its own price. When the page does not state it, the cost is unknown, not cheaper.\n    const known = p && p.input != null && p.output != null && (cached === 0 || p.cached_input != null);\n    const perTask = known ? (fresh * p.input + cached * (p.cached_input || 0) + m.output_tokens_per_task * p.output) / 1e6 : null;\n    const perSuccess = perTask == null || !m.pass_rate ? null : perTask / m.pass_rate;\n    const ok = m.pass_rate * 100 >= v.min_pass && m.median_seconds <= v.max_seconds;\n    const tr = document.createElement(\"tr\");\n    tr.className = (ok ? \"\" : \"out \") + (m.model === v.model ? \"chosen\" : \"\");\n    for (const t of [m.model, Math.round(m.pass_rate * 100) + \"%\", m.median_seconds + \" s\", usd(perTask), usd(perSuccess), usd(perSuccess == null ? null : perSuccess * v.tasks), ok ? \"\" : \"outside your limits\"]) tr.appendChild(document.createElement(\"td\")).textContent = t;\n    body.appendChild(tr);\n  }\n});",
+    height: 340,
+    html: '<table><thead><tr><th>Model</th><th>Pass rate, hard tasks</th><th>Median time</th><th>Cost per task</th><th>Per passed task</th><th>Per month</th><th></th></tr></thead><tbody id="rows"></tbody></table><p id="rule"></p>',
+    css: "table { border-collapse: collapse; font: 14px system-ui; margin: 16px; max-width: 100%; } th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; } tr.out td { color: #9ca3af; } tr.chosen td { font-weight: 600; background: #eff6ff; } #rule { font: 13px system-ui; color: #4b5563; margin: 0 16px 16px; }",
+    js: `const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+const rows = [...clay.data.web.anthropic, ...clay.data.web.openai];
+// Join a measured model to its price row by name. No row, or a missing price, is unknown: never 0.
+const price = (model) => rows.find((r) => r.model && norm(r.model) === norm(model)) || null;
+const usd = (n) => (n == null ? "unknown" : "$" + n.toFixed(n < 1 ? 3 : 2));
+const body = document.getElementById("rows");
+const rule = document.getElementById("rule");
+clay.onChange((v) => {
+  const list = clay.data.inline.models.map((m) => {
+    const p = price(m.model);
+    const cached = m.cached_input_tokens_per_task * (v.cached_share / 100);
+    const fresh = m.input_tokens_per_task - cached;
+    // Cached input has its own price. When the page does not state it, the cost is unknown, not cheaper.
+    const known = p && p.input != null && p.output != null && (cached === 0 || p.cached_input != null);
+    const perTask = known ? (fresh * p.input + cached * (p.cached_input || 0) + m.output_tokens_per_task * p.output) / 1e6 : null;
+    // The limit is tested on the hard tasks: every model passes the easy ones, so a blended rate would hide the difference.
+    const ok = m.hard_pass_rate * 100 >= v.min_pass && m.median_seconds <= v.max_seconds;
+    // A failed task is paid for too, so models are compared on the cost per passed task.
+    const perPassed = perTask == null || !m.hard_pass_rate ? null : perTask / m.hard_pass_rate;
+    return { m, ok, perTask, perPassed };
+  });
+  // The pick: the cheapest per passed task among the models inside the limits. A model outside them, or with an unknown cost, is never the pick.
+  const pick = list.filter((r) => r.ok && r.perPassed != null).sort((a, b) => a.perPassed - b.perPassed)[0];
+  body.textContent = "";
+  for (const r of list) {
+    const tr = document.createElement("tr");
+    tr.className = (r.ok ? "" : "out ") + (r.m.model === v.model ? "chosen" : "");
+    for (const t of [r.m.model, Math.round(r.m.hard_pass_rate * 100) + "%", r.m.median_seconds + " s", usd(r.perTask), usd(r.perPassed), usd(r.perTask == null ? null : r.perTask * v.tasks), !r.ok ? "outside your limits" : r === pick ? "cheapest inside your limits" : ""]) tr.appendChild(document.createElement("td")).textContent = t;
+    body.appendChild(tr);
+  }
+  // The rule behind the mark and what the numbers cannot support, in words on the page.
+  rule.textContent = "Marked: the lowest cost per passed task among the models that pass at least " + v.min_pass + "% of the hard tasks within " + v.max_seconds + " s. " + clay.data.inline.limits;
+});`,
   },
   outputs: [
     { id: "config", label: "\"model\" in agent.config.json", template: '"model": "{{model}}"' },
-    { id: "rule", label: "The rule behind the choice, in words", template: "Use {{model}} while it passes at least {{min_pass}}% of tasks within {{max_seconds}} s, at {{tasks}} tasks per month with {{cached_share}}% of the cached input billed at the cached price." },
+    { id: "rule", label: "The rule behind the choice, in words", template: "Use {{model}} while it passes at least {{min_pass}}% of the hard tasks within {{max_seconds}} s, at {{tasks}} tasks per month with {{cached_share}}% of the cached input billed at the cached price." },
   ],
 };
 
@@ -136,6 +169,7 @@ Good controls: the 3 to 6 dimensions behind THIS person's complaint, not every p
   - describe says what the page calls the fact, with synonyms and the unit. Ask for numbers as the page states them (a price per 1M tokens, per hour, per seat) and do the arithmetic in view.js.
   - view.js reads clay.data.web.<id>: an object of the fields, or a list of the rows. A value is null when the page does not state it, when the page could not be read, or when the number that was extracted is not in the page text (it is quarantined: Clay never passes on a number it cannot find on the page). Handle null in your code: show "unknown" and leave that row out of sums and rankings. Never let null become 0.
   - Joins: when you join your own names to page rows (a model id from a measurements file to a pricing row), compare normalised names and show a row without a match as unknown. After the build, read the result: it lists the rows that were read, so check that every name you join on is there, and repair the source (the exact url, a better describe) when it is not.
+  - A pick: when view.js marks or recommends one option, write the rule that makes the pick on the page, in words with its numbers, and apply it to the measure that decides for this person: the hard or realistic cases of their measurements, not a rate blended with easy cases that every option passes. An option outside the person's limits, or with an unknown cost, is never the pick. When options fail at different rates, compare the cost per passed task. Every assumption that moves the result a lot is a control, not a constant in the code (the share of input billed at the cached price, a retry rate, growth). Say on the page what the numbers cannot support (few runs, disputed results, a missing price).
   - The page lists every source with its link, the read time, every value and what was quarantined, so the person can check any number.
   - When to use it instead of a price playground (view.type "price_ranking"): when the comparison needs a dimension the price engine does not have (which GPU, which model), when the person's own numbers must be multiplied in (tokens per task, hours per job, seats), or when the question needs one or two facts of a page. The price engine is for "which vendor or plan of one usage-priced product" with plans, included quantities and overage.
   - Staying live: recheck_playground reads the pages again and reports the facts that changed (two fresh reads must agree). read_playground returns web_changes: what changed since the person settled. You judge whether the settled result still holds, with the settled values and the new facts, and tell the person or send them back to the page.
@@ -153,7 +187,7 @@ The person: "this signup button looks off, our brand is acme.com". Their file ha
 ${JSON.stringify(BUTTON_EXAMPLE, null, 1)}
 
 ## Worked example 3: live web facts times the person's own measurements
-The person: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured." Their agent.config.json has "model": "claude-opus-5-5". Per-token prices alone do not answer this: each model uses a different number of tokens per task and passes a different share of tasks. So the measurements go in data.inline, the prices come live from data.web, and view.js multiplies them.
+The person: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured." Their agent.config.json has "model": "claude-opus-5-5". Per-token prices alone do not answer this: each model uses a different number of tokens per task and passes a different share of tasks. So the measurements go in data.inline, the prices come live from data.web, and view.js multiplies them. The page marks a pick, so it follows the rules for a pick: the limit is tested on the hard tasks (every model passes the easy ones), models are compared on the cost per passed task, the share of cached input is a control because it moves the cost a lot, and the rule and the size of the sample are written under the table.
 ${JSON.stringify(MODEL_EXAMPLE, null, 1)}
 
 ## Worked example 2: spring physics, tuned by feel
