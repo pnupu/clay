@@ -1,0 +1,4 @@
+{"id":"paginate","difficulty":"easy","lang":"node","timeout_s":300,
+ "summary":"Fix an off-by-one in 1-based pagination and the page count",
+ "instruction":"Users report that page 1 of the product list shows the wrong items, and the last partly filled page never shows up in the page count. Please fix paginate.js. `node test.js` should pass when you're done.",
+ "check":["node","check.js"]}

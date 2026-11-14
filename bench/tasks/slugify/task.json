@@ -1,0 +1,4 @@
+{"id":"slugify","difficulty":"easy","lang":"python","timeout_s":300,
+ "summary":"Implement a URL slug function from a docstring spec",
+ "instruction":"We need URL slugs for blog post titles. Implement `slugify` in slug.py as described in its docstring. There are a few tests in test_slug.py (`python3 -m unittest`).",
+ "check":["python3","check.py"]}

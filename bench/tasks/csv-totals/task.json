@@ -1,0 +1,4 @@
+{"id":"csv-totals","difficulty":"medium","lang":"node","timeout_s":300,
+ "summary":"CSV export to per-customer EUR totals, with quoted fields and currency conversion",
+ "instruction":"Finance needs paid revenue per customer in EUR. Write totals.js so that `node totals.js orders.csv` prints a JSON object mapping each customer name to the sum of `amount` over rows whose status is `paid`, converted to EUR with the rates in rates.json (a rate is how many EUR one unit of that currency is worth), rounded to 2 decimals, with keys sorted alphabetically. The CSV comes from an Excel export, so expect quoted fields, commas inside quotes, doubled quotes and Windows line endings. No npm packages.",
+ "check":["node","check.js"]}

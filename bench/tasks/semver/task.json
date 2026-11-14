@@ -1,0 +1,4 @@
+{"id":"semver","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"SemVer 2.0.0 validation and precedence, including pre-release edge cases",
+ "instruction":"Implement `is_valid(version)` and `compare(a, b)` in semver.py following the Semantic Versioning 2.0.0 spec exactly (semver.org): validation of the full grammar, and precedence (compare returns -1, 0 or 1; raise ValueError for invalid input). No leading `v`, no third-party packages. test_semver.py has a few starter tests (`python3 -m unittest`).",
+ "check":["python3","check.py"]}

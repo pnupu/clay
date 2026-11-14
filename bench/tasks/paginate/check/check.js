@@ -1,0 +1,15 @@
+const assert = require('node:assert');
+const path = require('node:path');
+const { paginate, pageCount } = require(path.join(process.argv[2], 'paginate.js'));
+const items = Array.from({ length: 10 }, (_, i) => i + 1);
+assert.deepStrictEqual(paginate(items, 1, 4), [1, 2, 3, 4]);
+assert.deepStrictEqual(paginate(items, 2, 4), [5, 6, 7, 8]);
+assert.deepStrictEqual(paginate(items, 3, 4), [9, 10]);
+assert.deepStrictEqual(paginate(items, 4, 4), []);
+assert.deepStrictEqual(paginate([], 1, 5), []);
+assert.strictEqual(pageCount(items, 4), 3);
+assert.strictEqual(pageCount(items, 5), 2);
+assert.strictEqual(pageCount(items, 10), 1);
+assert.strictEqual(pageCount([], 5), 0);
+assert.strictEqual(pageCount([1], 5), 1);
+console.log('pass');

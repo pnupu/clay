@@ -1,0 +1,1 @@
+{"total": 5, "skipped": 1, "by_status": {"200": 3, "201": 1, "404": 1}, "bytes": 3423, "top_paths": [["/search", 2], ["/api/cart", 1], ["/index.html", 1]], "methods": {"GET": 4, "POST": 1}}

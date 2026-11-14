@@ -1,0 +1,4 @@
+{"id":"rename-deprecate","difficulty":"medium","lang":"python","timeout_s":300,
+ "summary":"Rename a function across a package and keep a deprecated alias",
+ "instruction":"Rename `calc` in shipping/rates.py to `calculate_shipping` and update every caller in the package. Other teams still import `calc`, so keep it working as a deprecated alias that emits a DeprecationWarning and returns the same result. The tests must stay green: `python3 -m unittest discover -s tests`.",
+ "check":["python3","check.py"]}

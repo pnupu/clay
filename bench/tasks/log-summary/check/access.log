@@ -1,0 +1,6 @@
+203.0.113.5 - - [10/Nov/2026:13:55:36 +0000] "GET /index.html HTTP/1.1" 200 2326 "-" "Mozilla/5.0"
+203.0.113.5 - - [10/Nov/2026:13:55:37 +0000] "GET /search?q=shoes HTTP/1.1" 200 512 "https://example.com/" "Mozilla/5.0"
+198.51.100.7 - alice [10/Nov/2026:13:56:01 +0000] "POST /api/cart HTTP/1.1" 201 87 "-" "curl/8.5.0"
+198.51.100.7 - - [10/Nov/2026:13:56:02 +0000] "GET /search?q=hats HTTP/1.1" 200 498 "-" "curl/8.5.0"
+192.0.2.44 - - [10/Nov/2026:13:57:12 +0000] "GET /missing HTTP/1.1" 404 - "-" "Googlebot/2.1"
+garbage line that is not a log entry

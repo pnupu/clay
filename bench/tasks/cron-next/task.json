@@ -1,0 +1,4 @@
+{"id":"cron-next","difficulty":"hard","lang":"python","timeout_s":480,
+ "summary":"Next run time of a 5-field cron expression with standard cron semantics",
+ "instruction":"Implement `next_run(expr, after)` in cron.py: given a standard 5-field cron expression (minute hour day-of-month month day-of-week) and a naive datetime, return the first naive datetime strictly after `after` (seconds and microseconds zero) when the job would run. Support `*`, numbers, lists, ranges, steps (`*/15`, `1-30/5`, `5/15`), month names JAN-DEC and day names SUN-SAT (case-insensitive), and day-of-week 0-7 where both 0 and 7 are Sunday. Follow the semantics of standard Vixie cron as documented in crontab(5), including how the day-of-month and day-of-week fields combine. Raise ValueError for invalid expressions. No time zones, standard library only. There are starter tests in test_cron.py (`python3 -m unittest`).",
+ "check":["python3","check.py"]}

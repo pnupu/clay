@@ -1,0 +1,7 @@
+{
+  "note": "Pass results that are not valid. The summary counts these runs for time, tokens and errors, but not for pass rate.",
+  "pass_unknown": [
+    {"task": "csv-totals", "repeat": 1, "agent": "*", "model": "*",
+     "reason": "The first csv-totals hidden check put rates.json next to the CSV in a separate directory; the instruction does not say where rates.json lives, and all three Claude models read it from the script's directory, so the check failed them for an ambiguity in the task, not an error. The check was fixed during the run (before any repeat-2 csv-totals run). Repeat-1 work directories were already deleted, and codex transcripts do not contain file contents, so these 6 runs could not be re-checked."}
+  ]
+}

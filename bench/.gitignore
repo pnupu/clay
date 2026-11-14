@@ -1,0 +1,4 @@
+# Raw CLI transcripts stay local; runs.jsonl, manifest.json and summaries are committed.
+results/*/transcripts/
+results/smoke-*/
+__pycache__/

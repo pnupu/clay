@@ -1,0 +1,378 @@
+{
+  "runs": 120,
+  "run_ids": [
+    "20261114-final"
+  ],
+  "models": [
+    {
+      "agent": "claude",
+      "model": "claude-fable-5-2",
+      "agent_version": "2.1.321 (Claude Code)",
+      "effort": "cli default (not reported)",
+      "runs": 20,
+      "scored_runs": 19,
+      "passed": 19,
+      "pass_rate": 1.0,
+      "median_seconds": 19.3,
+      "p90_seconds": 36.4,
+      "median_seconds_passed": 19.2,
+      "per_task": {
+        "input_tokens": 57290,
+        "cached_input_tokens": 51056,
+        "cache_write_tokens": 6228,
+        "output_tokens": 1962,
+        "reasoning_output_tokens": null,
+        "tool_calls": 2,
+        "turns": 3
+      },
+      "per_passed_task": {
+        "input_tokens": 57227,
+        "cached_input_tokens": 51040,
+        "cache_write_tokens": 6181,
+        "output_tokens": 1880,
+        "reasoning_output_tokens": null
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 20,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0
+      },
+      "helper_models": []
+    },
+    {
+      "agent": "claude",
+      "model": "claude-opus-5-5",
+      "agent_version": "2.1.321 (Claude Code)",
+      "effort": "cli default (not reported)",
+      "runs": 20,
+      "scored_runs": 19,
+      "passed": 19,
+      "pass_rate": 1.0,
+      "median_seconds": 22.1,
+      "p90_seconds": 48.0,
+      "median_seconds_passed": 21.9,
+      "per_task": {
+        "input_tokens": 67169,
+        "cached_input_tokens": 60546,
+        "cache_write_tokens": 6615,
+        "output_tokens": 2360,
+        "reasoning_output_tokens": null,
+        "tool_calls": 3,
+        "turns": 4
+      },
+      "per_passed_task": {
+        "input_tokens": 66842,
+        "cached_input_tokens": 60251,
+        "cache_write_tokens": 6583,
+        "output_tokens": 2318,
+        "reasoning_output_tokens": null
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 20,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0
+      },
+      "helper_models": []
+    },
+    {
+      "agent": "claude",
+      "model": "claude-sonnet-5-5",
+      "agent_version": "2.1.321 (Claude Code)",
+      "effort": "cli default (not reported)",
+      "runs": 20,
+      "scored_runs": 19,
+      "passed": 19,
+      "pass_rate": 1.0,
+      "median_seconds": 11.1,
+      "p90_seconds": 18.5,
+      "median_seconds_passed": 11.1,
+      "per_task": {
+        "input_tokens": 57201,
+        "cached_input_tokens": 51478,
+        "cache_write_tokens": 5716,
+        "output_tokens": 1690,
+        "reasoning_output_tokens": null,
+        "tool_calls": 3,
+        "turns": 4
+      },
+      "per_passed_task": {
+        "input_tokens": 57439,
+        "cached_input_tokens": 51709,
+        "cache_write_tokens": 5724,
+        "output_tokens": 1658,
+        "reasoning_output_tokens": null
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 20,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0
+      },
+      "helper_models": []
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "agent_version": "codex-cli 0.167.0",
+      "effort": "medium",
+      "runs": 20,
+      "scored_runs": 19,
+      "passed": 19,
+      "pass_rate": 1.0,
+      "median_seconds": 21.6,
+      "p90_seconds": 33.8,
+      "median_seconds_passed": 21.4,
+      "per_task": {
+        "input_tokens": 78673,
+        "cached_input_tokens": 68115,
+        "cache_write_tokens": null,
+        "output_tokens": 1032,
+        "reasoning_output_tokens": 166,
+        "tool_calls": 4,
+        "turns": 1
+      },
+      "per_passed_task": {
+        "input_tokens": 78447,
+        "cached_input_tokens": 67914,
+        "cache_write_tokens": null,
+        "output_tokens": 1005,
+        "reasoning_output_tokens": 163
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 20,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0
+      },
+      "helper_models": []
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-sol",
+      "agent_version": "codex-cli 0.167.0",
+      "effort": "low",
+      "runs": 20,
+      "scored_runs": 19,
+      "passed": 19,
+      "pass_rate": 1.0,
+      "median_seconds": 30.4,
+      "p90_seconds": 54.3,
+      "median_seconds_passed": 29.6,
+      "per_task": {
+        "input_tokens": 80495,
+        "cached_input_tokens": 64832,
+        "cache_write_tokens": null,
+        "output_tokens": 1092,
+        "reasoning_output_tokens": 23,
+        "tool_calls": 4,
+        "turns": 1
+      },
+      "per_passed_task": {
+        "input_tokens": 80126,
+        "cached_input_tokens": 64694,
+        "cache_write_tokens": null,
+        "output_tokens": 1050,
+        "reasoning_output_tokens": 22
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 20,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0
+      },
+      "helper_models": []
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-terra",
+      "agent_version": "codex-cli 0.167.0",
+      "effort": "low",
+      "runs": 20,
+      "scored_runs": 19,
+      "passed": 19,
+      "pass_rate": 1.0,
+      "median_seconds": 22.3,
+      "p90_seconds": 48.8,
+      "median_seconds_passed": 21.9,
+      "per_task": {
+        "input_tokens": 72039,
+        "cached_input_tokens": 61126,
+        "cache_write_tokens": null,
+        "output_tokens": 1065,
+        "reasoning_output_tokens": 33,
+        "tool_calls": 4,
+        "turns": 1
+      },
+      "per_passed_task": {
+        "input_tokens": 71220,
+        "cached_input_tokens": 60288,
+        "cache_write_tokens": null,
+        "output_tokens": 1003,
+        "reasoning_output_tokens": 27
+      },
+      "runs_without_token_report": 0,
+      "errors": {
+        "none": 20,
+        "timeout": 0,
+        "rate_or_usage_limit": 0,
+        "tool_or_cli_error": 0,
+        "refused": 0
+      },
+      "helper_models": []
+    }
+  ],
+  "tasks": [
+    {
+      "task": "cron-next",
+      "difficulty": "hard",
+      "summary": "Next run time of a 5-field cron expression with standard cron semantics",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "csv-totals",
+      "difficulty": "medium",
+      "summary": "CSV export to per-customer EUR totals, with quoted fields and currency conversion",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "1/1 (+1 unscored)",
+        "claude-opus-5-5": "1/1 (+1 unscored)",
+        "claude-sonnet-5-5": "1/1 (+1 unscored)",
+        "gpt-6-luna": "1/1 (+1 unscored)",
+        "gpt-6.1-sol": "1/1 (+1 unscored)",
+        "gpt-6.1-terra": "1/1 (+1 unscored)"
+      }
+    },
+    {
+      "task": "esm-fix",
+      "difficulty": "medium",
+      "summary": "Fix module errors after a half-finished CommonJS to ES modules migration",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "json-config",
+      "difficulty": "easy",
+      "summary": "Repair a broken JSON config so the app starts, without touching code",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "log-summary",
+      "difficulty": "medium",
+      "summary": "Write a CLI that summarizes a combined-format access log as JSON",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "lru-cache",
+      "difficulty": "medium",
+      "summary": "Implement an LRU cache class to a written spec",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "paginate",
+      "difficulty": "easy",
+      "summary": "Fix an off-by-one in 1-based pagination and the page count",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "rename-deprecate",
+      "difficulty": "medium",
+      "summary": "Rename a function across a package and keep a deprecated alias",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "semver",
+      "difficulty": "hard",
+      "summary": "SemVer 2.0.0 validation and precedence, including pre-release edge cases",
+      "timeout_s": 480,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    },
+    {
+      "task": "slugify",
+      "difficulty": "easy",
+      "summary": "Implement a URL slug function from a docstring spec",
+      "timeout_s": 300,
+      "passed_by_model": {
+        "claude-fable-5-2": "2/2",
+        "claude-opus-5-5": "2/2",
+        "claude-sonnet-5-5": "2/2",
+        "gpt-6-luna": "2/2",
+        "gpt-6.1-sol": "2/2",
+        "gpt-6.1-terra": "2/2"
+      }
+    }
+  ]
+}

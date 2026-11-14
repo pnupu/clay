@@ -1,0 +1,4 @@
+{"id":"log-summary","difficulty":"medium","lang":"python","timeout_s":300,
+ "summary":"Write a CLI that summarizes a combined-format access log as JSON",
+ "instruction":"Write summarize.py so that `python3 summarize.py access.log` prints a JSON summary of an nginx access log (combined log format). The output format is described in FORMAT.md, and expected.json is the correct output for the sample access.log. Standard library only.",
+ "check":["python3","check.py"]}

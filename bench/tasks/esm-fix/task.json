@@ -1,0 +1,4 @@
+{"id":"esm-fix","difficulty":"medium","lang":"node","timeout_s":300,
+ "summary":"Fix module errors after a half-finished CommonJS to ES modules migration",
+ "instruction":"Someone started moving this little report tool to ES modules and `node src/index.js` now fails. The package must stay ES modules (keep \"type\": \"module\" in package.json, no .cjs files). Fix it so `node src/index.js` prints the report again.",
+ "check":["node","check.js"]}

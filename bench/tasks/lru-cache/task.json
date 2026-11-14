@@ -1,0 +1,4 @@
+{"id":"lru-cache","difficulty":"medium","lang":"node","timeout_s":300,
+ "summary":"Implement an LRU cache class to a written spec",
+ "instruction":"Implement the LRUCache class in lru.js (CommonJS, no dependencies). `new LRUCache(capacity)`; `get(key)` returns the value or undefined and marks the key as most recently used; `set(key, value)` inserts or updates (an update also marks it most recently used) and evicts the least recently used entry when the cache is over capacity; `has(key)` tells whether the key is present without changing recency; `delete(key)` removes it and returns true if it was there; `size` is a read-only getter; `keys()` returns an array of keys from least to most recently used. Keys may be any value, objects compared by identity. A capacity of 0 stores nothing. `set` returns the cache so calls can be chained.",
+ "check":["node","check.js"]}

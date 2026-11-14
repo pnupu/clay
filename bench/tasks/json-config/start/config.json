@@ -1,0 +1,7 @@
+{
+  // main server settings
+  "port": "8080",
+  "host": "0.0.0.0",
+  'features': ["search", "export",],
+  "limits": { "maxUploadMb": 25 },
+}

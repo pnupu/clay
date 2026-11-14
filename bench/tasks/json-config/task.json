@@ -1,0 +1,4 @@
+{"id":"json-config","difficulty":"easy","lang":"node","timeout_s":300,
+ "summary":"Repair a broken JSON config so the app starts, without touching code",
+ "instruction":"`node app.js` crashes on startup. The code is fine and must not change; the problem is config.json. Fix the config so the app starts with the values that were clearly intended.",
+ "check":["node","check.js"]}

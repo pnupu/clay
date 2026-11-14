@@ -1,0 +1,6 @@
+order_id,customer,amount,currency,status
+1,"ACME, Inc.",100.00,EUR,paid
+2,Bob,20.50,USD,paid
+3,"ACME, Inc.",5.25,EUR,refunded
+4,Bob,10,EUR,paid
+5,Zed,7.10,GBP,paid
