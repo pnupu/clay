@@ -24,10 +24,6 @@
 /* The mat under the artboard: the sunk ground of the system. The artboard keeps the component's own colours. */
 .mat { padding: 16px; background: var(--p-surface); }
 .frame { display: block; width: 100%; border: 0; border-radius: var(--c-r-md); background: #fff; }
-/* The sandbox statement: one line that opens to the full text. */
-.caption { margin: -12px 0 0; }
-.caption > summary { font-weight: 500; color: var(--p-ink); }
-.caption > p { margin: 6px 0 0; max-width: 78ch; }
 .failed { margin: 16px; }
 .output { margin-bottom: 16px; }
 .outputHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -53,7 +49,6 @@
   .stageHead { display: none; }
   .mat { padding: 8px; }
   .notes { order: 0; margin: 0; }
-  .caption { order: 4; margin: 0; }
   .main > :global(.k-out) { order: 5; }
   .dataCard { order: 6; }
 }

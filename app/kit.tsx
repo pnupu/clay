@@ -36,14 +36,6 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     const t = setInterval(() => router.refresh(), 3000);
     return () => clearInterval(t);
   }, [reading, router]);
-  // The https logo hosts that the frame's img-src allows (lib/frame.ts): the preview can send requests there.
-  const logoHosts = (state.brandData?.logos ?? []).filter((l) => {
-    try {
-      return new URL(l.url).protocol === "https:";
-    } catch {
-      return false;
-    }
-  }).length;
   const api = `/api/p/${id}`;
   const { kit } = state;
   // The owner comes back to where they left the controls. Anyone else gets the start values: an example opens on the
@@ -252,17 +244,6 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
               {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: frameHeight }} src={`/p/${id}/frame${version ? `?v=${encodeURIComponent(version)}` : ""}`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
             </div>
           </section>
-          {/* What the sandbox guarantees, and what it does not, said in one line that opens to the full statement. On the
-              playground's own page it is open from the start. */}
-          <details className={`small muted ${css.caption} k-caption`} open={!embedded}>
-            <summary>A sandboxed preview, not sealed from the network</summary>
-            <p>
-                {/* What the sandbox guarantees, and what it does not: browsers give no complete block for outgoing requests from code that runs (README, "The preview sandbox"). */}
-                {builtByViewer ? "Built by your agent." : "Built by the playground's author with their agent."} It runs in a sandbox: it cannot read this page, your Clay account or session, or other sites&apos; data, and it cannot open windows or submit forms.
-                {" "}It is not sealed from the network: in some browsers its code can make outgoing requests, so the values you set here and the data shown in the preview could be sent to a server {builtByViewer ? "that code names" : "its author chose"}, with your IP address.
-                {logoHosts > 0 ? " The brand's logo hosts can also receive them in image addresses." : ""}
-          </p>
-          </details>
 
           <section className="pane k-out">
             <Head className="k-label">{!canWrite ? "If this were yours, your agent would now write this into the code" : builtByViewer ? "What goes back to your agent" : "What goes back to the author's agent"}</Head>
@@ -316,6 +297,9 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           )}
         </div>
       </div>
+      {/* What a preview can and cannot do (sandboxed, not sealed from the network) is stated on /privacy. A person looking
+          at a preview that their own agent did not build gets one quiet link to it; the owner needs none. */}
+      {!builtByViewer && !embedded && <p className="small muted k-about"><Link href="/privacy#previews" prefetch={false}>About previews</Link>: what this preview can and cannot do.</p>}
     </Shell>
   );
 }

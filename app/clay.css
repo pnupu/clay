@@ -20,6 +20,7 @@
   --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #7a5cc4;
 }
 .k-value { display: none; }
+.clay .k-about { margin: 24px 0 0; }
 
 .clay { color: var(--p-ink); font: 16px/1.5 var(--font-text); }
 .clay *, .clay *::before, .clay *::after { box-sizing: border-box; }
