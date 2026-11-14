@@ -26,7 +26,7 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
  * the agent that built an example is someone else's.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, reading = false, leftOut = [], version }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string }) {
+export default function Kit({ id, title, state, canWrite, builtByViewer = canWrite, embedded = false, byTeam = false, reading = false, leftOut = [], version }: { id: string; title: string; state: KitState; canWrite: boolean; /** The viewer's own agent built it (not the admin looking at another person's playground). */ builtByViewer?: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner), not a person's that the operator marked. */ byTeam?: boolean; reading?: boolean; leftOut?: { name: string; reason: string }[]; /** The admin on a person's playground: the frame shows only this version (the one the page's mark sends), and its status is not stored. */ version?: string }) {
   // `reading`: web sources or the brand are still being read (the agent's tool call answers before they arrive). The page
   // asks the server again every 3 seconds; when the data has arrived the screen is rendered with it and the preview
   // loads again with the new data (the page keys this component by the data, app/p/[pg]/page.tsx).
@@ -218,7 +218,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"} data-tall={tall || undefined}>
       <header className="top k-head">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · a playground built by your agent</> : "An example · built by someone's own agent"}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · a playground built by your agent</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
           <Title className={css.title}>{title}</Title>
         </div>
       </header>

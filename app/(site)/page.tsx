@@ -42,13 +42,11 @@ export default async function Home() {
   const shown = (firstKit?.kit.controls ?? []).slice().sort((x, y) => Number(y.type === "slider") - Number(x.type === "slider")).slice(0, 3);
   // The marquee's words: the first two controls of each preview example, short ones only, each once.
   const moved = [...new Set(examples.flatMap(([, p]) => (p.kit?.kit.controls ?? []).map((c) => c.label).filter((l) => l.length <= 22).slice(0, 2)))].slice(0, 14);
-  // A second example, running beside the list: a preview that needs no web data, other than the hero's.
-  const second = examples.find(([id, p]) => id !== first && p.kit && !p.kit.kit.web?.length && !p.kit.kit.brand)?.[0];
   const priced = examples.find(([, p]) => !p.kit)?.[0] ?? DOMAIN.id;
   // A returning person with playgrounds sees them first; everyone else meets them after the examples.
   const yoursFirst = me.kind === "user" && yours.length > 0;
   const yoursSection = me.kind === "visitor" ? null : (
-    <section className="section section--list" id="yours" aria-labelledby="yours-h">
+    <section className="section" id="yours" aria-labelledby="yours-h">
       <div className="wrap">
         <div className="section-head"><h2 id="yours-h">{me.kind === "admin" ? "All playgrounds" : "Your playgrounds"}</h2></div>
         {yours.length ? (
@@ -70,20 +68,24 @@ export default async function Home() {
   return (
     <>
       <main id="top">
-        {/* The dealt hero (triptych): the headline, the product itself, one large button. Its collage holds one set, the
-            live example: a person is dragging it, so no second set takes it out of their hand. */}
-        <section className="hero hero--triptych" data-enter aria-labelledby="hero-h">
+        {/* The first screen is one grid: the words and the action together on the left columns, the product itself on
+            the right ones, both starting on one line. (The skill dealt the triptych hero; its lone button on the right
+            line read as adrift, so the page takes the split form.) */}
+        <section className="hero hero--clay" data-enter aria-labelledby="hero-h">
           <div className="wrap"><div className="hero-text grid hero__grid">
-            <div className="span-3">
+            <div className="span-5 hero__words">
               <h1 id="hero-h">Playgrounds your own agent builds</h1>
-              <p className="hero__lead">Say it to Claude Code or Codex: <span className="say">build me a playground for …</span> It builds a page where your real component runs under a few controls. One command connects it.</p>
-            </div>
-            <div className="ly-collage span-6 start-4 live">
-              <div className="ly-collage__set is-on ui">
-                {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} embedded />}
+              <p className="hero__lead">Say it to Claude Code or Codex:</p>
+              <p className="say">build me a playground for …</p>
+              <p className="hero__lead">It builds a page where your real component runs under a few controls. One command connects it.</p>
+              <div className="btn-row">
+                <a className="btn btn--primary" href="/connect">Connect your agent<Arrow /></a>
+                <a className="btn btn--secondary" href="#examples">See the examples</a>
               </div>
             </div>
-            <div className="span-3 start-10 hero__cta"><a className="btn btn--primary" href="/connect">Connect your agent</a></div>
+            <div className="span-7 start-6 live ui">
+              {hero && <Kit key={JSON.stringify(hero[1].kit!.kit)} id={hero[0]} title={titleOf(hero[1], hero[0])} state={forVisitor(hero[1])} canWrite={false} leftOut={hero[1].leftOut} byTeam={!hero[1].owner} embedded />}
+            </div>
           </div></div>
         </section>
 
@@ -137,24 +139,17 @@ export default async function Home() {
           <div className="wrap">
             <div className="section-head">
               <h2 id="examples-h">{NUMBER[examples.length] ?? examples.length} {examples.length === 1 ? "example" : "examples"}, open without an account.</h2>
-              <p>Open one and use it fully. Each one is an example: nothing you do there is saved.</p>
+              <p>The Clay team made them, each with our own agent from one request. Open one and use it fully: nothing you do there is saved.</p>
             </div>
             {examples.length ? (
-              <div className="grid grid--top fill">
-                <ul className="rows gallery span-7">
-                  {examples.map(([id, p]) => (
-                    <li key={id}>
-                      <a href={`/p/${id}`} className="rows__name">{titleOf(p, id)}</a>
-                      <span className="rows__value t-small" data-sources>{kindOf(p)}</span>
-                    </li>
-                  ))}
-                </ul>
-                {second && (
-                  <div className="frame span-5 start-8 gallery__live">
-                    <iframe src={`/p/${second}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title={`The example “${titleOf(playgrounds[second], second)}”, running`} />
-                  </div>
-                )}
-              </div>
+              <ul className="rows gallery">
+                {examples.map(([id, p]) => (
+                  <li key={id}>
+                    <a href={`/p/${id}`} className="rows__name">{titleOf(p, id)}</a>
+                    <span className="rows__value t-small" data-sources>{kindOf(p)}</span>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <p className="t-lead">No examples yet.</p>
             )}
@@ -165,12 +160,13 @@ export default async function Home() {
 
         <section className="section" id="decisions" aria-labelledby="decisions-h">
           <div className="wrap">
-            <div className="grid grid--top fill">
-              <div className="span-7 decisions__text">
+            <div className="grid grid--top">
+              <div className="span-6 decisions__text">
                 <div className="section-head">
                   <h2 id="decisions-h">Price decisions get checked again</h2>
                   <p>When a choice rests on live prices, your agent reads them from the vendors’ own pages through Context.dev. The decision is kept as a small file in your repository, and a later agent session re-checks it.</p>
                 </div>
+                {/* Limits are printed only when this deployment has them switched on. */}
                 <dl className="stats" data-moment="counter-rolls">
                   <div><dt className="t-small muted">command connects your agent</dt><dd className="t-stat">1</dd></div>
                   <div><dt className="t-small muted">examples open without an account</dt><dd className="t-stat">{examples.length}</dd></div>
@@ -178,16 +174,14 @@ export default async function Home() {
                   {userPlaygroundCap() > 0 && <div><dt className="t-small muted">playgrounds for each person</dt><dd className="t-stat">{userPlaygroundCap()}</dd></div>}
                 </dl>
               </div>
-              <div className="frame span-5 start-8 decisions__file">
-                <div className="shot shot--file" role="img" aria-label="A decision file in a repository, and the question a later agent session asks about it">
-                  <p className="shot__path">{recordPath(priced)}</p>
-                  <p># Decision: {titleOf(playgrounds[priced] ?? ({ domain: DOMAIN } as AnyPlayground), priced)}</p>
-                  <p className="muted">- Playground: /p/{priced}<br />- Playground id: `{priced}`</p>
-                  <p className="muted">## For an agent that reads this file</p>
-                  <p className="shot__ask"><b>&gt;</b> is my saved decision still right?</p>
-                  <p className="muted">clay · recheck_playground</p>
-                  <p className="shot__answer">STILL HOLDS: every page was read again and no fact changed since the person settled.</p>
-                </div>
+              <div className="span-6 start-7 shot shot--file" role="img" aria-label="A decision file in a repository, and the question a later agent session asks about it">
+                <p className="shot__path">{recordPath(priced)}</p>
+                <p># Decision: {titleOf(playgrounds[priced] ?? ({ domain: DOMAIN } as AnyPlayground), priced)}</p>
+                <p className="muted">- Playground: /p/{priced}<br />- Playground id: `{priced}`</p>
+                <p className="muted">## For an agent that reads this file</p>
+                <p className="shot__ask"><b>&gt;</b> is my saved decision still right?</p>
+                <p className="muted">clay · recheck_playground</p>
+                <p className="shot__answer">STILL HOLDS: every page was read again and no fact changed since the person settled.</p>
               </div>
             </div>
           </div>

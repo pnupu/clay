@@ -293,6 +293,7 @@ Public without a key: the pages, `GET /api/p/<id>/state` and `GET /api/playgroun
 - `CONTEXT_DEV_DAILY_CAP` (default 300, 0 turns it off) caps the Context.dev requests per UTC day. The count is kept in the store. At the cap, a call fails with a message that says so, for the person and for the agent, and no request is sent.
 - `CONTEXT_DEV_REQUEST_CAP=<n>` is an optional hard cap on the number of requests logged in `run/requests.jsonl` (local development only).
 - The pricing model is "base price plus metered usage with included quantities and graduated tiers, plus features". A price that a page shows only through an interactive slider or calculator cannot be read from its text; the page then names that as the unknown, and never takes the number the slider happens to show. "Unlimited" on a plan is read as no charge for that metric. A vendor whose page lists separate products (GPU models, instance sizes) is priced by its cheapest product that fits, and the page says that the ranking is not like-for-like. Transactional email and hosting extract well; error-tracking pages with volume sliders stay partly unknown.
+- **No dark mode yet.** The pages are light only (the palette of the redesign has one grade); a dark grade is a todo. The preview frame keeps the colours of each playground's own code.
 
 ## Checks
 

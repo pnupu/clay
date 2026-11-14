@@ -59,7 +59,7 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
  * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
  * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and its title is an h2.
  */
-export default function Playground({ domain, explored, canWrite, admin, embedded = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean }) {
+export default function Playground({ domain, explored, canWrite, admin, embedded = false, byTeam = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean; /** An example that the Clay team made itself (a playground without an owner). */ byTeam?: boolean }) {
   const Shell = embedded ? "div" : "main";
   const shell = embedded ? "embedded-playground" : "shell";
   const api = `/api/p/${domain.id}`;
@@ -257,7 +257,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
     <Shell className={shell}>
       <header className="top">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · data read from the web by Context.dev</> : "An example · prices read from the web by Context.dev"}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · data read from the web by Context.dev</> : (byTeam ? "An example by the Clay team · prices read from the web by Context.dev" : "An example · prices read from the web by Context.dev")}</p>
           {embedded ? <h2 className="question">{domain.question}</h2> : <h1>{domain.question}</h1>}
           {domain.note && <p className="muted" style={{ maxWidth: "70ch", margin: "6px 0 0" }}>{domain.note}</p>}
         </div>

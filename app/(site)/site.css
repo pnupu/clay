@@ -1,20 +1,42 @@
-/* Page CSS of the website pages: only what sits inside a visual and the kit lacks (Taste Skill, SKILL.md step 5). */
+/* Page CSS of the website pages (Taste Skill kit in public/assets; tokens in app/tokens.ts).
+   Two rules of the house stand above the kit here, on Ilkka's review of the first build:
+   1. A section is as tall as its content, with even spacing. It is never stretched to a screen.
+   2. A panel is as large as what it shows, columns share their edges, and no box is empty.
+   Selectors start with html[data-type] where they must outweigh the kit, whose stylesheets load after this file. */
 
-/* The hero's collage holds one set, the live example: Clay's own UI. Its parts stand as the collage's pieces. */
-.live .k-root { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 360px) auto; align-content: center; gap: 12px; font: 14px/1.4 var(--font-text); color: var(--p-ink); }
+/* ---- Sections: content height, even spacing. */
+html[data-type] main > .section, html[data-type] footer.closing { height: auto; min-height: 0; padding-block: var(--s-9); }
+html[data-type] main > .section > .wrap, html[data-type] footer.closing > .wrap { height: auto; min-height: 0; }
+html[data-type] main > .section > .wrap > .fill { flex: none; }
+@media (max-width: 639px) { html[data-type] main > .section, html[data-type] footer.closing { padding-block: var(--s-8); } }
+
+/* ---- The first screen: one grid. Words and action on the left columns, the product on the right, one top line. */
+html[data-type] main > .hero.hero--clay { height: auto; min-height: 0; padding-top: calc(var(--nav) + var(--s-8)); padding-bottom: var(--s-7); }
+.hero--clay .hero__grid { align-items: start; }
+.hero--clay h1 { font-size: clamp(40px, 3.4vw + 8px, 60px); line-height: 1.04; text-wrap: balance; text-box: trim-start cap alphabetic; }
+.hero--clay .hero__words > * + * { margin-top: var(--s-4); }
+.hero--clay .hero__words > h1 + * { margin-top: var(--s-6); }
+.hero--clay .hero__lead { font-size: var(--t-lead); line-height: 1.5; max-width: 40ch; }
+.hero--clay .btn-row { margin-top: var(--s-6); }
+/* The sentence a person types, set as they type it. */
+.say { font: 500 20px/1.4 var(--font-mono); letter-spacing: -0.01em; color: var(--ink); }
+@media (max-width: 1023px) {
+  .hero--clay .hero__grid { display: flex; flex-direction: column; gap: var(--s-7); }
+  html[data-type] main > .hero.hero--clay { padding-top: calc(var(--nav) + var(--s-6)); padding-bottom: var(--s-8); }
+}
+
+/* ---- A live preview playground inside a website page: Clay's own UI, as tall as its parts.
+   The stage on top, the controls and what the agent would write side by side under it, their edges shared. */
+.live .k-root { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; font: 14px/1.4 var(--font-text); color: var(--p-ink); }
 .live .k-root > div, .live .k-main { display: contents; }
-.live .k-notes, .live .k-data, .live .k-head p:not(.eyebrow) { display: none; }
+.live .k-notes, .live .k-data, .live .k-caption, .live .k-about, .live .k-head p:not(.eyebrow) { display: none; }
 .live :is(.k-stage, .k-controls, .k-out) { margin: 0; min-width: 0; background: var(--c-pane); border: 1px solid var(--c-line); border-radius: var(--r-md); overflow: hidden; }
 .live .k-label { font: 500 13px/1.3 var(--font-text); letter-spacing: 0; margin: 0 0 var(--s-2); color: var(--p-muted); }
-.live .k-head { grid-area: 1 / 1; margin: 0; align-self: center; }
-.live .k-head .eyebrow { margin: 0; font: 500 13px/1.3 var(--font-text); letter-spacing: 0; text-transform: none; color: var(--p-ink); }
-.live .k-caption { grid-area: 1 / 2; justify-self: end; align-self: center; position: relative; margin: 0; font-size: 13px; color: var(--p-ink); }
-.live .k-caption summary { cursor: pointer; text-decoration: underline; text-decoration-color: var(--c-line-2); text-underline-offset: 3px; list-style: none; }
-.live .k-caption summary::-webkit-details-marker { display: none; }
-.live .k-caption[open] p { position: absolute; z-index: 5; right: 0; top: calc(100% + 8px); width: min(420px, 80vw); margin: 0; padding: 12px 14px; background: var(--p-bg); border: 1px solid var(--c-line-2); border-radius: var(--r-md); }
-.live .k-stage { grid-area: 2 / 1 / 3 / -1; display: flex; flex-direction: column; padding: 0; position: static; box-shadow: none; }
+.live .k-head { grid-area: 1 / 1 / 2 / -1; margin: 0; }
+.live .k-head .eyebrow { margin: 0; font: 500 13px/1.3 var(--font-text); letter-spacing: 0; text-transform: none; color: var(--p-muted); }
+.live .k-stage { grid-area: 2 / 1 / 3 / -1; padding: 0; position: static; box-shadow: none; }
 .live .k-stage > div:first-child { display: none; }
-.live .k-stage > div:last-child { flex: 1; min-height: 0; padding: 0; background: #fff; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+.live .k-stage > div:last-child { padding: 0; background: #fff; max-height: 420px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
 .live .k-stage iframe { flex: none; width: 100%; display: block; border: 0; border-radius: 0; box-shadow: none; }
 .live .k-controls { grid-area: 3 / 1; padding: 14px 16px; position: static; }
 .live .k-controls > p:last-child { display: none; }
@@ -25,35 +47,26 @@
 .live .k-out [data-example] a { text-decoration: underline; text-underline-offset: 2px; }
 .live .small { font-size: 13px; } .live .muted { color: var(--p-muted); }
 .live .k-root button { font: 500 13px/1 var(--font-text); min-height: 32px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--c-line-2); background: transparent; color: var(--p-ink); cursor: pointer; }
-.live .k-root button:disabled { opacity: .55; cursor: default; }
-.live [data-control] { margin: 0 0 8px; }
-.live [data-control] label, .live label.check { font-size: 14px; color: var(--p-ink); }
-.live input[type="range"] { accent-color: var(--p-action); width: 100%; height: 24px; margin: 0; }
-/* In the hero the value is text and the two small buttons are left out: the exact-value box, Copy and the reset are on the example's own page. */
+.live .k-root button[aria-pressed="true"] { background: var(--p-ink); color: var(--p-bg); }
+/* Inside another page the value is text, and Copy and the reset are left out: they are on the example's own page. */
 .live input[type="number"], .live .k-controls > button, .live .k-out button { display: none; }
 .live .k-controls [data-control]:nth-of-type(n + 5) { display: none; }
 .live .k-value { display: block; font: 500 14px/1 var(--font-mono); text-align: right; }
+.live [data-control] { margin: 0 0 8px; }
+.live [data-control] label, .live label.check { font-size: 14px; color: var(--p-ink); }
+.live input[type="range"] { accent-color: var(--p-action); width: 100%; height: 24px; margin: 0; }
 .live label.check { display: flex; gap: 8px; align-items: center; min-height: 28px; }
 .live label.check input { accent-color: var(--p-action); width: 16px; height: 16px; margin: 0; }
-@media (max-width: 1023px) {
+@media (max-width: 639px) {
   .live .k-controls { grid-column: 1 / -1; }
   .live .k-out { display: none; }
-}
-@media (max-width: 639px) {
-  .live .k-root { grid-template-rows: auto minmax(0, 1fr) auto auto; align-content: stretch; gap: 8px; }
-  .live .k-head { grid-column: 1 / -1; }
-  .live .k-caption { grid-area: 4 / 1 / 5 / -1; justify-self: start; }
-  .live .k-caption summary { min-height: 44px; display: flex; align-items: center; }
-  .live .k-caption[open] p { right: auto; left: 0; top: auto; bottom: calc(100% + 4px); }
-  .live .k-controls { padding: 10px 12px 2px; }
-  .live .k-controls > button, .live .k-controls .k-label, .live .k-controls [data-control]:nth-of-type(n + 2), .live .k-controls label.check { display: none; }
-  .live [data-control] { margin: 0; }
+  .live .k-stage > div:last-child { max-height: 260px; }
   .live input[type="range"] { height: 44px; }
+  .live label.check { min-height: 44px; }
+  .live .k-root button { min-height: 44px; }
 }
-/* One button size on the page: the hero's button keeps the system's height. */
-html[data-type] .hero--triptych .hero__cta .btn { height: var(--btn-h); font-size: var(--t-body); padding-inline: var(--s-5); }
 
-/* The small live pictures inside the step cards and the decision frame: text set as the product sets it. */
+/* ---- The small live pictures inside the step cards and the decision file: text set as the product sets it. */
 .shot { height: 100%; padding: var(--s-5); display: flex; flex-direction: column; justify-content: center; gap: var(--s-3); font: 14px/1.5 var(--font-mono); color: var(--p-ink); background: var(--c-pane); }
 .shot p { margin: 0; overflow-wrap: anywhere; } .shot .muted { color: var(--p-muted); } .shot b { font-weight: 500; color: var(--p-action); }
 .shot pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100%; overflow: hidden; }
@@ -62,43 +75,36 @@ html[data-type] .hero--triptych .hero__cta .btn { height: var(--btn-h); font-siz
 .shot--sliders b { font: 500 14px/1 var(--font-mono); color: var(--p-ink); }
 .shot--sliders i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--p-action) var(--at), var(--c-line-2) var(--at)); position: relative; }
 .shot--sliders i::after { content: ""; position: absolute; left: var(--at); top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--p-bg); border: 2px solid var(--p-action); }
-#steps .panel { --p-h: 264px; }
-.asked { margin-top: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); min-width: 0; }
+#steps .panel { --p-h: 232px; }
+@media (max-width: 639px) { #steps .panel { --p-h: 176px; } }
+.asked { margin-top: var(--s-8); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); min-width: 0; }
 .asked > * { min-width: 0; }
 .asked .mo-mq .mo-mq__track { color: var(--ink); }
-.shot--file { height: auto; width: 100%; justify-content: flex-start; font-size: 15px; padding: var(--s-6); gap: var(--s-4); border-radius: var(--r-md); border: 1px solid var(--c-line); }
-.shot__path { font-weight: 500; } .shot__ask { margin-top: var(--s-5) !important; }
-.decisions__file { align-self: stretch; }
-.decisions__text { align-self: stretch; }
-.decisions__text .stats { margin-top: auto; }
-.shot__answer { color: var(--ok); }
-.decisions__text { display: flex; flex-direction: column; gap: var(--s-7); }
-/* Two classes: the kit's stylesheets load after this file, so a rule of equal weight would lose to them. */
-.rows.gallery > li, .rows.gallery > li:first-child { align-items: baseline; padding-block: 10px; }
-#examples .section-head { max-width: none; }
-.gallery .rows__name { font-size: 18px; }
-.frame.gallery__live { align-self: stretch; overflow: hidden; background: #fff; padding: 0; display: block; }
-.gallery__live iframe { width: 100%; height: 100%; min-height: 260px; border: 0; display: block; }
-@media (min-width: 1024px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } .decisions__text { gap: var(--s-6); } }
-@media (max-width: 1023px) {
-  .decisions__file, .gallery__live { margin-top: var(--s-7); min-height: 320px; }
-  .shot--file { padding: var(--s-5); font-size: 14px; }
-}
-@media (max-width: 639px) {
-  #examples, #decisions { --h: 2; --hm: 2; height: auto; min-height: calc(2 * 100lvh); }
-  #examples .fill, #decisions .fill { flex: none; }
-  #steps .panel { --p-h: 176px; }
-  #steps { --hm: 2; }
-}
-.section--list { height: auto !important; min-height: 100svh; }
-.mine .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-/* The sentence a person types, set as they type it. */
-.say { display: block; margin: var(--s-3) 0; font: 500 17px/1.4 var(--font-mono); letter-spacing: -0.01em; color: var(--ink); }
-@media (min-width: 640px) and (max-width: 1023px) { .live .k-root { align-content: start; } }
 
-/* /connect: a task page. One section, as tall as its steps; Clay's own blocks on the right. */
-main > .section.doc { height: auto; min-height: calc(100svh - 96px); padding-bottom: var(--s-9); }
-main > .section.doc > .wrap { height: auto; }
+/* ---- Examples: one list in two columns that share their edges. */
+#examples .section-head { max-width: none; }
+.rows.gallery > li, .rows.gallery > li:first-child { align-items: baseline; padding-block: 14px; }
+.gallery .rows__name { font-size: 18px; }
+@media (min-width: 1024px) { .rows.gallery { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--s-9); } }
+
+/* ---- Price decisions: the words and two or more true figures on the left, the file itself on the right. */
+.decisions__text { display: grid; gap: var(--s-7); align-content: start; }
+html[data-type] .decisions__text .section-head { margin-bottom: 0; }
+html[data-type] .decisions__text .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1280px) { html[data-type] .decisions__text .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.shot--file { height: auto; justify-content: flex-start; font-size: 15px; padding: var(--s-6); gap: var(--s-4); border-radius: var(--r-md); border: 1px solid var(--c-line); align-self: start; }
+.shot__path { font-weight: 500; } .shot__ask { margin-top: var(--s-4) !important; } .shot__answer { color: var(--ok); }
+@media (max-width: 1023px) { .shot--file { margin-top: var(--s-7); padding: var(--s-5); font-size: 14px; } }
+
+/* ---- The close: the action, the word, the links, stacked at their own heights. */
+html[data-type] footer.closing > .wrap { display: grid; grid-template-rows: auto auto; row-gap: var(--s-8); }
+html[data-type] footer.closing .close__word { font-size: clamp(64px, min(14.5vw, 24svh), 216px); padding-bottom: 0.2em; margin-top: var(--s-7); }
+
+/* ---- The owner's list on the landing page. */
+.mine .manage { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---- /connect and /privacy: task pages. One section, as tall as its text; Clay's own blocks on the right. */
+html[data-type] main > .section.doc { padding-top: calc(var(--nav) + var(--s-8)); }
 .doc__head { display: grid; gap: var(--s-5); align-content: start; }
 .doc__head > p:not(.t-lead) { max-width: 52ch; }
 .doc__limits { margin-top: var(--s-5); }
@@ -109,28 +115,8 @@ main > .section.doc > .wrap { height: auto; }
 .doc__steps details > p { margin-top: 12px; }
 .doc-foot { padding: var(--s-5) 0 var(--s-7); }
 @media (max-width: 1023px) { .doc__steps { margin-top: var(--s-7); } }
-/* The kit's script outlines any [bracketed] text as a forgotten placeholder. In Clay's own blocks square brackets are
-   real code (a TOML table name, an array), so no outline there. */
-.clay [data-placeholder], .live [data-placeholder] { outline: none !important; }
-/* The same for what the page prints from real playgrounds: titles, control names, the text an agent would write. */
-:is(.shot, .gallery, .mine, .asked, .nav__menu) [data-placeholder], :is(.shot, .gallery, .mine, .asked, .nav__menu)[data-placeholder] { outline: none !important; }
 
-/* A screen shorter or narrower than the one the sections are cut for (a 13-inch laptop, a tablet): a section keeps its
-   one screen as the least height and grows with what it holds, so nothing ever lies on the next section. At 1440x900
-   every section is still exactly one screen. A phone keeps the kit's own rule. */
-@media (min-width: 640px) {
-  main > .section:not(.hero), footer.closing { height: auto; min-height: calc(var(--h, 1) * 100svh); }
-  main > .section:not(.hero) > .wrap, footer.closing > .wrap { height: auto; min-height: calc(var(--h, 1) * 100svh - var(--padt) - var(--padb)); }
-  main > .section:not(.hero) > .wrap > .fill { flex: 1 0 auto; }
-}
-.asked { padding-top: var(--s-6); }
-@media (min-width: 640px) {
-  /* The close and the links stack at their own heights, so the large word never lies on the links on a short screen. */
-  footer.closing > .wrap { grid-template-rows: auto auto; row-gap: var(--s-7); align-content: space-between; }
-  footer.closing .close__word { font-size: clamp(64px, min(14.5vw, 24svh), 216px); padding-bottom: 0.2em; }
-}
-/* A small phone (under 780 px tall): the hero grows past the screen instead of squeezing the live preview. */
-@media (max-width: 639px) and (max-height: 780px) {
-  main > .hero.hero--triptych { height: auto; min-height: 100svh; }
-  .hero--triptych .ly-collage.live { flex: none; height: 340px; min-height: 340px; }
-}
+/* The kit's script outlines any [bracketed] text as a forgotten placeholder. In Clay's own blocks, and in what the page
+   prints from real playgrounds (titles, control names, the text an agent would write), square brackets are real. */
+.clay [data-placeholder], .live [data-placeholder] { outline: none !important; }
+:is(.shot, .gallery, .mine, .asked, .nav__menu, .rank2) [data-placeholder], :is(.shot, .gallery, .mine, .asked, .nav__menu)[data-placeholder] { outline: none !important; }
