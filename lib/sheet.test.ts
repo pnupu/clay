@@ -86,7 +86,7 @@ test("the colours of a data view are the page's own: every colour of the sheet's
 test("the look of a page is checked in a time that grows with its length: a view.css written to be slow costs milliseconds", () => {
   // The check runs on what an agent sends, before anything is stored. Each of these took seconds to hours with a
   // pattern that could start a number or a value at every character: 20,000 characters is the largest view.css.
-  const hostile = {
+  const hostile: Record<string, string> = {
     "a run of digits with no unit": `.a { font-size: ${"1".repeat(19_980)} }`,
     "colons before a brace": `${":".repeat(19_999)}{`,
     "colons with no end": ":".repeat(20_000),
@@ -95,10 +95,15 @@ test("the look of a page is checked in a time that grows with its length: a view
     "comments that are never closed": "/*".repeat(10_000),
     "placeholders that are never closed": "{{".repeat(10_000),
     "one placeholder with no end": `{{${"a".repeat(19_998)}`,
+    "a placeholder that opens before a run of spaces": `{{${" ".repeat(19_998)}`,
+    "a function that is never closed in a font": `.a { font: ${"calc(".repeat(3_990)} }`,
   };
+  // A toggle text of the largest size, used as often as view.css has room for: the fill stops at its limit.
+  const long = { id: "tg", type: "toggle" as const, label: "T", meaning: "m", initial: true, on: `font-size: 13px; ${"a".repeat(1_980)}`, off: "" };
+  hostile["a long toggle text used 3,333 times"] = "{{tg}}".repeat(3_333);
   for (const [what, css] of Object.entries(hostile)) {
     const start = performance.now();
-    styleProblems({ preview: { html: `<p${' style="font: 1"'.repeat(1_000)}>x</p>`, css, data: true } });
+    styleProblems({ preview: { html: `<p${' style="font: 1"'.repeat(1_000)}>x</p>`, css, data: true }, controls: [long] });
     const ms = performance.now() - start;
     assert.ok(ms < 500, `${what}: ${Math.round(ms)} ms`);
   }
@@ -150,12 +155,13 @@ test("a page of data in styles of its own is a problem for the agent that builds
       { id: "big", type: "slider", label: "Head size", meaning: "font-size of the head in px", min: 12, max: 30, initial: 16, unit: "px" },
       { id: "face", type: "select", label: "Typeface", meaning: "font of the buttons", initial: "inherit", options: [{ value: "inherit" }, { value: "Inter" }] },
       { id: "shadow", type: "toggle", label: "Shadow", meaning: "box-shadow of a card", initial: true, on: "box-shadow: 0 1px 2px #111111;", off: "" },
+      { id: "ink", type: "color", label: "Text colour", meaning: "colour of the head", initial: "#444444" },
     ],
-    view: { ...MODEL_EXAMPLE.view, css: "td { font-size: {{size}}px } th { font-size: calc({{big}} * 1px) } button { font: {{face}} } .card { {{shadow}} border-color: #222222; outline-color: #333333 }" },
+    view: { ...MODEL_EXAMPLE.view, css: "td { font-size: {{size}}px } th { font-size: calc({{big}} * 1px); color: {{ ink }} } button { font: {{face}} } .card { {{shadow}} border-color: #222222; outline-color: #333333 }" },
   });
   // The slider that starts at 9 px is small text; the one that starts at 16 px is not. "inherit" from a control is no
-  // typeface. The declaration inside the toggle text and the ones after it are all read: three colours.
-  // A term of calc() is not a size.
+  // typeface. The declaration inside the toggle text and the ones after it are all read: three colours; the colour of
+  // a colour control is the person's to tune and is not counted. A term of calc() is not a size.
   const look = controls.warnings.filter((w) => w.startsWith("view.css"));
   assert.equal(look.length, 2, look.join("\n"));
   assert.match(look[0], /font-size 9px is under 12 px/);
@@ -164,6 +170,9 @@ test("a page of data in styles of its own is a problem for the agent that builds
   assert.match(data(".a { font-family: {{face}} }")[0], /Clay's typeface/);
   assert.match(data(".a { font: 600 10px/{{lh}} Arial }").join("\n"), /Clay's typeface[\s\S]*font-size 10px is under 12 px/);
   assert.deepEqual(data(".a { font-size: {{size}}px; color: {{ink}} }"), []);
+  // The size before a function is read; the sizes inside one are not.
+  assert.match(data(".a { font: 10px/1.2 var(--mono) }").join("\n"), /font-size 10px is under 12 px/);
+  assert.deepEqual(data(".a { font-size: clamp(8px, 1vw, 10px) } .b { font-size: calc(var(--s) * 1px) }"), []);
   // url(#grad) names a gradient or a clip path of a chart, not a colour.
   assert.deepEqual(data(".a { fill: url(#abc); stroke: url( '#def'); mask: url(#fed); color: #2a78d6 }"), []);
   // "font: inherit" takes Clay's typeface (a button does not by itself), and ".font:hover" is a selector.
