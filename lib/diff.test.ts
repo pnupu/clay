@@ -99,6 +99,8 @@ test("one re-check that reads no price does not take a vendor's prices away", ()
   assert.equal(noPriceRead(true, false, iso(first), first + NO_PRICE_MAX_MS + 1), "hold");
   assert.equal(noPriceMark(iso(first), first + NO_PRICE_MAX_MS + 1), null);
   assert.equal(noPriceMark(iso(first), first + 3_600_000), iso(first));
+  // A weekly schedule, with a late run, still finds the mark of the run before it.
+  assert.equal(noPriceRead(true, false, iso(first), first + 8 * 24 * 3_600_000), "accept");
 });
 
 test("agreement: a fact changes only when two fresh extractions state the same thing", () => {

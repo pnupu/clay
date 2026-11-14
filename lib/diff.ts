@@ -99,10 +99,15 @@ export function confirmed(old: PricingModel, a: PricingModel, b: PricingModel): 
 
 /** How long apart two re-checks must be that both read no price, before a vendor that had prices is taken to have none. */
 export const NO_PRICE_GAP_MS = 10 * 60_000;
-/** How long the first such re-check counts. An older one is not agreement with a read of today: the count starts again. */
-export const NO_PRICE_MAX_MS = 7 * 24 * 3_600_000;
+/**
+ * How long the first such re-check counts. An older one is not agreement with a read of today: the count starts again.
+ * 30 days, so that a weekly re-check (the slowest schedule public/clay-recheck.yml names) still finds the mark of the
+ * run before it, with room for late runs.
+ */
+export const NO_PRICE_MAX_MS = 30 * 24 * 3_600_000;
 
 /** The stored time of the first re-check that read no price, when it still counts at `now`: a real time, not in the future, at most NO_PRICE_MAX_MS old. Else null. */
+// lean: the mark is parsed here and again in noPriceRead; two parses of one short text per re-check.
 export function noPriceMark(seenAt: string | null | undefined, now: number): string | null {
   const t = seenAt ? Date.parse(seenAt) : NaN;
   return Number.isFinite(t) && t <= now && now - t <= NO_PRICE_MAX_MS ? seenAt! : null;

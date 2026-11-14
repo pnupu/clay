@@ -164,15 +164,13 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
   const src: Source = prev ?? { id, name: v.name, demo: !!v.demo, url: null, foundVia: null, snapshot: null, lastCheckedAt: null, error: null, monitor: null };
   src.name = v.name;
   src.unpriced = false;
-  // A build, a repair or a revision reads the page anew (it may be another page or another question): a re-check that
-  // read no price before it does not count for the next one.
-  src.noPriceSeenAt = null;
   try {
     if (v.demo) {
       Object.assign(src, { url: demoUrl(origin), foundVia: "app route" });
       src.snapshot = await readModel(p.domain, src, origin);
       src.error = null;
       src.readAt = src.snapshot.fetchedAt;
+      src.noPriceSeenAt = null;
     } else {
       const tried: { url: string; why: string }[] = [];
       /** A page of this vendor could not be read at all: then "no price" is not known, whatever another page says. */
@@ -183,7 +181,8 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         try {
           const snapshot = await readModel(p.domain, { ...src, url }, origin);
           if (hasPrices(snapshot.model)) {
-            Object.assign(src, { url, foundVia: via, snapshot, error: null, readAt: snapshot.fetchedAt, unpricedSince: null });
+            // A new read is stored: a re-check that read no price before it does not count for the next one (noPriceRead).
+            Object.assign(src, { url, foundVia: via, snapshot, error: null, readAt: snapshot.fetchedAt, unpricedSince: null, noPriceSeenAt: null });
             return true;
           }
           tried.push({ url, why: emptyReason(snapshot.model) });
@@ -217,7 +216,7 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
         const kept = best as { snapshot: Snapshot; url: string; via: Source["foundVia"] } | null;
         // That page was read; it states no price. This is a fact of the page, kept apart from a failed read (unpriced).
         // Only when every page that was tried could be read: a failed read of the real pricing page is not "no price".
-        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, readAt: kept.snapshot.fetchedAt, unpriced: !failedRead, unpricedSince: prev?.unpricedSince ?? (prev?.snapshot ? prev.snapshot.fetchedAt : kept.snapshot.fetchedAt) });
+        if (kept && !hadPrices) Object.assign(src, { url: kept.url, foundVia: kept.via, snapshot: kept.snapshot, readAt: kept.snapshot.fetchedAt, noPriceSeenAt: null, unpriced: !failedRead, unpricedSince: prev?.unpricedSince ?? (prev?.snapshot ? prev.snapshot.fetchedAt : kept.snapshot.fetchedAt) });
         src.error = hadPrices ? `${v.name}'s pricing page could not be read again (${tried[0]?.why ?? "unknown reason"}). The earlier read is kept.` : said;
       }
     }
@@ -682,6 +681,9 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       // Conditional write: another re-check stored a newer read of this source while this one ran. Its result stands.
       const cur = p.sources[id].snapshot;
       if (cur?.textHash !== src.snapshot!.textHash || cur?.fetchedAt !== src.snapshot!.fetchedAt) return void (event = null);
+      // The same for the mark of a re-check that read no price: this check judged with the mark it loaded. When a build
+      // or another re-check changed the mark meanwhile, this result is dropped, and the next re-check reads the page again.
+      if ((p.sources[id].noPriceSeenAt ?? null) !== (src.noPriceSeenAt ?? null)) return void (event = null);
       // The demo page lives on this app's origin, which changes with the port.
       // A read that gives no price keeps its explanation (collect(): what was tried and why) until a read gives one.
       // The page states no price: `error` holds the explanation of that (collect(): what was tried), and the source is
