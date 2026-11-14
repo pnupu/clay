@@ -24,8 +24,8 @@ export type ClayControl = {
   | { type: "scale"; options: Option[]; initial: string; css: string }
 );
 export type ClayValues = Record<string, number | boolean | string>;
-/** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props. */
-export type ClayApplied = { className: string; style: CSSProperties; values: ClayValues; changes: boolean };
+/** What one use gets: spread `className` (changed scale classes) and `style` (off-scale values) on the real component. `values` are for props: only the controls the person moved, and nothing for a use that does not change, so each use keeps its own props (`size={a.values.size ?? "sm"}`). */
+export type ClayApplied = { className: string; style: CSSProperties; values: Partial<ClayValues>; changes: boolean };
 /** One real place where the component is used, with the props and the markup around it copied from that call site. */
 export type ClayUse = { id: string; /** Path from the repository root with the line: "src/app/x/page.tsx:42". */ file: string; label?: string; /** The style properties that this call site always sets itself with its own class (not under `hover:` or `md:`), named as the `css` of the scale controls ("borderRadius" for a call site with `rounded-none`). At the level "variant" the call site keeps its own value in the real code, so the kit leaves those controls out for this use, and shows the use as unchanged when it sets every property that changes. */ sets?: string[]; render: (a: ClayApplied) => ReactNode };
 export type ClayLevel = {
@@ -83,17 +83,19 @@ export function ClayPlayground(props: {
   const now = { ...initial, ...Object.fromEntries(active.map((c) => [c.id, values[c.id]])) } as ClayValues;
 
   // A use that the level changes gets the changed values only: scale classes as className, off-scale values as style.
-  const same: ClayApplied = { className: "", style: {}, values: initial, changes: false };
+  const same: ClayApplied = { className: "", style: {}, values: {}, changes: false };
   // At the level "variant" a call site that sets a property itself keeps it in the real code: those controls are left out for that use,
   // and a use that sets every property the controls change does not change at all.
   const own = (l: ClayLevel | undefined, u: ClayUse) => (l?.id === "variant" ? (u.sets ?? []) : []);
   const keeps = (l: ClayLevel | undefined, u: ClayUse, of: ClayControl[]) => of.length > 0 && of.every((c) => c.type === "scale" && own(l, u).includes(c.css));
-  // The controls the person moved decide it; before the first move, all controls of the level do.
-  const changes = (u: ClayUse) => (!level || level.uses.includes(u.id)) && !keeps(level, u, moved.length ? moved : active);
+  // The controls that decide it: the ones the person moved at the chosen level; before the first move, and for another level, all controls of that level.
+  const decide = (l: ClayLevel | undefined) => (l === level && moved.length ? moved : controls.filter((c) => !l || (l.id === "token") === !!c.token));
+  const changesAt = (l: ClayLevel | undefined, u: ClayUse) => (!l || l.uses.includes(u.id)) && !keeps(l, u, decide(l));
+  const changes = (u: ClayUse) => changesAt(level, u);
   const applied = (u: ClayUse): ClayApplied => {
     if (!changes(u)) return same;
     const mine = moved.flatMap((c) => (c.type === "scale" && !c.token && !own(level, u).includes(c.css) ? [c] : []));
-    return { className: mine.filter(onScale).map((c) => values[c.id]).join(" "), style: Object.fromEntries(mine.filter((c) => !onScale(c)).map((c) => [c.css, String(values[c.id])])) as CSSProperties, values: now, changes: true };
+    return { className: mine.filter(onScale).map((c) => values[c.id]).join(" "), style: Object.fromEntries(mine.filter((c) => !onScale(c)).map((c) => [c.css, String(values[c.id])])) as CSSProperties, values: Object.fromEntries(moved.filter((c) => !c.token).map((c) => [c.id, values[c.id]])), changes: true };
   };
 
   // The level "token": the variable is set on the page root, as the theme file would set it. The browser decides what changes.
@@ -141,7 +143,7 @@ export function ClayPlayground(props: {
     }
   }
   const paths = (l: ClayLevel) => {
-    const all = [...uses.filter((u) => l.uses.includes(u.id) && !keeps(l, u, controls.filter((c) => !c.token))).map((u) => u.file), ...(l.others ?? [])];
+    const all = [...uses.filter((u) => changesAt(l, u)).map((u) => u.file), ...(l.others ?? [])];
     return `Changes ${all.length} use${all.length === 1 ? "" : "s"}: ${all.slice(0, 4).join(", ")}${all.length > 4 ? ` and ${all.length - 4} more` : ""}.`;
   };
   return (
