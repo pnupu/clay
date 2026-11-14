@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, isExample, keepPublished, playgroundCapMessage, type Account, type Discarded, deploymentCapMessage } from "./accounts.ts";
+import { boundStorage, currentUserId, isExample, keepPublished, StorageRefused, playgroundCapMessage, type Account, type Discarded, deploymentCapMessage } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -215,9 +215,10 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
   const run = queue.then(async () => {
     if (!onBlob()) {
       const s = parse((await read()).text);
-      const keep = keepPublished(s.playgrounds);
+      const keep = keepPublished(s.playgrounds), bound = boundStorage(s.playgrounds);
       const out = await fn(s);
       keep(s.playgrounds);
+      bound(s.playgrounds, () => JSON.stringify(s).length);
       mkdirSync(".data", { recursive: true });
       writeFileSync(FILE + ".tmp", JSON.stringify(s, null, 1));
       renameSync(FILE + ".tmp", FILE);
@@ -227,9 +228,10 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const { text, etag, header } = await read();
       const s = parse(text);
-      const keep = keepPublished(s.playgrounds);
+      const keep = keepPublished(s.playgrounds), bound = boundStorage(s.playgrounds);
       const out = await fn(s);
       keep(s.playgrounds);
+      bound(s.playgrounds, () => JSON.stringify(s).length);
       if (JSON.stringify(s) === text) return out; // `fn` changed nothing: no write, and no new version for the other writers
       s.rev = randomUUID();
       const body = JSON.stringify(s);
@@ -276,6 +278,7 @@ export function freeId(wanted: string, taken: (id: string) => boolean, random = 
  * before it: a refused create has spent nothing.
  */
 export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string; existed?: boolean } | { refused: string }> {
+  // The storage bounds are checked on the size the insert leaves (update(), boundStorage): their refusal is an answer.
   return update((s) => {
     // A repeated create (the answer of the first one was lost): the caller's own playground with exactly this spec, under
     // the id asked for or under that id with a suffix (the first create may have been renamed), is the one they mean.
@@ -287,10 +290,13 @@ export async function insertPlayground(domain: Domain, make: (d: Domain) => Play
     const renamed = `${domain.id.slice(0, 33)}-`;
     const mine = Object.values(s.playgrounds).find((p) => (p.domain.id === domain.id || (p.domain.id.startsWith(renamed) && /^[0-9a-f]{6}$/.test(p.domain.id.slice(renamed.length)))) && !isExample(p) && (p.owner ?? null) === owner && spec(p) === spec(wanted));
     if (mine) return { id: mine.domain.id, existed: true };
-    const refused = playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length);
+    const refused = playgroundCapMessage(s.playgrounds) ?? deploymentCapMessage(Object.keys(s.playgrounds).length, JSON.stringify(s).length, undefined, Object.values(s.playgrounds).some((p) => owner && p.owner === owner));
     if (refused) return { refused };
     const id = freeId(domain.id, (x) => !!s.playgrounds[x]);
     s.playgrounds[id] = make({ ...domain, id });
     return { id };
+  }).catch((e) => {
+    if (e instanceof StorageRefused) return { refused: e.message };
+    throw e;
   });
 }

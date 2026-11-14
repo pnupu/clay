@@ -343,3 +343,32 @@ test("published examples: a webhook write keeps a person's example; the operator
   k2(s);
   assert.deepEqual([s.theirs.sources.alpha.price, s.theirs.discardedWrites?.[0].by, s.theirs.discardedWrites?.length], [20, "its owner", 2]);
 });
+
+test("storage bounds: a person's allowance and a full store hold for every write that grows their playgrounds", async () => {
+  const { boundStorage, StorageRefused } = await import("./accounts.ts");
+  process.env.CLAY_USER_STORE_BYTES = "1000";
+  process.env.CLAY_MAX_STORE_BYTES = "5000";
+  const s = () => ({ a: { domain: { id: "a" }, owner: "user_ann", pad: "x".repeat(300) }, b: { domain: { id: "b" }, owner: "user_bob", pad: "x".repeat(300) } }) as Record<string, { domain: { id: string }; owner?: string; pad: string }>;
+  const run = (who: Actor, change: (x: ReturnType<typeof s>) => void, store = 100) => {
+    const x = s();
+    const bound = boundStorage(x, who);
+    change(x);
+    bound(x, () => store);
+  };
+  // A revision (or pages arriving) that takes Ann over her allowance is refused; a smaller one and a delete pass.
+  assert.throws(() => run(ann, (x) => (x.a.pad = "x".repeat(1200))), (e) => e instanceof StorageRefused && /over the limit of 1000 characters per person/.test(e.message));
+  run(ann, (x) => (x.a.pad = "x".repeat(500)));
+  run(ann, (x) => delete x.a);
+  // A create that would pass the allowance is refused too.
+  assert.throws(() => run(ann, (x) => (x.c = { domain: { id: "c" }, owner: "user_ann", pad: "x".repeat(800) })), StorageRefused);
+  // Over the deployment bound: growth is refused, shrinking passes; who owns nothing is sent to the operator.
+  assert.throws(() => run(ann, (x) => (x.a.pad += "y"), 5001), (e) => e instanceof Error && /storage is full \(5001 of 5000/.test(e.message) && /Delete a playground/.test(e.message));
+  run(ann, (x) => (x.a.pad = "x"), 6000);
+  const carl: Actor = { kind: "user", userId: "user_carl", via: "key" };
+  assert.throws(() => run(carl, (x) => (x.c = { domain: { id: "c" }, owner: "user_carl", pad: "x" }), 5001), (e) => e instanceof Error && /Ask the operator/.test(e.message));
+  // The operator, and work with no caller, are not bound.
+  run(admin, (x) => (x.a.pad = "x".repeat(9000)), 99999);
+  boundStorage(s(), null)(s(), () => 99999);
+  delete process.env.CLAY_USER_STORE_BYTES;
+  delete process.env.CLAY_MAX_STORE_BYTES;
+});

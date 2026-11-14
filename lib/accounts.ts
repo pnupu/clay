@@ -173,8 +173,7 @@ export const userDailyCap = () => limit(process.env.CLAY_USER_DAILY_REQUESTS, 40
 export const userPlaygroundCap = () => limit(process.env.CLAY_USER_PLAYGROUNDS, 20);
 
 /** The refusal when the current caller may not create one more playground, or null. Only signed-in people are capped. */
-// lean: checked on one read before the create, so parallel creates by one person can pass it together and end a few over
-// the cap (bounded by how many calls their agent sends at once). Move the count into the create's update() if that matters.
+// Checked inside the create's store update (store.ts, insertPlayground), so parallel creates stop at the cap.
 export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): string | null {
   if (a?.kind !== "user") return null;
   const cap = userPlaygroundCap();
@@ -188,13 +187,45 @@ export function playgroundCapMessage(playgrounds: Record<string, Owned>, a: Acto
  * CLAY_MAX_STORE_BYTES characters (default 10,000,000); 0 turns a bound off. The operator is not bound: examples and the
  * operator's own playgrounds stay creatable.
  */
-export function deploymentCapMessage(count: number, bytes: number, a: Actor | null = currentActor()): string | null {
+export function deploymentCapMessage(count: number, bytes: number, a: Actor | null = currentActor(), ownsAny = true): string | null {
   if (a?.kind !== "user") return null;
   const maxCount = limit(process.env.CLAY_MAX_PLAYGROUNDS, 2_000);
-  const maxBytes = limit(process.env.CLAY_MAX_STORE_BYTES, 10_000_000);
-  if (maxCount > 0 && count >= maxCount) return `This Clay deployment holds its limit of ${maxCount} playgrounds. Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), or try again later.`;
-  if (maxBytes > 0 && bytes >= maxBytes) return `This Clay deployment's storage is full (${bytes} of ${maxBytes} characters). Nothing was created. Delete a playground you no longer need on the Clay home page ("Your playgrounds"), or try again later.`;
+  const maxBytes = maxStoreChars();
+  if (maxCount > 0 && count >= maxCount) return `This Clay deployment holds its limit of ${maxCount} playgrounds. Nothing was created. ${makeRoom(ownsAny)}`;
+  if (maxBytes > 0 && bytes >= maxBytes) return `This Clay deployment's storage is full (${bytes} of ${maxBytes} characters). Nothing was created. ${makeRoom(ownsAny)}`;
   return null;
+}
+const maxStoreChars = () => limit(process.env.CLAY_MAX_STORE_BYTES, 10_000_000);
+/** What a refused person can do: delete one of theirs, or, owning none, ask the operator. */
+const makeRoom = (ownsAny: boolean) => (ownsAny ? 'Delete a playground you no longer need on the Clay home page ("Your playgrounds"), or try again later.' : "Ask the operator of this Clay deployment to make room, or try again later.");
+/**
+ * Characters per person over their own playgrounds (CLAY_USER_STORE_BYTES, default 600,000): 20 playgrounds the size of
+ * the largest live example (about 26,000 characters) fit, so filling the 10,000,000 of the deployment takes about 16 accounts.
+ */
+export const userStoreAllowance = () => limit(process.env.CLAY_USER_STORE_BYTES, 600_000);
+/** A write that the storage bounds refuse: nothing of it is stored (store.ts update()). */
+export class StorageRefused extends Error {}
+/**
+ * The storage bounds, checked inside every store update on the size it leaves (store.ts update() calls this before the
+ * write and the function it returns after it). A write by a person that grows their own playgrounds (a create, a
+ * revision, or pages that arrive later from a build or a re-check) is refused when their playgrounds would hold more
+ * than their allowance, or the store more than CLAY_MAX_STORE_BYTES. A write that does not grow them (a delete, a
+ * smaller revision) always passes, and so does the operator. Throws StorageRefused.
+ */
+export function boundStorage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): (after: Record<string, Owned>, storeChars: () => number) => void {
+  if (a?.kind !== "user") return () => {};
+  const mine = (all: Record<string, Owned>) => Object.values(all).filter((p) => ownerOf(p) === a.userId);
+  const chars = (ps: Owned[]) => ps.reduce((n, p) => n + JSON.stringify(p).length, 0);
+  const owned = mine(playgrounds);
+  const before = chars(owned);
+  return (after, storeChars) => {
+    const own = chars(mine(after));
+    if (own <= before) return;
+    const allowance = userStoreAllowance(), max = maxStoreChars();
+    if (allowance > 0 && own > allowance) throw new StorageRefused(`Your playgrounds would hold ${own} characters, over the limit of ${allowance} characters per person. Nothing was stored. Make the playground smaller, or delete a playground you no longer need on the Clay home page ("Your playgrounds"), then try again.`);
+    const total = max > 0 ? storeChars() : 0;
+    if (max > 0 && total > max) throw new StorageRefused(`This Clay deployment's storage is full (${total} of ${max} characters). Nothing was stored. ${makeRoom(owned.length > 0)}`);
+  };
 }
 // No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").
 export const userCapMessage = (cap: number) => `Your daily limit of ${cap} web requests is used up (reading a brand counts as 2), so no request was sent. It resets at 00:00 UTC. Until then the playgrounds still work, because moving the controls needs no web request, and your agent can still build preview playgrounds that use no web data`;
