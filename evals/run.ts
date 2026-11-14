@@ -142,11 +142,12 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
     const before = earlier?.playground?.split("/").pop();
     if (from && before && earlier?.person?.chosen) prepared = { id: before, url: pageUrl(before)!, chosen: earlier.person.chosen, dims: preparedDimensions(before) };
     else try {
-      const id = `eval-${tag}-${c.id}`;
-      const res = await mcp("tools/call", { name: TOOL.create, arguments: preparedPlayground(id) });
-      const built = parseBuild(String((res.content as { text?: string }[] | undefined)?.[0]?.text ?? ""));
-      const url = pageUrl(id);
-      if (res.isError || built.id !== id || !url) throw new Error(`the playground could not be prepared: ${JSON.stringify(res).slice(0, 200)}`);
+      const res = await mcp("tools/call", { name: TOOL.create, arguments: preparedPlayground(`eval-${tag}-${c.id}`) });
+      // The id of the result: the server adds a suffix when the id asked for is taken. A build that is still running is
+      // waited for on the page by the person step below.
+      const id = parseBuild(String((res.content as { text?: string }[] | undefined)?.[0]?.text ?? "")).id;
+      const url = id ? pageUrl(id) : null;
+      if (res.isError || !id || !url) throw new Error(`the playground could not be prepared: ${JSON.stringify(res).slice(0, 200)}`);
       const dims = preparedDimensions(id);
       const person = await personSettles(browser, { baseUrl, url, key, dims });
       if (person.error || !person.chosen) throw new Error(`the prepared decision could not be saved: ${person.error}`);
@@ -169,7 +170,7 @@ async function runCase(c: Case, browser: Browser, kit: boolean): Promise<CaseRes
   }
   if (c.expect === "return") {
     if (c.mustCall?.includes("read")) add(namesChoice(first.allText, prepared!.chosen));
-    const page = await checkPage(browser, { baseUrl, url: prepared!.url, key, dims: dimensions([{ tool: TOOL.create, mcp: true, input: preparedPlayground(prepared!.id), isError: false }, ...first.calls], prepared!.id), shotPath: join(dir, "page.png") });
+    const page = await checkPage(browser, { baseUrl, url: prepared!.url, key, dims: dimensions([{ tool: TOOL.create, mcp: true, input: preparedPlayground(prepared!.id), isError: false, result: JSON.stringify({ playground_id: prepared!.id }) }, ...first.calls], prepared!.id), shotPath: join(dir, "page.png") });
     add(...page.checks);
     r.shot = page.shot ? relative(runDir, page.shot) : null;
     return finish();

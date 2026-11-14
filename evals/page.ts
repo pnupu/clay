@@ -100,6 +100,8 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
     // ---- Does it load without an error state and without console errors?
     const status = response instanceof Error ? null : (response?.status() ?? null);
     const rendered = await page.waitForSelector(PAGE.ready, { timeout: 20000 }).then(() => true, () => false);
+    // A build that still reads pricing pages: wait for it to end, as the person would watch the vendors arrive.
+    const stillBuilding = rendered && !(await page.waitForFunction((sel) => !document.querySelector(sel), PAGE.building, { timeout: PAGE.buildWaitMs }).then(() => true, () => false));
     // The ranking or the preview appears after hydration; a preview then needs time to run.
     await page.locator(`${PAGE.preview}, ${PAGE.ranked}`).first().waitFor({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout((await page.locator(PAGE.preview).count()) ? PAGE.previewSettleMs : 500);
@@ -112,6 +114,7 @@ export async function checkPage(browser: Browser, o: { baseUrl: string; url: str
       response instanceof Error ? `the page did not load: ${cut(response.message)}` :
       status != null && status >= 400 ? `the page answered HTTP ${status}` :
       !rendered ? "the playground never rendered" :
+      stillBuilding ? `the page still reads pricing pages after ${PAGE.buildWaitMs / 1000} s` :
       shown.length ? `the page shows an error: ${shown[0]}` :
       !hasPreview && ranked === 0 ? "the page ranks no vendor, so there is nothing to compare" :
       errors.length ? cut(errors[0]) : null;
@@ -156,6 +159,7 @@ export async function personSettles(browser: Browser, o: { baseUrl: string; url:
   const { context, page } = await open(browser, o.baseUrl, o.url, o.key);
   try {
     if (!(await page.waitForSelector(PAGE.ready, { timeout: 20000 }).then(() => true, () => false))) return { chosen: null, outputs: null, error: "the playground never rendered" };
+    await page.waitForFunction((sel) => !document.querySelector(sel), PAGE.building, { timeout: PAGE.buildWaitMs }).catch(() => {});
     return await settle(page, o.dims ?? []);
   } catch (e) {
     return { chosen: null, outputs: null, error: `the person could not settle: ${cut(String(e))}` };

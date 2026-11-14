@@ -39,6 +39,14 @@ export const isIdCollision = (resultText: string) => /^A playground with id ".*"
 /** The id a create call asks for. Used when the call's result never reached the agent (a client-side timeout). */
 export const createdId = (input: Record<string, unknown>) => (typeof input.id === "string" ? input.id : null);
 const pricePages = (input: Record<string, unknown>) => ((input.data as Record<string, unknown> | undefined)?.price_pages as Record<string, unknown> | undefined) ?? null;
+/** The id of the vendor with this display name, from the vendor lists of the build calls. The agent may name either. */
+export function vendorId(calls: { input: Record<string, unknown> }[], name: string): string | null {
+  for (const c of [...calls].reverse()) {
+    const hit = ((pricePages(c.input)?.vendors ?? c.input.vendors ?? c.input.add_vendors ?? []) as Record<string, unknown>[]).find((v) => v?.name === name);
+    if (hit && typeof hit.id === "string") return hit.id;
+  }
+  return null;
+}
 /** The vendors a revise call gives: the new vendor list of data.price_pages (or add_vendors before the kit). */
 export const addedNames = (input: Record<string, unknown>) => ((pricePages(input)?.vendors ?? input.add_vendors ?? []) as Record<string, unknown>[]).map((v) => `${v.id} ${v.name} ${v.domain ?? ""} ${v.pricing_url ?? ""}`);
 
@@ -65,7 +73,9 @@ export const preparedDimensions = (id: string): Dimension[] => preparedPlaygroun
 
 // ---- The stored playground, as far as the checker needs it.
 export type Dimension = { id: string; label: string; unit: string; min: number; max: number; initial: number };
-type BuildCall = { tool: string; mcp: boolean; input: Record<string, unknown>; isError: boolean };
+type BuildCall = { tool: string; mcp: boolean; input: Record<string, unknown>; isError: boolean; result?: string };
+/** The id a create call got: the one in its result (a taken id gets a suffix), else the one it asked for. */
+const builtId = (c: BuildCall) => parseBuild(c.result ?? "").id ?? createdId(c.input);
 /** The numeric dimensions in one create or revise input, or null when the call does not state them. */
 function statedDimensions(input: Record<string, unknown>): Dimension[] | null {
   const metrics = (pricePages(input)?.metrics ?? input.metrics) as Dimension[] | undefined; // a price playground: one slider per metric
@@ -81,7 +91,7 @@ function statedDimensions(input: Record<string, unknown>): Dimension[] | null {
 export function dimensions(calls: BuildCall[], id: string): Dimension[] | null {
   let dims: Dimension[] | null = null;
   for (const c of calls.filter((x) => x.mcp && !x.isError)) {
-    if (c.tool === TOOL.create && c.input.id === id) dims = statedDimensions(c.input) ?? [];
+    if (c.tool === TOOL.create && builtId(c) === id) dims = statedDimensions(c.input) ?? [];
     else if (c.tool === TOOL.revise && c.input.playground_id === id && dims) {
       const add = (c.input.add_metrics as Dimension[] | undefined) ?? []; // before the kit: entries were added and removed by id
       const remove = (c.input.remove_metric_ids as string[] | undefined) ?? [];
@@ -107,6 +117,10 @@ export const PAGE = {
   ranked: "ol.rank li.vendor",
   /** Milliseconds a preview needs after load before it reports that it ran. */
   previewSettleMs: 2500,
+  /** Present while the agent's build still reads pricing pages: sources arrive one by one, and the person waits and watches. */
+  building: "[data-building]",
+  /** How long the checker waits for a build to end, like a person would. A build that takes longer fails the page check. */
+  buildWaitMs: 240_000,
 };
 
 /** The request with which the page reports the person's exploration to the agent. The checker's own control moves must not be stored as the person's. */

@@ -3,12 +3,15 @@
 // extraction schema of the request and invents a fictional price list per vendor URL, the same on every read.
 // The prices are fiction. A playground built on it proves the agent, the page and the hand-back, not the web data.
 // Usage: node evals/fixture-web.ts <port> [fail]     ("fail": every scrape answers 500, for the deliberate-failure proof)
+//   FIXTURE_DELAY_MS=<ms> makes every scrape slow.
 //   then start the app with CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture CONTEXT_DEV_DAILY_CAP=0
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo, Server } from "node:net";
 
 const port = Number(process.argv[2] ?? 0);
 const failing = process.argv[3] === "fail";
+/** FIXTURE_DELAY_MS: every scrape answers this much later, to act out slow pricing pages (a build that outlasts a tool call). */
+const delay = Number(process.env.FIXTURE_DELAY_MS ?? 0);
 type Json = Record<string, unknown>;
 
 const body = (req: IncomingMessage) =>
@@ -83,6 +86,7 @@ createServer(async (req, res) => {
     return send(failing ? 500 : 200, failing ? { error_code: "FIXTURE_FAILURE", message: "fixture read failed" } : { brand: { title: `${b.domain} (fixture brand)`, colors: [0, 1, 2, 3].map((n) => ({ hex: hex(n), name: `Fixture ${n + 1}` })), logos: [] }, key_metadata: { credits_consumed: 0 } });
   }
   if (req.url !== "/web/scrape") return send(404, {});
+  if (delay) await new Promise((r) => setTimeout(r, delay));
   if (failing) return send(500, { error_code: "FIXTURE_FAILURE", message: "fixture read failed" });
   const wantsJson = (b.formats as { json?: boolean } | undefined)?.json === true;
   let list: ReturnType<typeof priceList>;
