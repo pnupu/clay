@@ -13,9 +13,11 @@ type Frame = { status: "loading" | "ok" | "failed"; error: string | null };
 
 /**
  * `canWrite`: this viewer owns the playground (or is the admin). Anyone else is looking at an example: every control, the
- * preview and the outputs work for them in their browser, and nothing is settled, reported or saved.
+ * preview and the outputs work for them in their browser, and nothing is settled, reported or saved. Their wording differs:
+ * the agent that built an example is someone else's.
+ * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and no h1.
  */
-export default function Kit({ id, title, state, canWrite }: { id: string; title: string; state: KitState; canWrite: boolean }) {
+export default function Kit({ id, title, state, canWrite, embedded = false }: { id: string; title: string; state: KitState; canWrite: boolean; embedded?: boolean }) {
   // The https logo hosts that the frame's img-src allows (lib/frame.ts): the preview can send requests there.
   const logoHosts = (state.brandData?.logos ?? []).filter((l) => {
     try {
@@ -134,18 +136,21 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
   const atStart = JSON.stringify(values) === JSON.stringify(initialValues(kit.controls));
   const copy = (key: string, text: string) => navigator.clipboard?.writeText(text).then(() => setCopied(key), () => {});
 
+  const Shell = embedded ? "div" : "main";
+  const Title = embedded ? "h3" : "h1";
   return (
-    <main className="shell">
+    <Shell className={embedded ? css.embedded : "shell"}>
       <header className="top">
         <div>
-          <p className="eyebrow"><Link href="/">Clay</Link> · a playground built by your agent</p>
-          <h1>{title}</h1>
-          {kit.notes && <p className={css.notes}>{kit.notes}</p>}
+          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · a playground built by your agent</> : "An example · built by someone's own agent"}</p>
+          <Title className={css.title}>{title}</Title>
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
 
       <div className={css.grid}>
+        {/* The note is a grid item, so that on a narrow screen it can come after the preview: play first, read second. */}
+        {kit.notes && <p className={css.notes}>{kit.notes}</p>}
         <section className="card controls">
           <h2>Controls</h2>
           {kit.controls.map((c) => <Field key={c.id} c={c} value={values[c.id]} palette={c.type === "color" ? paletteOf(c, state.brandData) : []} names={state.brandData?.colors ?? []} onChange={(v) => set(c, v)} />)}
@@ -154,27 +159,31 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
         </section>
 
         <div className={css.main}>
-          <section className={`card ${css.stage}`}>
+          {/* The stage: the person's real component on a neutral mat, as a design tool shows an artboard. On a narrow screen it
+              comes first and stays in view while the controls below it are moved (kit.module.css). */}
+          <section className={`card ${css.stage}`} aria-label="Preview">
             <div className={css.stageHead}>
               <h2>Preview</h2>
-              <span className="small muted">
-                Built by the owner&apos;s agent. It runs in a sandbox and cannot read this page.{" "}
-                {logoHosts > 0
-                  ? "It can load images from the brand's logo hosts, and an image address can carry the values you set here, so those hosts can see them and your IP address."
-                  : "It cannot send what you set here to other sites."}
-                {state.kit.preview.tailwind ? " Your browser loads the Tailwind build from jsDelivr." : ""}
-              </span>
             </div>
             {frame.status === "failed" && (
               <p className={`alert ${css.failed}`} role="alert">
                 Preview failed: {frame.error} {canWrite ? "The error is saved. Tell your agent that the preview is broken; it can read the error and repair it." : ""}
               </p>
             )}
-            {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: kit.preview.height }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
+            <div className={css.mat}>
+              {inBrowser && !stopped && <iframe ref={iframe} className={css.frame} style={{ height: kit.preview.height }} src={`/p/${id}/frame`} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Preview built by the owner's agent" onLoad={onLoad} />}
+            </div>
           </section>
+          <p className={`small muted ${css.caption}`}>
+                Built by the owner&apos;s agent. It runs in a sandbox and cannot read this page.{" "}
+                {logoHosts > 0
+                  ? "It can load images from the brand's logo hosts, and an image address can carry the values you set here, so those hosts can see them and your IP address."
+                  : "It cannot send what you set here to other sites."}
+                {state.kit.preview.tailwind ? " Your browser loads the Tailwind build from jsDelivr." : ""}
+          </p>
 
           <section className="card">
-            <h2>What goes back to your agent</h2>
+            <h2>{canWrite ? "What goes back to your agent" : "If this were yours, your agent would now write this into the code"}</h2>
             {kit.outputs.map((o) => (
               <div className={css.output} key={o.id}>
                 <div className={css.outputHead}>
@@ -222,7 +231,7 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
           )}
         </div>
       </div>
-    </main>
+    </Shell>
   );
 }
 

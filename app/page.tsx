@@ -3,7 +3,9 @@ import { viewer } from "@/app/api/respond";
 import { canWrite, isExample } from "@/lib/accounts";
 import { DOMAIN } from "@/lib/domain";
 import { load, type Playground } from "@/lib/store";
+import Kit from "./kit";
 import Manage from "./manage";
+import PricePlayground from "./playground";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,17 @@ type AnyPlayground = Playground;
 const titleOf = (p: AnyPlayground, id: string) => p.domain?.question ?? id;
 const kindOf = (p: AnyPlayground) => (p.kit ? "Preview, tuned by hand" : p.domain?.vendors?.length ? "Price decision" : "Playground");
 const detailOf = (p: AnyPlayground) => (!p.kit && p.domain?.vendors?.length ? p.domain.vendors.map((v) => v.name).join(", ") : null);
+
+// What a gallery card says about an example. All of it is optional, so an example of any kind, with any note, gets a card.
+const noteOf = (p: AnyPlayground) => (p.kit?.kit.notes ?? p.domain?.note ?? "").trim();
+/** The person's own words, when the note starts with them: Someone told their agent: "...". */
+const requestOf = (note: string) => /^Someone told their agent:\s*["“]([\s\S]{3,240}?)["”](?=\s|$)/.exec(note)?.[1].trim() ?? null;
+/** Without that pattern: the first sentence of the note, cut short. */
+const blurbOf = (note: string) => {
+  const first = note.split(/(?<=[.!?])\s/)[0] ?? "";
+  return first.length > 140 ? `${first.slice(0, 139).trimEnd()}…` : first;
+};
+const controlsOf = (p: AnyPlayground) => (p.kit ? p.kit.kit.controls.map((c) => c.label) : [...(p.domain?.metrics ?? []), ...(p.domain?.features ?? [])].map((x) => x.label));
 
 export default async function Home() {
   const me = await viewer();
@@ -25,29 +38,37 @@ export default async function Home() {
       <section className="hero shell">
         <p className="eyebrow">Clay</p>
         <h1>Find out what you want by trying it.</h1>
-        <p className="lede">Your own AI agent builds a playground for a decision: a page of controls on real data. You move the controls yourself and see every result change at once. When you have settled, your agent reads where you landed and carries it out.</p>
+        <p className="lede">Some things you cannot put into words: why a button looks off, how an animation should feel, which price plan fits. Your own AI agent builds you a page with the real thing and a few controls. You move them yourself and it changes at once. When it is right, your agent reads where you landed and carries it out.</p>
         <p className="row wrap">
-          {first && <Link className="button primary" href={`/p/${first}`}>Try an example, no sign-up</Link>}
+          {first && <a className="button primary" href="#try">Try an example, no sign-up</a>}
           <Link className="button" href="/connect">Connect your agent</Link>
         </p>
       </section>
 
+      {/* The newest example, rendered in the page itself (no frame around it): it takes the height it needs, and on a
+          narrow screen its preview stays in view while the page scrolls. It is read-only here for everyone. */}
       {first && (
-        <section className="shell try" aria-label="Example playground">
+        <section className="shell try" id="try" aria-label="Example playground">
           <div className="try-head">
             <h2>Try it here</h2>
-            <p className="small muted">{titleOf(examples[0][1], first)} · <Link href={`/p/${first}`}>open full page</Link></p>
+            <p className="small muted"><Link href={`/p/${first}`}>Open this example on its own page</Link></p>
           </div>
-          <iframe src={`/p/${first}`} title={`Example playground: ${titleOf(examples[0][1], first)}`} loading="lazy" />
+          <div className="try-box">
+            {examples[0][1].kit ? (
+              <Kit key={first} id={first} title={titleOf(examples[0][1], first)} state={examples[0][1].kit} canWrite={false} embedded />
+            ) : (
+              <PricePlayground key={first} domain={examples[0][1].domain} explored={null} canWrite={false} admin={false} embedded />
+            )}
+          </div>
         </section>
       )}
 
       <section className="shell steps" aria-label="How it works">
         <h2>How it works</h2>
         <ol>
-          <li><strong>Your agent builds it.</strong> Ask your own agent, such as Claude Code or Codex, for help with a decision. Through Clay it builds a playground from data it reads on the web, and gives you the link.</li>
-          <li><strong>You try it on your own.</strong> Move the controls and every number follows at once. No agent and no network call sits between a move and its result, so you can try as many values as you like.</li>
-          <li><strong>Your agent carries it out.</strong> Save where you landed. Your agent reads your choice, the values you settled on and the range you tried, and acts on them.</li>
+          <li><strong>Your agent builds it.</strong> Tell your own agent, such as Claude Code or Codex, what feels off or what you have to choose. Through Clay it builds a page from your real code, or from prices it reads on the vendors&apos; own pages, and gives you the link.</li>
+          <li><strong>You try it on your own.</strong> Move the controls and the real thing follows at once: the button, the motion, the monthly cost. No agent and no network call sits between a move and its result, so you can try as many values as you like.</li>
+          <li><strong>Your agent carries it out.</strong> Settle where you landed. Your agent reads the values, the range you tried and the finished text for your code, then writes it into your files or tells you where your decision stands.</li>
         </ol>
       </section>
 
@@ -56,13 +77,20 @@ export default async function Home() {
         <p className="muted">Open one and use it fully. Nothing you do there is saved, and you need no account.</p>
         {examples.length ? (
           <ul className="gallery">
-            {examples.map(([id, p]) => (
-              <li key={id} className="card">
-                <p className="eyebrow">{kindOf(p)}</p>
-                <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
-                {detailOf(p) && <p className="small muted">{detailOf(p)}</p>}
-              </li>
-            ))}
+            {examples.map(([id, p]) => {
+              const note = noteOf(p);
+              const request = requestOf(note);
+              const controls = controlsOf(p);
+              return (
+                <li key={id} className="card">
+                  <p className="eyebrow">{kindOf(p)}</p>
+                  {request ? <blockquote>“{request}”</blockquote> : note && <p className="blurb">{blurbOf(note)}</p>}
+                  <Link href={`/p/${id}`} className="title">{titleOf(p, id)}</Link>
+                  {detailOf(p) && <p className="small muted">{detailOf(p)}</p>}
+                  {controls.length > 0 && <p className="small muted">You move: {controls.slice(0, 6).join(", ")}{controls.length > 6 ? ` and ${controls.length - 6} more` : ""}</p>}
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="card">No examples yet.</p>

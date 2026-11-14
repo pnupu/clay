@@ -12,6 +12,8 @@
   --bad: #b02a2a;
   --ok-bg: #e9f5e9;
   --bad-bg: #fbeaea;
+  /* The mat behind a preview: one neutral for both colour schemes (app/kit.module.css). */
+  --mat: #e6e5df;
   /* Categorical series, fixed order by vendor (dataviz reference palette, validated for both surfaces). */
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -36,6 +38,7 @@
     --bad: #f08080;
     --ok-bg: #12301a;
     --bad-bg: #3a1717;
+    --mat: #2b2b29;
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -178,3 +181,14 @@ svg .marker { stroke: var(--surface); stroke-width: 2; }
 .playgrounds a { font-size: 17px; font-weight: 600; }
 .playgrounds p { margin: 4px 0 0; }
 .eyebrow a { color: inherit; }
+
+/* Touch screens: small buttons get a target a finger can hit. */
+@media (pointer: coarse) { button.small-btn { padding: 7px 12px; } .check { padding: 7px 0; } }
+/* The price screen on a narrow screen: the answer stays in view while the controls above the ranking are moved. */
+.answer-bar { display: none; }
+@media (max-width: 700px) {
+  .answer-bar { display: block; order: -1; position: sticky; top: 0; z-index: 5; margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 18px rgb(0 0 0 / 0.16); font-size: 15px; }
+}
+/* A playground shown inside another page (the landing page) brings no page frame of its own. */
+.embedded-playground .top { margin-bottom: 12px; }
+.embedded-playground h3.question { font-size: 24px; line-height: 1.2; margin: 2px 0 0; text-transform: none; letter-spacing: 0; color: var(--ink); text-wrap: balance; }

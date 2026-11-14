@@ -53,8 +53,11 @@ async function call(path: string, method = "GET", body?: unknown): Promise<Publi
  * `canWrite`: this viewer owns the playground (or is the admin) and may save a decision and re-read the sources. Anyone else
  * is looking at an example: every control, the ranking and the chart work for them in their browser, and nothing is saved.
  * `admin`: the operator of this deployment, who alone may start webhook monitors and edit the demo page.
+ * `embedded`: shown inside another page (the landing page's "Try it here"), so it brings no page frame and no h1.
  */
-export default function Playground({ domain, explored, canWrite, admin }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean }) {
+export default function Playground({ domain, explored, canWrite, admin, embedded = false }: { domain: Domain; explored: Exploration | null; canWrite: boolean; admin: boolean; embedded?: boolean }) {
+  const Shell = embedded ? "div" : "main";
+  const shell = embedded ? "embedded-playground" : "shell";
   const api = `/api/p/${domain.id}`;
   const h = useMemo(() => helpers(domain), [domain]);
   const [state, setState] = useState<PublicState | null>(null);
@@ -167,7 +170,7 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
   const unsaved = !decision || decision.chosen !== pick || (decision.tolerance ?? 0) !== tolerance || decision.required.length !== required.length || required.some((f) => !decision.required.includes(f)) || domain.metrics.some((m) => m.id in decision.usage && decision.usage[m.id] !== usage[m.id]);
   const standing = useMemo(() => (decision ? judge(decision, models) : null), [models, decision]);
 
-  if (!state) return <main className="shell"><p className="muted">Loading…</p></main>;
+  if (!state) return <Shell className={shell}><p className="muted">Loading…</p></Shell>;
 
   const collectedAll = domain.vendors.every((v) => sources[v.id]?.snapshot || sources[v.id]?.error);
   // Web reads started by the agent go on after its tool call has answered. While they run, sources arrive one by one.
@@ -177,11 +180,11 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
 
   return (
     <Dom.Provider value={h}>
-    <main className="shell">
+    <Shell className={shell}>
       <header className="top">
         <div>
-          <p className="eyebrow"><Link href="/">Clay</Link> · data read from the web by Context.dev</p>
-          <h1>{domain.question}</h1>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · data read from the web by Context.dev</> : "An example · prices read from the web by Context.dev"}</p>
+          {embedded ? <h3 className="question">{domain.question}</h3> : <h1>{domain.question}</h1>}
           {domain.note && <p className="muted" style={{ maxWidth: "70ch", margin: "6px 0 0" }}>{domain.note}</p>}
         </div>
         <div className="actions">
@@ -210,6 +213,8 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
         </section>
       ) : (
         <div className="grid">
+          {/* Narrow screens only (globals.css): the answer in one line, in view while the controls are moved. */}
+          {ranking.ranked[0] && <p className="answer-bar" aria-hidden="true">Cheapest: <b>{sources[ranking.ranked[0].id]?.name}</b> at <b>{money(ranking.ranked[0].best!.cost)}</b> per month</p>}
           <section className="card controls">
             <h2>Your situation</h2>
             {metrics.map((m) => (
@@ -369,7 +374,7 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
           </aside>
         </div>
       )}
-    </main>
+    </Shell>
     </Dom.Provider>
   );
 }

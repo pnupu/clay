@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Kit from "@/app/kit";
 import Playground from "@/app/playground";
 import { viewer } from "@/app/api/respond";
-import { canRead, canWrite, isExample } from "@/lib/accounts";
+import { canRead, canWrite } from "@/lib/accounts";
 import { load } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +37,6 @@ export default async function Page({ params }: { params: Promise<{ pg: string }>
     );
   return (
     <>
-      {isExample(p, pg) && !canWrite(me, p) && <p className="example-note">This is an example. Move every control as you like: it all runs in your browser and nothing is saved. <Link href="/connect">Connect your agent</Link> to have one built for your own decision.</p>}
       {/* A preview playground has its own screen. The key remounts the screen when the agent revises the playground. */}
       {p.kit ? <Kit key={JSON.stringify(p.kit.kit)} id={p.domain.id} title={p.domain.question} state={p.kit} canWrite={canWrite(me, p)} /> : <Playground key={JSON.stringify(p.domain)} domain={p.domain} explored={p.exploration} canWrite={canWrite(me, p)} admin={me.kind === "admin"} />}
     </>
