@@ -15,7 +15,8 @@ export default function AlertSetting({ api }: { api: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    fetch(`${api}/alert`).then((r) => (r.ok ? r.json() : null)).then((j) => setAlert(j ? j.alert : null), () => setAlert(null));
+    // Shown only when the address could be read: a refusal or an error is not "no address saved".
+    fetch(`${api}/alert`).then((r) => (r.ok ? r.json() : null)).then((j) => j && "alert" in j && setAlert(j.alert), () => {});
   }, [api]);
   async function call(init: RequestInit) {
     setBusy(true);

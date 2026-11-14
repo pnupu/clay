@@ -1,5 +1,5 @@
 // Collect and re-check. Live sources and the demo source share every step except how the page is read.
-import { currentActor, unpublishOnRevision } from "./accounts.ts";
+import { currentActor, isExample, unpublishOnRevision } from "./accounts.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { extractionInstructions, extractionSchema, hasPrices, normalise, pricingCandidates, type Domain, type PricingModel, type RawModel } from "./domain";
@@ -7,7 +7,7 @@ import { brand, cd, ContextDevError, scrape, capturedAt, servedFromCache } from 
 import { confirmed, diffModels, noPriceMark, noPriceRead, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState, CACHED_FACTS, oldestCapture, staleCapture } from "./web";
-import { alertOnChange, holdsNow, sendAlert } from "./alert";
+import { alertOnChange, deliverAlert, holdsNow, type Tell } from "./alert";
 import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -677,7 +677,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
     if (e instanceof ContextDevError && e.stop) throw e;
   } finally {
     /** The message to the owner's alert address when this write changes whether the saved decision holds (lib/alert.ts). */
-    let tell: { url: string; text: string } | null = null;
+    let tell: Tell | null = null;
     await update((s) => {
       tell = null;
       const p = s.playgrounds[pg];
@@ -709,18 +709,13 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       if (event) p.events = [event, ...p.events].slice(0, 30);
       // The one place where the data a saved decision is judged on changes after a re-check (the button, recheck_playground,
       // the scheduled re-check and a monitor's webhook all store here): whether it still holds is told from here, once.
-      tell = alertOnChange(p, heldBefore, event, `${publicBase() ?? origin}/p/${pg}`);
+      // A person's published example is not told about: the operator owns what it shows, and its owner cannot change it.
+      if (!(p.owner && isExample(p, pg))) tell = alertOnChange(p, heldBefore, event, `${publicBase() ?? origin}/p/${pg}`);
     });
     // Sent after the store is written, so a slow or failed send never fails the re-check or holds the store; the result is
     // kept for the owner.
-    const message = tell as { url: string; text: string } | null;
-    if (message) {
-      const r = await sendAlert(message.url, message.text);
-      await update((s) => {
-        const a = s.playgrounds[pg]?.alert;
-        if (a && a.url === message.url) a.last = { at: new Date().toISOString(), ok: r.ok, status: r.status, kind: "change" };
-      }).catch(() => {});
-    }
+    const message = tell as Tell | null;
+    if (message) await deliverAlert(pg, message, { load, update });
   }
   return event;
 }

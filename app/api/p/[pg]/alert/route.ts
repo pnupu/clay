@@ -1,5 +1,5 @@
 import { refused, type Ctx } from "@/app/api/respond";
-import { ALERT_REFUSED, alertAddress, alertView, sendAlert } from "@/lib/alert";
+import { ALERT_REFUSED, alertAddress, alertView, plain, sendAlert } from "@/lib/alert";
 import { load, publicBase, update } from "@/lib/store";
 
 /**
@@ -30,8 +30,10 @@ export async function POST(req: Request, { params }: Ctx) {
     const p = (await load()).playgrounds[pg];
     if (!p) return Response.json({ error: "Playground not found." }, { status: 404 });
     if (!p.alert) return Response.json({ error: "No alert address is saved for this playground." }, { status: 400 });
+    // One test message a minute: the server posts to the address each time.
+    if (p.alert.last?.kind === "test" && Date.now() - Date.parse(p.alert.last.at) < 60_000) return Response.json({ error: "A test message was sent less than a minute ago. Wait a minute, then try again.", alert: alertView(p.alert) }, { status: 429 });
     const url = p.alert.url;
-    const r = await sendAlert(url, `Clay test message: alerts for "${p.domain.question.replace(/[<>&@]/g, " ").slice(0, 120)}" come to this channel. When its saved decision stops holding, or holds again, Clay says so here. ${publicBase() ?? new URL(req.url).origin}/p/${pg}`);
+    const r = await sendAlert(url, `Clay test message: alerts for "${plain(p.domain.question, 120)}" come to this channel. When its saved decision stops holding, or holds again, Clay says so here. ${publicBase() ?? new URL(req.url).origin}/p/${pg}`);
     const alert = await update((s) => {
       const a = s.playgrounds[pg]?.alert;
       if (a && a.url === url) a.last = { at: new Date().toISOString(), ok: r.ok, status: r.status, kind: "test" };

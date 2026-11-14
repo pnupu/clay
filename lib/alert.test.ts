@@ -109,3 +109,24 @@ test("the address never reaches the state, a visitor's view or the owner's view 
   assert.ok(!JSON.stringify(nonOwnerView(p)).includes(secret));
   assert.deepEqual(alertView(p.alert), { address: "hooks.slack.com/…cccc", last: null });
 });
+
+test("delivery: only what the store still holds is sent, in order; a failed send is told again next time", async () => {
+  const { deliverAlert } = await import("./alert.ts");
+  const p = playground(50);
+  const before = true;
+  const tell = alertOnChange(p, before, null, "u")!;
+  const s = { playgrounds: { mail: p } };
+  const store = { load: async () => s, update: async (fn: (x: typeof s) => void) => fn(s) };
+  const sent: string[] = [];
+  // A failed send: recorded, and the verdict is given back as not told, so the next re-check sends it again.
+  await deliverAlert("mail", tell, store as never, async () => (sent.push("1"), { ok: false, status: 503 }));
+  assert.deepEqual([sent.length, p.alert!.last!.ok, p.alert!.last!.status, p.alert!.told!.holds], [1, false, 503, true]);
+  const again = alertOnChange(p, false, null, "u")!;
+  assert.ok(again && /no longer holds/.test(again.text));
+  // The owner removed the address (or a guard discarded the write) before the send: nothing is sent.
+  const s2 = { playgrounds: { mail: { ...p, alert: null } } };
+  await deliverAlert("mail", again, { load: async () => s2, update: async () => {} } as never, async () => (sent.push("2"), { ok: true, status: 200 }));
+  assert.equal(sent.length, 1);
+  // A Discord address masks a part of its token, not "/slack".
+  assert.equal(maskAlert(DISCORD), "discord.com/…0123");
+});

@@ -40,8 +40,8 @@ export function alertAddress(raw: unknown): string | null {
 }
 export const ALERT_REFUSED = "This address is not accepted. Use a Slack incoming webhook (https://hooks.slack.com/services/…) or a Discord webhook in its Slack form (https://discord.com/api/webhooks/…/slack).";
 
-/** What the owner sees of the address: the host and the last four characters. */
-export const maskAlert = (url: string) => `${new URL(url).hostname}/…${url.slice(-4)}`;
+/** What the owner sees of the address: the host and the last four characters of its token. */
+export const maskAlert = (url: string) => `${new URL(url).hostname}/…${url.replace(/\/slack$/, "").slice(-4)}`;
 /** The alert as its owner may see it (never the address itself). */
 export const alertView = (a: Alert | null | undefined) => (a ? { address: maskAlert(a.url), last: a.last ?? null } : null);
 
@@ -70,7 +70,7 @@ export async function sendAlert(url: string, text: string, sender?: Sender): Pro
  * Text from the web or an agent, made plain for Slack and Discord: no markup, no link of its own, no mention of a channel
  * or of everyone (Slack reads <!here> and <@U…>, Discord reads @everyone), cut short.
  */
-const plain = (s: unknown, n = 200) =>
+export const plain = (s: unknown, n = 200) =>
   String(s ?? "")
     .replace(/\s+/g, " ")
     .replace(/&/g, "&amp;")
@@ -113,11 +113,35 @@ export function alertText(p: Playground, holds: boolean, event: ChangeEvent | nu
  * per change: a second re-check that finds the same verdict says nothing. A new save of the decision starts again from
  * the verdict before the write.
  */
-export function alertOnChange(p: Playground, before: boolean | null, event: ChangeEvent | null, link: string): { url: string; text: string } | null {
+export type Tell = { url: string; text: string; told: { savedAt: string; holds: boolean } };
+export function alertOnChange(p: Playground, before: boolean | null, event: ChangeEvent | null, link: string): Tell | null {
   const a = p.alert;
   const now = holdsNow(p);
   if (!a || !p.decision || now == null) return null;
   const was = a.told?.savedAt === p.decision.savedAt ? a.told.holds : before;
   a.told = { savedAt: p.decision.savedAt, holds: now };
-  return was == null || was === now ? null : { url: a.url, text: alertText(p, now, event, link) };
+  return was == null || was === now ? null : { url: a.url, text: alertText(p, now, event, link), told: a.told };
+}
+
+const sending = new Map<string, Promise<unknown>>();
+/**
+ * Send what alertOnChange returned, after its store update: only when the store still holds that address and that verdict
+ * (a guard may have discarded the write, or the owner removed or replaced the address meanwhile), one message of a
+ * playground after the other (so they arrive in order), and the result is kept for the owner. A failed send gives the
+ * verdict back as not told, so the next re-check tries again. Never throws.
+ */
+export function deliverAlert(pg: string, tell: Tell, store: { load: () => Promise<{ playgrounds: Record<string, Playground> }>; update: (fn: (s: { playgrounds: Record<string, Playground> }) => void) => Promise<unknown> }, sender?: Sender): Promise<void> {
+  const same = (a: Alert | null | undefined) => !!a && a.url === tell.url && a.told?.savedAt === tell.told.savedAt && a.told?.holds === tell.told.holds;
+  const run = (sending.get(pg) ?? Promise.resolve()).then(async () => {
+    if (!same((await store.load()).playgrounds[pg]?.alert)) return;
+    const r = await sendAlert(tell.url, tell.text, sender);
+    await store.update((s) => {
+      const a = s.playgrounds[pg]?.alert;
+      if (!a || a.url !== tell.url) return;
+      a.last = { at: new Date().toISOString(), ok: r.ok, status: r.status, kind: "change" };
+      if (!r.ok && same(a)) a.told = { ...tell.told, holds: !tell.told.holds };
+    });
+  }).catch(() => {});
+  sending.set(pg, run);
+  return run;
 }
