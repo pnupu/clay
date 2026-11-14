@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { STANDING_INSTRUCTION } from "@/connect/standing-instruction";
 
 /** Requests a person can paste to their agent, one per kind of playground. */
 const EXAMPLES = [
@@ -104,6 +105,13 @@ export default function AgentKey({ endpoint, createdAt }: { endpoint: string; cr
           </div>
         ))}
         <p>What happens: your agent answers with a link. Open it and move the controls until it looks, feels or costs right. Then press Settle (or save your decision) and tell your agent you are done. It reads what you chose and carries it out.</p>
+      </section>
+
+      <section className="card">
+        <h2>Optional: make your agent reach for Clay on its own</h2>
+        <p>When you do not say “Use Clay”, Claude Code often edits the file or looks the price up itself. To make it build a playground on its own, paste these lines into the <code>CLAUDE.md</code> of your project (for Codex: <code>AGENTS.md</code>).</p>
+        {block("standing-instruction", STANDING_INSTRUCTION, false)}
+        <p className="small muted">Measured on 14 November 2026 with Claude Code 2.1.321 and its normal tools (shell, web search), on four vague requests, three runs each: without these lines it built a playground in 2 of 12 runs, with them in 12 of 12. For an exact instruction or a plain question it still built none (0 of 9). Codex built one with and without the lines.</p>
       </section>
 
       <section className="card">

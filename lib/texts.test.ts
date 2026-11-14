@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseSpec, oversize } from "./spec.ts";
+import { readFileSync } from "node:fs";
+import { STANDING_INSTRUCTION } from "../connect/standing-instruction.ts";
 import { INSTRUCTIONS, TOOLS } from "./texts.ts";
 
 test("the first 200 characters of the server instructions hold the trigger and the name of the create tool", () => {
@@ -14,6 +16,15 @@ test("the first 200 characters of the server instructions hold the trigger and t
   assert.match(head, /looks or feels off/);
   // The trigger is a complete sentence inside that window: nothing of it is cut.
   assert.ok(INSTRUCTIONS.indexOf("\n") <= 200, "the first paragraph ends inside the first 200 characters");
+});
+
+test("the standing instruction: the file and the text on /connect are the same, short, and name both tools", () => {
+  assert.equal(readFileSync(new URL("../connect/standing-instruction.md", import.meta.url), "utf8"), STANDING_INSTRUCTION);
+  assert.ok(STANDING_INSTRUCTION.split(/\s+/).filter(Boolean).length <= 85, "about 80 words: a person pastes it into their own file");
+  assert.match(STANDING_INSTRUCTION, /create_playground/);
+  assert.match(STANDING_INSTRUCTION, /read_playground/);
+  // The exception keeps an exact instruction and a plain fact out: without it the agent would build for everything.
+  assert.match(STANDING_INSTRUCTION, /exact instruction .* needs no playground/);
 });
 
 test("the first sentence of every tool description says when to call it", () => {

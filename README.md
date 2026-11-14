@@ -87,6 +87,27 @@ codex mcp add clay --url http://127.0.0.1:43117/api/mcp
 
 Then ask in your own words, for example: "this signup button looks off and I can't say why, our brand is linear.app" or "I need to pick an email service for my app, about 30k emails a month now, maybe 200k later". The agent builds a playground and gives you its URL. Explore, then press Settle (preview) or save a decision (price). Tell the agent you are done: it reads the result and writes it into your code, or reports the decision. Later ask "what did I decide, and does it still hold?".
 
+### Optional: make your agent reach for Clay on its own
+
+With its normal tools on (a shell, web search), Claude Code often does not use Clay unless you say "Use Clay to ...": it edits the file by guess, answers from the file, or looks the price up itself. A standing instruction in your own project changes that. Paste these lines into the `CLAUDE.md` of your project (Claude Code) or its `AGENTS.md` (Codex). The text is in [`connect/standing-instruction.md`](connect/standing-instruction.md), and `/connect` offers it with a Copy button.
+
+```markdown
+## Clay playgrounds
+
+When I say something looks or feels off, or I ask which option to choose and the answer depends on prices or on my own numbers, do not guess, edit or answer first. Build a Clay playground with the Clay MCP tool create_playground, give me the link, and wait until I say I am done. Then call read_playground and carry out what I settled. An exact instruction ("make the radius 8px") or a plain fact needs no playground.
+```
+
+Measured on 2026-11-14 with `evals/` (`--tools normal`: the agent keeps its shell, web search and file tools, in a clean home; first answer only; Claude Code 2.1.321 with its default model, Claude Opus 5.5; fixture web data). "Built" means that the agent called `create_playground` in its first answer.
+
+| What the agent had | 4 vague requests, 3 runs each | 2 requests that build anyway | 3 requests that need no playground |
+|---|---|---|---|
+| Clay's own instructions only | built in 2 of 12 | 2 of 2 | built in 0 of 3 |
+| and these lines in `CLAUDE.md` | built in 12 of 12 | 2 of 2 | built in 0 of 9 |
+| and a personal skill instead of the lines (not shipped) | built in 4 of 12 | 2 of 2 | built in 0 of 3 |
+| Codex CLI 0.167.0, these lines in `AGENTS.md`, one run each | built in 4 of 4 | 2 of 2 | built in 0 of 3 |
+
+The four vague requests are a button that "feels sluggish", a button that "looks flat and cramped", "are we on the right model, bench.json has what we measured", and "when does the paid plan start to make sense for us". Without the lines Claude Code edited the file, answered from the benchmark, or fetched the pricing page. Three rewordings of Clay's own instructions did not change that (1 of 4 each). Codex built a playground in 7 of 7 such requests without the lines. The numbers are small: one model per agent, twelve runs at most, and only whether a playground was built, not how good it was.
+
 ### Tools
 
 | Tool | What it does |
@@ -283,6 +304,8 @@ From a clean home (no operator configuration), a real signed-up test person, a p
 - Codex CLI 0.167.0, default model (gpt-6.1-sol): 8 of 8, unprompted. With `codex exec`, add `default_tools_approval_mode = "approve"` and pass `-s workspace-write`.
 
 Each line is 8 fixed vague requests, one run each, with a simulated person settling in their own browser session, on a local server with fixture web data. The same measurement confirmed that `--scope user` makes Clay available in other folders.
+
+With the agent's normal tools on (shell, web search, file tools; `evals/` with `--tools normal`, clean home, first answer only, one run each): Codex CLI 0.167.0 built a playground in 7 of 7 vague requests that should get one, and Claude Code 2.1.321 (Claude Opus 5.5) in 3 of 7. Neither built one for the 3 requests that need none. The lines above and the earlier measurements in this section gave the agent Clay and file tools only, so they measure Clay, not whether an agent with other ways out thinks of Clay. The optional standing instruction under "Connect your agent" closes that gap for Claude Code: 12 of 12 on the four requests it otherwise missed.
 
 Measured with `evals/` on 2026-11-14 against a local server of `master`:
 
