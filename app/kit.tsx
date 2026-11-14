@@ -218,7 +218,7 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
     <Shell className={embedded ? `${css.embedded} k-root` : "shell k-root"} data-tall={tall || undefined}>
       <header className="top k-head">
         <div>
-          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · a playground built by your agent</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
+          <p className="eyebrow">{canWrite ? <><Link href="/">Clay</Link> · {builtByViewer ? "a playground built by your agent" : "a person's playground, built by their agent"}</> : (byTeam ? "An example by the Clay team · built by our agent from one request" : "An example · built by its author's own agent")}</p>
           <Title className={css.title}>{title}</Title>
         </div>
       </header>
