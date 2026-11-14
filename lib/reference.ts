@@ -1,4 +1,4 @@
-// The kit reference that the kit_reference tool returns: the format of a preview playground and three worked examples.
+// The kit reference that the kit_reference tool returns: the format of a preview playground and four worked examples.
 // The examples are real specs: lib/spec.test.ts checks that they pass parseSpec(), so the reference cannot drift from the validator.
 import { KIT_LIMITS } from "./kit.ts";
 import { WEB_LIMITS } from "./web.ts";
@@ -135,6 +135,77 @@ clay.onChange((v) => {
   ],
 };
 
+/**
+ * A "where" decision on a map. The coordinates are real: OpenStreetMap data, looked up by place name with Nominatim on
+ * 2026-11-14 (Otaniemi, Espoo). Distances are straight lines from the metro station, computed in view.js.
+ */
+export const MAP_EXAMPLE: Spec = {
+  id: "otaniemi-meeting-place",
+  title: "Where in Otaniemi should the team meet?",
+  notes: "We told our agent: we arrive by metro, where should we meet, and how far are we willing to walk? Places and coordinates: OpenStreetMap data, looked up by name on 2026-11-14. Distances are straight lines from the Aalto University metro station, not walking routes.",
+  data: {
+    inline: {
+      start: { name: "Aalto University metro station", lat: 60.18446, lng: 24.82357 },
+      places: [
+        { name: "A Bloc", lat: 60.18486, lng: 24.82504 },
+        { name: "Väre", lat: 60.18563, lng: 24.82506 },
+        { name: "Harald Herlin Learning Centre", lat: 60.1847, lng: 24.82805 },
+        { name: "Undergraduate Centre", lat: 60.18609, lng: 24.82961 },
+        { name: "Dipoli", lat: 60.18513, lng: 24.83249 },
+        { name: "Otahalli", lat: 60.18427, lng: 24.83509 },
+      ],
+    },
+  },
+  controls: [
+    { id: "radius", type: "slider", label: "Walking radius", meaning: "how far from the metro station the meeting place may be, in metres (straight line)", min: 100, max: 800, step: 50, initial: 400, unit: "m" },
+    { id: "place", type: "select", label: "Meeting place", meaning: "the place the team meets at", initial: "A Bloc", options: [{ value: "A Bloc" }, { value: "Väre" }, { value: "Harald Herlin Learning Centre" }, { value: "Undergraduate Centre" }, { value: "Dipoli" }, { value: "Otahalli" }] },
+  ],
+  view: {
+    type: "preview",
+    map: true,
+    height: 470,
+    html: `<div class="wrap">
+  <div id="map" role="application" aria-label="Map of Otaniemi with the candidate meeting places"></div>
+  <p id="inside"></p>
+</div>`,
+    css: `.wrap { padding: 12px; font: 14px/1.45 system-ui, sans-serif; color: #1f2937; }
+#map { height: 360px; border-radius: 10px; border: 1px solid #d1d5db; }
+#inside { margin: 10px 2px 0; }`,
+    js: `const start = clay.data.inline.start;
+const places = clay.data.inline.places;
+// Names go onto the map as text nodes, never as markup strings.
+const text = (s) => document.createTextNode(String(s));
+const map = clay.map(document.getElementById("map"), { center: [60.1851, 24.8292], zoom: 15 });
+L.circleMarker([start.lat, start.lng], { radius: 6, color: "#111827", fillColor: "#111827", fillOpacity: 1 }).addTo(map).bindTooltip(text(start.name));
+const circle = L.circle([start.lat, start.lng], { radius: clay.values.radius, color: "#2563eb", weight: 2, fillOpacity: 0.06 }).addTo(map);
+const marks = places.map((p) => ({
+  p,
+  metres: Math.round(map.distance([start.lat, start.lng], [p.lat, p.lng])),
+  dot: L.circleMarker([p.lat, p.lng], { radius: 8, weight: 2 }).addTo(map).bindTooltip(text(p.name), { permanent: true, direction: "top", offset: [0, -8] }),
+}));
+// Start on an area that shows every place, whatever the width of the preview.
+map.fitBounds(L.latLngBounds(places.concat([start]).map((p) => [p.lat, p.lng])).pad(0.25), { maxZoom: 15 });
+const line = document.getElementById("inside");
+clay.onChange((v) => {
+  circle.setRadius(v.radius);
+  const inside = [];
+  for (const x of marks) {
+    const within = x.metres <= v.radius;
+    const picked = x.p.name === v.place;
+    const colour = picked ? "#dc2626" : "#2563eb";
+    x.dot.setStyle({ color: colour, fillColor: colour, opacity: within ? 1 : 0.35, fillOpacity: within ? 0.9 : 0.12 });
+    x.dot.setRadius(picked ? 11 : 8);
+    if (within) inside.push(x.p.name + " (" + x.metres + " m)");
+  }
+  const pick = marks.find((x) => x.p.name === v.place);
+  line.textContent =
+    (inside.length ? "Within " + v.radius + " m of the station: " + inside.join(", ") + "." : "No place is within " + v.radius + " m of the station.") +
+    (pick && pick.metres > v.radius ? " Your pick, " + pick.p.name + ", is " + pick.metres + " m away: outside the radius." : "");
+});`,
+  },
+  outputs: [{ id: "decision", label: "The decision, in words", template: "We meet at {{place}}. The meeting place must be within {{radius}} m (straight line) of the Aalto University metro station." }],
+};
+
 export const KIT_REFERENCE = `# Clay kit reference: preview playgrounds
 
 A preview playground has four parts. You compose them; Clay validates the composition before it builds anything.
@@ -152,11 +223,17 @@ Good controls: the 3 to 6 dimensions behind THIS person's complaint, not every p
 - view.html: the real markup, copied from the person's file (JSX turned into plain HTML: className becomes class). Write {{control_id}} where a control value goes. On every move Clay updates only what changed, in place, so CSS transitions keep working. No script tags.
 - view.css: plain CSS, {{control_id}} allowed.
 - view.tailwind: true loads the in-browser Tailwind v4 build. Arbitrary values work: rounded-[{{radius}}px], bg-[{{bg}}], px-[{{pad}}px].
+- view.map: true loads a map library (Leaflet 1.9, the global L) for a "where" question: which location, which radius, which area, which stop. Worked example 4 shows the whole of it.
+  - clay.map(element, {center: [lat, lng], zoom}) returns the Leaflet map with its tiles (OpenStreetMap) and the attribution they require. Always make the map with it: no other tile layer or image host loads. Give the element a height in view.css.
+  - Draw with L.circleMarker, L.circle, L.polyline, L.polygon and L.marker (its pin is built in). No other marker image and no layers control: their image files do not load. Bind the map to the controls in clay.onChange: move, restyle or filter what is drawn; map.setView or map.fitBounds only when a control asks for another area.
+  - Coordinates come from you: data.inline (the person's places with lat and lng, and where you got them, in notes) or number fields of data.web. Clay has no geocoding or routing: map.distance(a, b) is a straight line in metres, so say "straight line" on the page.
+  - Text on the map: bindPopup, bindTooltip and setContent build markup from a string. Pass a text node or an element instead: marker.bindTooltip(document.createTextNode(place.name)). The rule for web and brand text below applies to them as to innerHTML.
+  - The person's page scroll stays free: the wheel does not zoom the map, and on a phone one finger scrolls the page while two fingers move the map and the + and - buttons zoom it. So start on the area that matters: map.fitBounds on your points shows every marker at any width.
 - view.js: runs once, after the html is in the page. Use it for what markup cannot show: motion, dragging, timing.
   - clay.values.<id>: the value now. Read it inside your animation loop or event handler, so a move takes effect at once.
   - clay.onChange((values) => { ... }): runs at once and after every move.
   - clay.data.brand: {domain, title, colors: [{hex, name}], logos: [{url, mode, type}]} when the spec has data.brand. clay.data.inline: your data.inline.
-- The sandbox: the preview runs in a frame that cannot read the page around it, the person's Clay session or other sites, with no imports, no forms, no popups and no storage. It is not sealed from the network: browsers do not block every outgoing request from running code (resource hints, for example), and every visitor's page says so. Never send data anywhere from view.js; the preview must work with no network. <link>, <meta>, <base>, <iframe>, <object> and <embed> are refused in view.html, and Clay blocks creating them from view.js on a best-effort basis (do not try); put styles in view.css or style attributes. Images: data: URLs, or the brand's logo URLs from clay.data.brand.logos. A library the real code uses (Framer Motion, react-spring, GSAP) cannot be loaded: write the same behaviour in a few lines of plain JavaScript, with the same parameters, so that the settled values mean the same in the real code. Say so in notes when the match is approximate.
+- The sandbox: the preview runs in a frame that cannot read the page around it, the person's Clay session or other sites, with no imports (view.tailwind and view.map load the only two libraries), no forms, no popups and no storage. It is not sealed from the network: browsers do not block every outgoing request from running code (resource hints, for example), and every visitor's page says so. Never send data anywhere from view.js; the preview must work with no network. <link>, <meta>, <base>, <iframe>, <object> and <embed> are refused in view.html, and Clay blocks creating them from view.js on a best-effort basis (do not try); put styles in view.css or style attributes. Images: data: URLs, or the brand's logo URLs from clay.data.brand.logos. A library the real code uses (Framer Motion, react-spring, GSAP) cannot be loaded: write the same behaviour in a few lines of plain JavaScript, with the same parameters, so that the settled values mean the same in the real code. Say so in notes when the match is approximate.
 - Size: html ${KIT_LIMITS.html}, css ${KIT_LIMITS.css}, js ${KIT_LIMITS.js} characters. view.height: 120 to 900 px.
 - Every control must change something the person can see at the start values: the preview or an output. A control that only matters once another control is switched (an accent colour used only by a badge that starts hidden) looks broken when the person moves it first. Start in a state that shows it, or fold it into the control it depends on (the options of that control carry the colour).
 - Width: the preview is as wide as the page gives it. On a desktop that is 700 px or more; on a phone it is the screen width minus about 42 px, so as narrow as 320 px. Show the artifact at its real size, but never let it force a horizontal scroll: do not copy a fixed width (width: 420px) onto the outermost element; use max-width: 100% with the real width, centre it, and let a wide layout wrap or scroll inside its own box (overflow-x: auto).
@@ -191,6 +268,10 @@ ${JSON.stringify(BUTTON_EXAMPLE, null, 1)}
 ## Worked example 3: live web facts times the person's own measurements
 The person: "we run a coding agent for our team and I have no idea if we're on the right model. bench.json has what we measured." Their agent.config.json has "model": "claude-opus-5-5". Per-token prices alone do not answer this: each model uses a different number of tokens per task and passes a different share of tasks. So the measurements go in data.inline, the prices come live from data.web, and view.js multiplies them. The page marks a pick, so it follows the rules for a pick: the limit is tested on the hard tasks (every model passes the easy ones), models are compared on the cost per passed task with cost and pass rate from the same tasks, the share of cached input is a control because it moves the cost a lot, and the rule and the size of the sample are written under the table.
 ${JSON.stringify(MODEL_EXAMPLE, null, 1)}
+
+## Worked example 4: a "where" decision on a map
+The person: "we arrive by metro in Otaniemi. where should the team meet, and how far are we willing to walk?" The places are theirs (data.inline, with real coordinates and their origin in notes). The slider is the radius circle, which also dims the places outside it; the select is the place they pick, drawn larger and red; the output is the decision in words. Names go onto the map as text nodes.
+${JSON.stringify(MAP_EXAMPLE, null, 1)}
 
 ## Worked example 2: spring physics, tuned by feel
 The person: "the card snap-back feels dead". Their file has const SPRING = { stiffness: 120, damping: 26, mass: 1 }.

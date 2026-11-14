@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkKit, runSignature, cleanValues, explorationWords, initialValues, mergeKitExploration, renderOutputs, type KitState } from "./kit.ts";
-import { BUTTON_EXAMPLE, MODEL_EXAMPLE, SPRING_EXAMPLE } from "./reference.ts";
+import { BUTTON_EXAMPLE, MAP_EXAMPLE, MODEL_EXAMPLE, SPRING_EXAMPLE } from "./reference.ts";
 import { mergeSpec, parseSpec, toSpec, type Spec } from "./spec.ts";
 import { newPlayground } from "./store.ts";
 
@@ -25,6 +25,32 @@ test("the two worked examples of the kit reference are valid specs, and their ou
   assert.deepEqual(renderOutputs(button, initialValues(button.controls)), { class_name: "bg-[#3b82f6] rounded-[4px] px-[12px] py-2 text-sm text-white font-normal" });
   const spring = kitOf(SPRING_EXAMPLE);
   assert.deepEqual(renderOutputs(spring, initialValues(spring.controls)), { spring: "{ stiffness: 120, damping: 26, mass: 1 }" });
+});
+
+test("view.map: only on a preview, kept through a read and a revision, and clay.map() needs it", () => {
+  const map = kitOf(MAP_EXAMPLE);
+  assert.equal(map.preview.map, true);
+  assert.deepEqual(renderOutputs(map, initialValues(map.controls)), { decision: "We meet at A Bloc. The meeting place must be within 400 m (straight line) of the Aalto University metro station." });
+  // A preview without the flag has none: the stored kit is as it was before maps.
+  assert.equal("map" in kitOf(BUTTON_EXAMPLE).preview, false);
+  assert.equal("map" in kitOf({ ...BUTTON_EXAMPLE, view: { ...BUTTON_EXAMPLE.view, map: false } } as Spec).preview, false);
+  // read_playground and revise_playground work on toSpec(): the flag comes back, and a revision of another part keeps it.
+  const stored = (spec: Spec) => {
+    const r = parseSpec(spec);
+    assert.ok(r.ok && r.kind === "preview");
+    return { ...newPlayground(r.domain), kit: { kit: r.kit, brandData: null, brandError: null, preview: { status: "unverified" as const, error: null, at: null }, settled: null, exploration: null } };
+  };
+  assert.equal(toSpec(stored(MAP_EXAMPLE)).view.map, true);
+  assert.equal("map" in toSpec(stored(BUTTON_EXAMPLE)).view, false);
+  const revised = mergeSpec(toSpec(stored(MAP_EXAMPLE)), { title: "Where in Otaniemi do we meet after the keynote?" });
+  assert.equal(kitOf(revised as Spec).preview.map, true);
+  // A revision that sends a view without the flag turns the map off, and view.js then no longer passes.
+  const has = (s: unknown, part: RegExp) => assert.ok(errors(s).some((e) => part.test(e)), `no error like ${part} in:\n${errors(s).join("\n")}`);
+  has({ ...MAP_EXAMPLE, view: { ...MAP_EXAMPLE.view, map: undefined } }, /view\.js: clay\.map\(\) needs view\.map: true/);
+  // A price playground has no map.
+  const price = { id: "email-api", title: "Which transactional email API should we use?", view: { type: "price_ranking", map: true }, data: { price_pages: { product: "transactional email API", metrics: [{ id: "emails", label: "Emails per month", unit: "emails", describe: "Emails sent per month through the API.", min: 1000, max: 500000, initial: 40000 }], vendors: [{ id: "resend", name: "Resend", pricing_url: "https://resend.com/pricing" }, { id: "postmark", name: "Postmark", domain: "postmarkapp.com" }] } } };
+  has(price, /view\.map: only a preview view has map/);
+  has({ ...MAP_EXAMPLE, view: { ...MAP_EXAMPLE.view, map: "yes" } }, /view\.map/);
 });
 
 test("a bad spec is rejected with an error that says how to fix it", () => {
@@ -285,6 +311,9 @@ test("a preview that reads web pages or a brand and builds markup from a string 
   assert.deepEqual(kit('document.getElementById("out").textContent = clay.data.web.prices.map((r) => r.model).join(", ");', { web }).warnings!.filter((x) => /markup/.test(x)), []);
   assert.deepEqual(kit('document.getElementById("out").innerHTML = "<b>" + clay.values.size + "</b>";', {}).warnings!.filter((x) => /markup/.test(x)), []);
   assert.equal(markupWarning({ preview: { js: "el.innerHTML = s;" }, web: [], brand: null }), null);
+  // The map library's calls that take a string as markup are named too; with a text node they are the safe way.
+  assert.match(markupWarning({ preview: { js: "marker.bindPopup(row.name); m2.bindTooltip(document.createTextNode(row.name));" }, web, brand: null })!, /^view\.js: bindPopup, bindTooltip build markup from a string.*on a map: bindPopup, bindTooltip and setContent take an element or a text node/);
+  assert.equal(markupWarning({ preview: { js: "marker.bindPopup(document.createTextNode(place.name));" }, web: [], brand: null }), null);
   // Other common ways to build markup from a string are named too.
   assert.match(markupWarning({ preview: { js: "document . write(x); el.setHTMLUnsafe(y); range.createContextualFragment(z); frame.srcdoc = w;" }, web, brand: null })!, /^view\.js: document\.write, setHTMLUnsafe, createContextualFragment, srcdoc build markup/);
   // The rule is in the texts an agent reads before it writes view.js.

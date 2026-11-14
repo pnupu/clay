@@ -48,6 +48,7 @@ export default function Privacy() {
                   <h2>What a preview can and cannot do</h2>
                   <p>A preview is code that a playground’s author wrote with their agent. It runs in a sandbox: it cannot read the page around it, your Clay account or session, or other sites’ data, and it cannot open windows or submit forms.</p>
                   <p>It is not sealed from the network. In some browsers its code can make outgoing requests, so the values you set and the data shown in the preview could be sent to a server its author chose, with your IP address. A brand’s logo hosts can also receive them in image addresses.</p>
+                  <p>A preview with a map shows map tiles of OpenStreetMap. Clay fetches them from tile.openstreetmap.org for you: Clay’s server sees the area you look at, and the tile server sees Clay’s server, not your internet address.</p>
                   <p>Another person’s preview reaches you only when the operator has marked it as an example. A preview can show any text inside its box: never type a secret into one.</p>
                 </section>
                 <section>

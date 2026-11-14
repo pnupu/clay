@@ -21,7 +21,7 @@ export type Control =
   | (Base & { type: "toggle"; initial: boolean; on: string; off: string })
   | (Base & { type: "select"; options: { value: string; label: string }[]; initial: string })
   | (Base & { type: "color"; initial: string; palette: string[] | "brand"; free: boolean });
-export type Preview = { html: string; css: string; js: string; tailwind: boolean; height: number };
+export type Preview = { html: string; css: string; js: string; tailwind: boolean; /** The frame loads the map library and may load map tiles (lib/frame.ts, LEAFLET and TILES). Absent on a kit from before maps. */ map?: boolean; height: number };
 export type Output = { id: string; label: string; template: string };
 export type Kit = { notes?: string; controls: Control[]; preview: Preview; outputs: Output[]; brand: { domain: string } | null; inline: Record<string, unknown> | null; /** Live facts from web pages (lib/web.ts). */ web?: WebSource[] | null };
 
@@ -158,7 +158,7 @@ const word = (id: string) => new RegExp(`(?<![\\w$])${id}(?![\\w$])`);
 export type RawKit = {
   notes?: string;
   controls?: Record<string, unknown>[];
-  view: { html?: string; css?: string; js?: string; tailwind?: boolean; height?: number };
+  view: { html?: string; css?: string; js?: string; tailwind?: boolean; map?: boolean; height?: number };
   outputs?: { id: string; label: string; template: string }[];
   brand?: { domain: string };
   inline?: Record<string, unknown>;
@@ -173,7 +173,9 @@ const ALL_FIELDS = [...new Set(Object.values(FIELDS).flat())];
  * `warnings` are not errors: the playground is built, and the create result passes them on.
  */
 /** The common ways view.js can turn a string into markup. Not every way: code can hide a name, so this is a warning's net, not a guard. */
-const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML|setHTMLUnsafe|createContextualFragment|srcdoc)\b|\bdocument\s*\.\s*write(?:ln)?\b/g;
+// The map library's calls that take a string as markup are in the list too: a popup, a tooltip, an overlay's content, a
+// div icon. Each also takes an element or a text node, which is the way to show web text on a map.
+const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML|setHTMLUnsafe|createContextualFragment|srcdoc|bindPopup|bindTooltip|setPopupContent|setTooltipContent|setContent|divIcon)\b|\bdocument\s*\.\s*write(?:ln)?\b/g;
 /**
  * Text from a web page or a brand is not the agent's text: a page can change a price or a name into markup, and markup
  * that view.js writes with innerHTML, outerHTML or insertAdjacentHTML is then built in every visitor's preview. So a
@@ -185,7 +187,7 @@ export function markupWarning(kit: { preview: { js: string }; web?: unknown[] | 
   if (!kit.web?.length && !kit.brand) return null;
   const used = [...new Set((kit.preview.js.match(MARKUP_SINK) ?? []).map((x) => x.replace(/\s+/g, "")))];
   if (!used.length) return null;
-  return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this playground reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup; revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
+  return `view.js: ${used.join(", ")} ${used.length === 1 ? "builds" : "build"} markup from a string, and this playground reads ${kit.web?.length ? "web pages (data.web)" : "a brand (data.brand)"}. Text from clay.data.web and clay.data.brand is copied from web pages: when it reaches such a string, a page can turn it into markup that is built in every visitor's preview. Put that text into the page with textContent (or createTextNode), never as markup (on a map: bindPopup, bindTooltip and setContent take an element or a text node, document.createTextNode(text)); revise view.js with revise_playground. If the string holds only your own text, say so to the person and leave it.`;
 }
 
 export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] } | { ok: false; errors: string[] } {
@@ -331,8 +333,9 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   const sink = markupWarning({ preview: { js }, web, brand: raw.brand ?? null });
   if (sink && !errors.length) warnings.push(sink);
   for (const m of js.matchAll(/clay\s*\.\s*data\s*\.\s*web\s*\.\s*([A-Za-z_$][\w$]*)/g)) if (!(web ?? []).some((s) => s.id === m[1])) errors.push(`view.js: clay.data.web.${m[1]} reads a web source that does not exist. Sources: ${(web ?? []).map((s) => s.id).join(", ") || "none (add data.web)"}.`);
+  if (raw.view.map !== true && /\bclay\s*\.\s*map\s*\(/.test(js)) errors.push("view.js: clay.map() needs view.map: true. Without it the frame loads no map library and no map tiles.");
   if (errors.length) return { ok: false, errors };
-  return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
+  return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, ...(raw.view.map === true ? { map: true } : {}), height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null, ...(web ? { web } : {}) } };
 }
 
 /** Does a report from the page belong to the kit as it is now? A kit stored before revisions were marked accepts every report. */

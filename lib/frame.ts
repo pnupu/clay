@@ -1,13 +1,65 @@
 // The sandboxed frame of a preview playground, and the bridge between it and the page.
 // The preview code comes from an agent and is shown to every visitor: it is untrusted. It runs only in the document built
 // here, which is served with a Content-Security-Policy that (1) gives it an opaque origin and scripts only (`sandbox`), also
-// when the frame URL is opened directly, and (2) allows no network except the pinned Tailwind build and the brand's logos.
+// when the frame URL is opened directly, and (2) allows no network except the pinned Tailwind build, the brand's logos
+// and, for a preview with view.map, the pinned map library and map tiles from this app's own tile route.
 // The only channel to the page is postMessage, and both sides validate every message.
 import type { KitState } from "./kit.ts";
 import { webData } from "./web.ts";
 
 /** The in-browser Tailwind build, pinned by version and content hash (checked against the registry and the CDN on 2026-11-14). */
 export const TAILWIND = { url: "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.5/dist/index.global.js", integrity: "sha384-t+qLIxS5zM/KF99/doWY+dxTsavdvgayaZt8A9ntLsUjEkiXzYl5M3Ij8zVFPL9j" };
+
+/**
+ * The map library of a preview with view.map: Leaflet 1.9.4 (the latest stable release on the npm registry on
+ * 2026-11-14), script and stylesheet pinned by version and content hash (the same sha384 from cdn.jsdelivr.net and from
+ * unpkg.com on that day). Raster tiles are plain images, so the frame's connect-src stays 'none'.
+ */
+export const LEAFLET = {
+  js: { url: "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js", integrity: "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" },
+  css: { url: "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css", integrity: "sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" },
+};
+
+/**
+ * The tiles of a map preview: OpenStreetMap's standard tiles, fetched by this app (app/api/tiles) and served from its own
+ * origin. The frame may load images from that one path and from no other host.
+ *
+ * Why not the tile host itself. Its policy, read on 2026-11-14 (https://operations.osmfoundation.org/policies/tiles/,
+ * "Tile Usage Policy"), says that a web page must send a valid Referer and must not prevent it. The preview frame is
+ * sandboxed with an opaque origin, and a browser sends no Referer from such a document whatever its Referrer-Policy
+ * (checked in Chromium on that day: with "strict-origin" on the frame document, the tile requests had none). The other
+ * keyless raster host looked at, CARTO's basemaps, needs an API key in the page since its current terms
+ * (https://carto.com/basemaps, read on the same day). The policy allows fetching through one's own server when the
+ * Referer stays accurate and the application is named, so the tile route sends this site's address as Referer and a
+ * User-Agent that names Clay, asks for nothing but single tiles a person looks at, and lets browsers and the CDN keep
+ * each tile for seven days (the policy's minimum for a cache). The attribution it asks for, "(c) OpenStreetMap
+ * contributors", is on every map (clay.map() adds it; plain text, because the frame opens no link) and linked on the
+ * page around the preview. A side effect: the tile host sees this app's server, not the visitor.
+ *
+ * The service is best-effort and for light use. For many map views, point `upstream` at a paid tile host.
+ */
+export const TILES = { path: "/api/tiles/", upstream: "https://tile.openstreetmap.org", attribution: "\u00a9 OpenStreetMap contributors", licence: "https://www.openstreetmap.org/copyright", maxZoom: 19 };
+
+/**
+ * The address of this app as the browser reached it, for the tile path of a map frame: the Host header of the request
+ * (behind a proxy the request URL can name another host than the browser used), with the scheme of the request. Only a
+ * plain host name with an optional port is taken, so a header cannot add anything to the frame's policy; else the
+ * request URL's own origin.
+ */
+export function requestOrigin(url: string, host: string | null, forwardedProto: string | null): string {
+  const u = new URL(url);
+  const proto = forwardedProto === "https" || forwardedProto === "http" ? `${forwardedProto}:` : u.protocol;
+  return host && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:\d{1,5})?$/i.test(host) ? `${proto}//${host.toLowerCase()}` : u.origin;
+}
+
+/** One tile of the standard grid, from the three parts of a tile address ("15", "18642", "9477.png"). Null for anything else: the route serves nothing but tiles. */
+export function tileOf(z: string, x: string, y: string): { z: number; x: number; y: number } | null {
+  // Plain whole numbers without a leading zero: one address per tile, so a cache holds each tile once.
+  const n = /^(?:0|[1-9]\d{0,6})$/;
+  if (!n.test(z) || !n.test(x) || !y.endsWith(".png") || !n.test(y.slice(0, -4))) return null;
+  const t = { z: Number(z), x: Number(x), y: Number(y.slice(0, -4)) };
+  return t.z <= TILES.maxZoom && t.x < 2 ** t.z && t.y < 2 ** t.z ? t : null;
+}
 
 /** https origins of the brand's logos: the only hosts an image in the preview may load from. */
 const logoOrigins = (k: KitState): string[] => {
@@ -22,13 +74,17 @@ const logoOrigins = (k: KitState): string[] => {
 };
 
 /** The policy of the frame document. `sandbox allow-scripts`: an opaque origin, no forms, popups, top navigation, modals or downloads. */
-export function frameCsp(k: KitState): string {
+export function frameCsp(k: KitState, origin = ""): string {
+  // `origin` is the address of this app as the browser sees it: a sandboxed frame has no 'self', so the tile path is named in full.
+  const map = k.kit.preview.map === true;
   return [
     "sandbox allow-scripts",
     "default-src 'none'",
-    `script-src 'unsafe-inline'${k.kit.preview.tailwind ? ` ${TAILWIND.url}` : ""}`,
-    "style-src 'unsafe-inline'",
-    `img-src data: ${logoOrigins(k).join(" ")}`.trim(),
+    `script-src 'unsafe-inline'${k.kit.preview.tailwind ? ` ${TAILWIND.url}` : ""}${map ? ` ${LEAFLET.js.url}` : ""}`,
+    `style-src 'unsafe-inline'${map ? ` ${LEAFLET.css.url}` : ""}`,
+    // A map adds exactly one image source: this app's tile path (a path that ends in "/" allows what is under it, nothing
+    // else of the origin). Without view.map the policy is the same text as before maps existed.
+    `img-src data: ${[...logoOrigins(k), ...(map ? [origin + TILES.path] : [])].join(" ")}`.trim(),
     "font-src data:",
     "media-src data:",
     "connect-src 'none'",
@@ -214,13 +270,15 @@ function post(m) { m.clay = 1; try { parent.postMessage(m, "*"); } catch (e) {} 
 // At most 5 errors per load: an error in an animation loop must not flood the page.
 function fail(text) { text = String(text).slice(0, 500); firstError = firstError || text; if (errors++ < 5) post({ type: "error", message: text }); }
 window.addEventListener("error", function (e) {
+  // A map tile that did not load (the tile host is slow, or the person is offline) leaves a grey square: not an error of the preview.
+  if (e.target && e.target !== window && cfg.map && typeof e.target.src === "string" && e.target.src.indexOf(cfg.map.tiles) === 0) return;
   if (e.target && e.target !== window) return fail("A resource of the preview did not load: " + (e.target.src || e.target.href || e.target.nodeName));
   var line = (e.lineno || 0) - cfg.jsLine;
   fail((e.message || "Script error") + (line > 0 && line <= cfg.jsLines ? " (view.js line " + line + ")" : ""));
 }, true);
 window.addEventListener("unhandledrejection", function (e) { fail("Unhandled promise rejection: " + ((e.reason && e.reason.message) || e.reason)); });
 document.addEventListener("securitypolicyviolation", function (e) {
-  fail("Blocked by the sandbox (" + e.effectiveDirective + "): " + (e.blockedURI || "inline") + ". A preview must not use the network, forms or popups; the sandbox blocks this one. Put images in data: URLs and code inline; brand logos from clay.data.brand.logos are allowed.");
+  fail("Blocked by the sandbox (" + e.effectiveDirective + "): " + (e.blockedURI || "inline") + ". A preview must not use the network, forms or popups; the sandbox blocks this one. Put images in data: URLs and code inline; brand logos from clay.data.brand.logos are allowed." + (cfg.map ? " On a map, only the tiles of clay.map() load: use L.circleMarker or the default L.marker (its pin is built in), no other image and no layers control." : ""));
 });
 // Apply to the live DOM only what changed between two renders of the template, so what view.js did to the elements stays.
 function sync(live, was, next) {
@@ -266,10 +324,26 @@ window.addEventListener("message", function (e) {
   // message per second.
   if (!measure) measure = setTimeout(function () { measure = null; reportHeight(); }, 80);
 });
+// A map (view.map): Leaflet with the one tile layer the frame's policy allows, its attribution, and settings that keep
+// the page around the frame usable. The wheel never zooms the map (it scrolls the page). On a touch screen one finger
+// scrolls the page and two fingers move and zoom the map (Leaflet then sets touch-action: pan-x pan-y on the map); the
+// + and - buttons zoom with one finger. With a mouse the map is dragged as usual.
+function clayMap(el, o) {
+  if (!cfg.map || !window.L) { fail("clay.map() needs view.map: true in the spec."); return null; }
+  o = o || {};
+  var touch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  var m = L.map(el, { center: o.center || [0, 0], zoom: typeof o.zoom === "number" ? o.zoom : 2, minZoom: typeof o.minZoom === "number" ? o.minZoom : 1, maxZoom: cfg.map.maxZoom, scrollWheelZoom: false, dragging: !touch, tap: false, touchZoom: true, zoomControl: true });
+  m.attributionControl.setPrefix(false);
+  L.tileLayer(cfg.map.url, { maxZoom: cfg.map.maxZoom, attribution: cfg.map.attribution }).addTo(m);
+  return m;
+}
+// The default pin of L.marker() is an image file of the library, which the frame's policy does not load: a built-in one.
+if (cfg.map && window.L) L.Marker.prototype.options.icon = L.icon({ iconUrl: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="26" height="38" viewBox="0 0 26 38"><path d="M13 1C6.4 1 1 6.3 1 12.9 1 21.6 13 37 13 37s12-15.4 12-24.1C25 6.3 19.6 1 13 1z" fill="#2563eb" stroke="#fff" stroke-width="2"/><circle cx="13" cy="13" r="4.5" fill="#fff"/></svg>'), iconSize: [26, 38], iconAnchor: [13, 37], popupAnchor: [0, -32], tooltipAnchor: [12, -24] });
 window.clay = Object.freeze({
   get values() { return view(); },
   data: cfg.data,
-  onChange: function (fn) { if (typeof fn === "function") { listeners.push(fn); call(fn); } }
+  onChange: function (fn) { if (typeof fn === "function") { listeners.push(fn); call(fn); } },
+  map: clayMap
 });
 draw();
 window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
@@ -295,7 +369,7 @@ window.addEventListener("load", reportHeight);`;
 const inScript = (x: unknown) => JSON.stringify(x).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, (c) => (c.charCodeAt(0) === 0x2028 ? "\\u2028" : "\\u2029"));
 
 /** The complete frame document: the bridge, then the agent's html, css and js. */
-export function frameDocument(k: KitState, values: Record<string, unknown>): string {
+export function frameDocument(k: KitState, values: Record<string, unknown>, origin = ""): string {
   const { preview, controls } = k.kit;
   const js = preview.js.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
   const head = (jsLine: number) => {
@@ -306,6 +380,8 @@ export function frameDocument(k: KitState, values: Record<string, unknown>): str
       data: { brand: k.kit.brand ? { domain: k.kit.brand.domain, title: k.brandData?.title ?? "", colors: k.brandData?.colors ?? [], logos: k.brandData?.logos ?? [] } : null, inline: k.kit.inline ?? {}, web: webData(k.kit.web, k.web) },
       html: preview.html,
       css: preview.css,
+      // The tile layer of clay.map(): the one image path that the frame's policy allows, with its attribution.
+      map: preview.map === true ? { tiles: origin + TILES.path, url: `${origin}${TILES.path}{z}/{x}/{y}.png`, attribution: TILES.attribution, maxZoom: TILES.maxZoom } : null,
       jsLine,
       jsLines: js.split("\n").length,
     };
@@ -316,7 +392,7 @@ export function frameDocument(k: KitState, values: Record<string, unknown>): str
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preview</title>
 <style>html, body { margin: 0; } body { min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }</style>
-${preview.tailwind ? `<script src="${TAILWIND.url}" integrity="${TAILWIND.integrity}" crossorigin="anonymous"></script>` : ""}
+${preview.tailwind ? `<script src="${TAILWIND.url}" integrity="${TAILWIND.integrity}" crossorigin="anonymous"></script>` : ""}${preview.map === true ? `<link rel="stylesheet" href="${LEAFLET.css.url}" integrity="${LEAFLET.css.integrity}" crossorigin="anonymous"><script src="${LEAFLET.js.url}" integrity="${LEAFLET.js.integrity}" crossorigin="anonymous"></script>` : ""}
 <style id="clay-css"></style>
 </head>
 <body>

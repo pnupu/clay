@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { fromFrame, limiter } from "@/lib/frame";
+import { fromFrame, limiter, TILES } from "@/lib/frame";
 import { cleanValue, initialValues, paletteOf, renderOutputs, snap, valuesNow, type Control, type KitState, type Value, type Values } from "@/lib/kit";
 import type { WebSource, WebState, WebValue } from "@/lib/web";
 import { hostsOf, joinNames, reasonOf, recordPath, rowNamed, type JoinNames } from "@/lib/card";
@@ -316,6 +316,13 @@ export default function Kit({ id, title, state, canWrite, builtByViewer = canWri
           )}
         </div>
       </div>
+      {/* A map preview shows map tiles of OpenStreetMap, which must be credited where the map is (the licence link cannot
+          be inside the frame: a sandboxed frame opens no link), and it says who sees what. For everyone, the owner included. */}
+      {kit.preview.map && (
+        <p className="small muted k-about" data-map-note>
+          Map tiles: <a href={TILES.licence} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>. Clay fetches them from {new URL(TILES.upstream).host} for you: Clay sees the area you look at, and the tile server sees Clay, not your internet address.
+        </p>
+      )}
       {/* What a preview can and cannot do (sandboxed, not sealed from the network) is stated on /privacy. A person looking
           at a preview that their own agent did not build gets one quiet link to it; the owner needs none. */}
       {!builtByViewer && !embedded && <p className="small muted k-about"><Link href="/privacy#previews" prefetch={false}>About previews</Link>: what this preview can and cannot do.</p>}
