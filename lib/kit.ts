@@ -174,8 +174,9 @@ const ALL_FIELDS = [...new Set(Object.values(FIELDS).flat())];
  */
 /** The common ways view.js can turn a string into markup. Not every way: code can hide a name, so this is a warning's net, not a guard. */
 // The map library's calls that take a string as markup are in the list too: a popup, a tooltip, an overlay's content, a
-// div icon, an attribution. (Not caught: a string in an options object, such as L.popup({content}); the reference names it.) Each also takes an element or a text node, which is the way to show web text on a map.
-const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML|setHTMLUnsafe|createContextualFragment|srcdoc|bindPopup|bindTooltip|openPopup|openTooltip|setPopupContent|setTooltipContent|setContent|divIcon|addAttribution|setPrefix)\b|\bdocument\s*\.\s*write(?:ln)?\b/g;
+// div icon, an attribution, and openPopup or openTooltip when they are given content (without an argument they only
+// open what is bound). (Not caught: a string in an options object, such as L.popup({content}); the reference names it.) Each also takes an element or a text node, which is the way to show web text on a map.
+const MARKUP_SINK = /\b(innerHTML|outerHTML|insertAdjacentHTML|setHTMLUnsafe|createContextualFragment|srcdoc|bindPopup|bindTooltip|setPopupContent|setTooltipContent|setContent|divIcon|addAttribution)\b|\bopen(?:Popup|Tooltip)(?=\s*\(\s*[^)\s])|\bdocument\s*\.\s*write(?:ln)?\b/g;
 /**
  * Text from a web page or a brand is not the agent's text: a page can change a price or a name into markup, and markup
  * that view.js writes with innerHTML, outerHTML or insertAdjacentHTML is then built in every visitor's preview. So a

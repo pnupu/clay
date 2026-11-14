@@ -49,10 +49,12 @@ export const TILES = { path: "/api/tiles/", upstream: "https://tile.openstreetma
  */
 export function requestOrigin(url: string, host: string | null, forwardedProto: string | null, forwardedHost: string | null = null): string {
   // A proxy in front of the app names the host the browser used in X-Forwarded-Host; Host is then the app's own address.
-  host = forwardedHost?.split(",")[0].trim() || host;
+  // Each is taken only as a plain host name with an optional port; a forwarded value that is not one leaves Host.
+  const plain = (h: string | null | undefined) => (h && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:\d{1,5})?$/i.test(h) ? h.toLowerCase() : null);
+  host = plain(forwardedHost?.split(",")[0].trim()) ?? plain(host);
   const u = new URL(url);
   const proto = forwardedProto === "https" || forwardedProto === "http" ? `${forwardedProto}:` : u.protocol;
-  return host && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:\d{1,5})?$/i.test(host) ? `${proto}//${host.toLowerCase()}` : u.origin;
+  return host ? `${proto}//${host}` : u.origin;
 }
 
 /** The address of one tile under the tile path, the only form the route answers: no query, no other spelling. */
@@ -317,7 +319,7 @@ function call(fn) { try { fn(view()); } catch (e) { if (window.reportError) repo
 window.addEventListener("message", function (e) {
   if (e.source !== window.parent || !e.data || e.data.clay !== 1) return;
   // The page says hello when it starts to listen: it may have missed what this frame sent before that.
-  if (e.data.type === "hello") { if (firstError) post({ type: "error", message: firstError }); if (document.readyState === "complete") post({ type: "ready" }); return; }
+  if (e.data.type === "hello") { if (firstError) post({ type: "error", message: firstError }); if (document.readyState === "complete" || (cfg.map && document.readyState === "interactive" && scriptsRan)) post({ type: "ready" }); return; }
   if (e.data.type !== "values") return;
   var v = check(cfg.controls, e.data.values);
   if (!v) return;
@@ -334,15 +336,18 @@ window.addEventListener("message", function (e) {
 // the page around the frame usable. The wheel never zooms the map (it scrolls the page). On a touch screen one finger
 // scrolls the page and two fingers move and zoom the map (Leaflet then sets touch-action: pan-x pan-y on the map); the
 // + and - buttons zoom with one finger. With a mouse the map is dragged as usual.
+var scriptsRan = false; // a map frame: view.js has run (DOMContentLoaded), so a page that asks again is told "ready" before the tiles are in
 function clayMap(el, o) {
   if (!cfg.map) { fail("clay.map() needs view.map: true in the spec."); return null; }
   if (!window.L) { fail("The map library did not load (cdn.jsdelivr.net could not be reached), so clay.map() made no map."); return null; }
   o = o || {};
+  if (!el || !el.clientHeight) fail("clay.map(): the map element has no height yet. Give it one in view.css, for example #map { height: 360px }.");
   var touch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
   var m = L.map(el, { minZoom: typeof o.minZoom === "number" ? o.minZoom : 1, maxZoom: cfg.map.maxZoom, scrollWheelZoom: false, dragging: !touch, tap: false, touchZoom: true, zoomControl: true });
   m.attributionControl.setPrefix(false);
   // The first view is set before the tile layer is added, so the tiles of one view are asked for, not of two.
-  if (o.bounds) m.fitBounds(o.bounds, { maxZoom: typeof o.maxZoom === "number" ? o.maxZoom : cfg.map.maxZoom, padding: [32, 32] });
+  // The margin around the points needs room: on an element smaller than it, the zoom could not be computed.
+  if (o.bounds) m.fitBounds(o.bounds, { maxZoom: typeof o.maxZoom === "number" ? o.maxZoom : cfg.map.maxZoom, padding: el.clientWidth > 160 && el.clientHeight > 160 ? [32, 32] : [0, 0] });
   else m.setView(o.center || [0, 0], typeof o.zoom === "number" ? o.zoom : 2);
   L.tileLayer(cfg.map.url, { maxZoom: cfg.map.maxZoom, attribution: cfg.map.attribution }).addTo(m);
   return m;
@@ -358,7 +363,7 @@ window.clay = Object.freeze({
 draw();
 // "ready" means view.js has run. Without a map that is the load event, as before. With a map the load event also waits
 // for every tile image, and a slow tile is not a preview that failed: there the frame is ready when its scripts have run.
-if (cfg.map) document.addEventListener("DOMContentLoaded", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
+if (cfg.map) document.addEventListener("DOMContentLoaded", function () { scriptsRan = true; setTimeout(function () { post({ type: "ready" }); }, 0); });
 else window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });
 // The height of the content, so the page can size the frame to it. At most one report per second, and only on a change:
 // an animation that resizes on every frame cannot flood the page (it counts the messages and stops a preview at 30 in 10 s).

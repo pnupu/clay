@@ -187,6 +187,7 @@ const marks = places.map((p) => ({
 // On a wide map every place keeps its label. On a narrow one (a phone) the labels would cover each other: only the
 // picked place keeps its label there, and a tap on another place shows that one's.
 const wide = document.getElementById("map").clientWidth >= 480;
+let labelled = null;
 const line = document.getElementById("inside");
 clay.onChange((v) => {
   circle.setRadius(v.radius);
@@ -197,9 +198,11 @@ clay.onChange((v) => {
     const colour = picked ? "#dc2626" : "#2563eb";
     x.dot.setStyle({ color: colour, fillColor: colour, opacity: within ? 1 : 0.35, fillOpacity: within ? 0.9 : 0.12 });
     x.dot.setRadius(picked ? 11 : 8);
-    x.dot.unbindTooltip().bindTooltip(text(x.p.name), { permanent: wide || picked, direction: "top", offset: [0, -8] });
+    // Labels are bound again only when the pick changes, not on every step of the radius.
+    if (v.place !== labelled) x.dot.unbindTooltip().bindTooltip(text(x.p.name), { permanent: wide || picked, direction: "top", offset: [0, -8] });
     if (within) inside.push(x.p.name + " (" + x.metres + " m)");
   }
+  labelled = v.place;
   const pick = marks.find((x) => x.p.name === v.place);
   line.textContent =
     (inside.length ? "Within " + v.radius + " m of the station: " + inside.join(", ") + "." : "No place is within " + v.radius + " m of the station.") +

@@ -115,6 +115,8 @@ test("the tile path of a map frame is on the host the browser asked for, and a h
   assert.equal(requestOrigin("http://127.0.0.1:43117/p/x/frame", "127.0.0.1:43117", "https", "clay.example"), "https://clay.example");
   assert.equal(requestOrigin("http://127.0.0.1:43117/p/x/frame", "127.0.0.1:43117", "https", "clay.example, edge.internal"), "https://clay.example");
   assert.equal(requestOrigin("https://clay.example/p/x/frame", "clay.example", "https", "evil.example; img-src *"), "https://clay.example");
+  // A forwarded value that is not a plain host name (an IPv6 literal here) leaves the Host header in force.
+  assert.equal(requestOrigin("http://127.0.0.1:43117/p/x/frame", "clay.example", "https", "[2001:db8::1]:8443"), "https://clay.example");
 });
 
 test("the tile route serves tiles of the standard grid and nothing else", () => {

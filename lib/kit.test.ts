@@ -315,6 +315,8 @@ test("a preview that reads web pages or a brand and builds markup from a string 
   assert.match(markupWarning({ preview: { js: "marker.bindPopup(row.name); m2.bindTooltip(document.createTextNode(row.name));" }, web, brand: null })!, /^view\.js: bindPopup, bindTooltip build markup from a string.*on a map: bindPopup, bindTooltip and setContent take an element or a text node/);
   assert.equal(markupWarning({ preview: { js: "marker.bindPopup(document.createTextNode(place.name));" }, web: [], brand: null }), null);
   assert.match(markupWarning({ preview: { js: "map.openPopup(row.name, at); map.openTooltip(row.name, at); map.attributionControl.addAttribution(row.source);" }, web, brand: null })!, /^view\.js: openPopup, openTooltip, addAttribution build markup/);
+  // Opening what is already bound, and turning the prefix off, write no string.
+  assert.equal(markupWarning({ preview: { js: "m.bindTooltip(document.createTextNode(n)).unbindTooltip(); m.openTooltip(); m.openPopup( ); map.attributionControl.setPrefix(false);" }, web, brand: null })?.includes("openTooltip") ?? false, false);
   // Other common ways to build markup from a string are named too.
   assert.match(markupWarning({ preview: { js: "document . write(x); el.setHTMLUnsafe(y); range.createContextualFragment(z); frame.srcdoc = w;" }, web, brand: null })!, /^view\.js: document\.write, setHTMLUnsafe, createContextualFragment, srcdoc build markup/);
   // The rule is in the texts an agent reads before it writes view.js.
