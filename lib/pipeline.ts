@@ -5,7 +5,7 @@ import { extractionInstructions, extractionSchema, normalise, type Domain, type 
 import { brand, ContextDevError, scrape, searchTopUrl } from "./contextdev";
 import { confirmed, diffModels, verdict } from "./diff";
 import type { Kit, KitState } from "./kit";
-import { load, newPlayground, publicBase, update, type ChangeEvent, type Playground, type Snapshot, type Source } from "./store";
+import { insertPlayground, load, newPlayground, publicBase, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
 const hash = (text: string) => createHash("sha256").update(text.replace(/\s+/g, " ").trim()).digest("hex");
@@ -144,25 +144,69 @@ export async function collect(pg: string, id: string, origin: string): Promise<v
       const now = s.playgrounds[pg];
       // The playground may have been revised while the page was read: only store a vendor that is still part of it.
       if (now?.domain.vendors.some((x) => x.id === id)) now.sources[id] = { ...src, monitor: now.sources[id]?.monitor ?? src.monitor };
+      arrived(now, id);
     });
   }
 }
 
-/** Collect every vendor of a playground in parallel. Returns the stop error (rate limit or quota) when one occurred. */
-export async function collectAll(pg: string, origin: string, ids?: string[]): Promise<string | null> {
-  const results = await Promise.allSettled((ids ?? (await playground(pg)).domain.vendors.map((v) => v.id)).map((id) => collect(pg, id, origin)));
-  const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
-  return failed ? message(failed.reason) : null;
+/** One source of tracked work has arrived (read, or failed): it is no longer pending. */
+const arrived = (p: Playground | undefined, id: string) => {
+  if (p?.work && !p.work.finishedAt) p.work.pending = p.work.pending.filter((x) => x !== id);
+};
+
+/**
+ * Run web reads for some vendors of a playground as tracked work (store.ts, Work): the playground says which sources are
+ * still pending while `run` runs, and how it ended. The mark is set before this returns its promise's first await ends, so
+ * a caller that answers early leaves a playground that says "running". Never rejects: an error becomes the stop text.
+ */
+export async function tracked(pg: string, kind: Work["kind"], ids: string[], run: () => Promise<string | null>): Promise<string | null> {
+  const id = randomUUID();
+  let stop: string | null = null;
+  try {
+    await update((s) => {
+      const p = s.playgrounds[pg];
+      if (p) p.work = { id, kind, startedAt: new Date().toISOString(), pending: ids, finishedAt: null, stop: null };
+    });
+    stop = await run();
+  } catch (e) {
+    stop = message(e);
+  }
+  await update((s) => {
+    const p = s.playgrounds[pg];
+    // Newer work on the same playground (a revision that came in meanwhile) keeps its own mark.
+    if (p?.work?.id === id) Object.assign(p.work, { pending: [], finishedAt: new Date().toISOString(), stop });
+  }).catch(() => {});
+  return stop;
 }
 
-/** Create a playground from a validated Domain and collect its sources. */
-export async function createPlayground(domain: Domain, origin: string): Promise<{ created: boolean; error: string | null }> {
-  const created = await update((s) => {
-    if (s.playgrounds[domain.id]) return false;
-    s.playgrounds[domain.id] = newPlayground(domain);
-    return true;
+/** Wait until the tracked work of a playground has ended, at most `ms`. Returns the playground as stored now. */
+export async function settled(pg: string, ms: number, every = 1500): Promise<Playground | undefined> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const p = (await load()).playgrounds[pg];
+    if (!p || workStatus(p)?.status !== "running" || Date.now() + every > until) return p;
+    await new Promise((r) => setTimeout(r, every));
+  }
+}
+
+/** Collect every vendor of a playground in parallel, as tracked work. Returns the stop error (rate limit or quota) when one occurred. */
+export async function collectAll(pg: string, origin: string, ids?: string[]): Promise<string | null> {
+  const all = ids ?? (await playground(pg)).domain.vendors.map((v) => v.id);
+  return tracked(pg, "build", all, async () => {
+    const results = await Promise.allSettled(all.map((id) => collect(pg, id, origin)));
+    const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    return failed ? message(failed.reason) : null;
   });
-  return created ? { created, error: await collectAll(domain.id, origin) } : { created, error: null };
+}
+
+/**
+ * Create a playground from a validated Domain and start collecting its sources. `work` is the running collection: it
+ * resolves to the stop error or null. A caller with a short deadline (the MCP tools) answers before it ends and must
+ * keep the function alive for it (after() in the route); a caller without one awaits it.
+ */
+export async function createPlayground(domain: Domain, origin: string): Promise<{ id: string; work: Promise<string | null> } | { refused: string }> {
+  const r = await insertPlayground(domain, (d) => newPlayground(d));
+  return "refused" in r ? r : { id: r.id, work: collectAll(r.id, origin) };
 }
 
 // ---- Preview playgrounds (lib/kit.ts). The only web read is the brand of data.brand, once, at creation or when its domain changes.
@@ -177,17 +221,25 @@ async function readBrand(kit: Kit, was?: KitState): Promise<Pick<KitState, "bran
   }
 }
 
-/** Create a preview playground from a validated kit. The preview stays "unverified" until the page has run it once. */
-export async function createPreview(domain: Domain, kit: Kit): Promise<{ created: boolean }> {
-  if ((await load()).playgrounds[domain.id]) return { created: false };
-  const read = await readBrand(kit);
-  return {
-    created: await update((s) => {
-      if (s.playgrounds[domain.id]) return false;
-      s.playgrounds[domain.id] = { ...newPlayground(domain), kit: { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } };
-      return true;
-    }),
-  };
+/**
+ * Create a preview playground from a validated kit. The preview stays "unverified" until the page has run it once.
+ * The playground is stored (and the owner's allowance reserved) before the brand is read; `brand` is that read, and it
+ * stores its result when it ends. A playground without data.brand is complete at once.
+ */
+export async function createPreview(domain: Domain, kit: Kit): Promise<{ id: string; brand: Promise<void> | null } | { refused: string }> {
+  const pending = kit.brand ? "The brand is still being read." : null;
+  const r = await insertPlayground(domain, (d) => ({ ...newPlayground(d), kit: { kit, rev: randomUUID(), brandData: null, brandError: pending, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } }));
+  if ("refused" in r) return r;
+  const brandRead = !kit.brand
+    ? null
+    : readBrand(kit).then((read) =>
+        update((s) => {
+          const k = s.playgrounds[r.id]?.kit;
+          // A revision that came in meanwhile has read its own brand: only fill in a kit that still waits for this one.
+          if (k && k.brandError === pending && k.kit.brand?.domain === kit.brand!.domain) Object.assign(k, read);
+        }),
+      );
+  return { id: r.id, brand: brandRead };
 }
 
 /**
@@ -212,7 +264,7 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<void> {
  * guidance changed, every page is extracted again; else only new vendors and vendors with a new page are collected.
  * The saved decision is kept only while its vendor and every control it names still exist.
  */
-export async function revisePlayground(domain: Domain, origin: string): Promise<{ recollected: string[]; decisionCleared: boolean; error: string | null }> {
+export async function revisePlayground(domain: Domain, origin: string): Promise<{ recollected: string[]; decisionCleared: boolean; work: Promise<string | null> | null }> {
   const sig = (d: Domain) => JSON.stringify([d.product, d.notes ?? "", d.metrics.map((m) => [m.id, m.describe]), d.features.map((f) => [f.id, f.describe])]);
   const plan = await update((s) => {
     const p = s.playgrounds[domain.id];
@@ -240,7 +292,7 @@ export async function revisePlayground(domain: Domain, origin: string): Promise<
     p.domain = domain;
     return { recollected: schemaChanged ? domain.vendors.map((v) => v.id) : moved, decisionCleared };
   });
-  return { ...plan, error: plan.recollected.length ? await collectAll(domain.id, origin, plan.recollected) : null };
+  return { ...plan, work: plan.recollected.length ? collectAll(domain.id, origin, plan.recollected) : null };
 }
 
 /**
@@ -316,6 +368,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
   } finally {
     await update((s) => {
       const p = s.playgrounds[pg];
+      arrived(p, id);
       if (!p?.sources[id]) return; // revised or removed while the page was read
       // Conditional write: another re-check stored a newer read of this source while this one ran. Its result stands.
       const cur = p.sources[id].snapshot;
@@ -326,6 +379,17 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
     });
   }
   return event;
+}
+
+/** Re-check every source of a playground as tracked work. Resolves to the per-source results, in the order of `ids`. */
+export async function recheckAll(pg: string, ids: string[], trigger: ChangeEvent["trigger"], origin: string): Promise<PromiseSettledResult<ChangeEvent | null>[]> {
+  let results: PromiseSettledResult<ChangeEvent | null>[] = [];
+  await tracked(pg, "recheck", ids, async () => {
+    results = await Promise.allSettled(ids.map((id) => recheck(pg, id, trigger, origin)));
+    const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    return failed ? message(failed.reason) : null;
+  });
+  return results;
 }
 
 /** The origin for URLs the app emits: the public base URL of a deployment, else the origin of the request (localhost). */

@@ -28,7 +28,7 @@ const control = z.strictObject({
   step: z.number().optional().describe("slider: step, default 1. initial must be reachable from min in steps."),
   unit: z.string().max(20).optional().describe("slider: unit shown after the number, for example px."),
   initial: z.union([z.number(), z.string(), z.boolean()]).describe("Starting value: the value in the person's code now. slider: number. toggle: true or false. select: the value of one option. color: #rrggbb."),
-  options: z.array(z.strictObject({ value: z.string().max(200), label: z.string().max(80).optional() })).optional().describe("select: 2 to 12 options. value is the text used in templates and code (for example a Tailwind class), label is what the person sees."),
+  options: z.array(z.strictObject({ value: z.string().max(200), label: z.string().max(80).optional() })).max(KIT_LIMITS.options).optional().describe("select: 2 to 12 options. value is the text used in templates and code (for example a Tailwind class), label is what the person sees."),
   on: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when on, for example 'shadow-md'. Default 'true'."),
   off: z.string().max(200).optional().describe("toggle: the text {{id}} stands for when off, for example ''. Default 'false'."),
   palette: z.union([z.literal("brand"), z.array(z.string().max(9)).max(KIT_LIMITS.palette)]).optional().describe("color: swatches to offer. 'brand' uses the colours of data.brand; or a list of #rrggbb."),
@@ -51,7 +51,7 @@ const output = z.strictObject({
 });
 
 export const specShape = {
-  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the playground and the last part of its URL, for example signup-button."),
+  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "use 3 to 40 characters: lowercase letters, digits and hyphens, starting with a letter").describe("Id of the playground and the last part of its URL, for example signup-button. When it is taken, the playground gets it with a short suffix: use the playground_id of the result."),
   title: text(3, 200).describe("What the person is deciding, in their words. For a price playground, the decision as a question."),
   notes: text(0, 600).optional().describe("Optional short note shown under the title, for example what to look for."),
   data: z
@@ -62,17 +62,79 @@ export const specShape = {
     })
     .optional()
     .describe("Where the facts come from. Each source keeps its origin on the page."),
-  controls: z.array(control).optional().describe("For view preview: the controls, 1 to 12, only from the kit. Choose the few dimensions that matter for this person."),
+  controls: z.array(control).max(KIT_LIMITS.controls).optional().describe("For view preview: the controls, 1 to 12, only from the kit. Choose the few dimensions that matter for this person."),
   view,
-  outputs: z.array(output).optional().describe("For view preview: what goes back to you when the person settles, as code-ready text. At least 1."),
+  outputs: z.array(output).max(KIT_LIMITS.outputs).optional().describe("For view preview: what goes back to you when the person settles, as code-ready text. At least 1."),
 };
 const spec = z.strictObject(specShape);
 export type Spec = z.input<typeof spec>;
 
 export type ParsedSpec = { ok: true; kind: "price"; domain: Domain } | { ok: true; kind: "preview"; domain: Domain; kit: Kit; warnings: string[] } | { ok: false; errors: string[] };
 
-/** Validate an untrusted spec. Returns what to build, or every problem as a sentence that says how to fix it. */
+/** A spec larger than this is refused unread. The largest valid one (every text at its limit) is well below it. */
+export const MAX_SPEC_BYTES = 200_000;
+/** At most this many problems are returned; the rest is counted. A caller cannot make the answer larger than the request. */
+export const MAX_ERRORS = 20;
+export const capErrors = (errors: string[]): string[] => (errors.length > MAX_ERRORS ? [...errors.slice(0, MAX_ERRORS), `and ${errors.length - MAX_ERRORS} more problems. Fix these first.`] : errors);
+
+/**
+ * The size check of an untrusted spec, BEFORE any element is validated: every collection against its bound. It looks only
+ * at lengths, so a request with ten thousand entries costs one pass over the top-level shape and gets one sentence back.
+ * Used by parseSpec() and by the MCP route, which must refuse such a call before the SDK validates the tool input.
+ */
+export function oversize(input: unknown): string[] {
+  const errors: string[] = [];
+  const obj = (x: unknown): Record<string, unknown> => (x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, unknown>) : {});
+  const bound = (path: string, value: unknown, max: number) => {
+    if (errors.length >= MAX_ERRORS) return;
+    const n = Array.isArray(value) ? value.length : value && typeof value === "object" ? Object.keys(value).length : 0;
+    if (n > max) errors.push(`${path}: at most ${max} entries, got ${n}. Nothing was checked or created.`);
+  };
+  const s = obj(input);
+  bound("spec", s, 12);
+  bound("controls", s.controls, KIT_LIMITS.controls);
+  bound("outputs", s.outputs, KIT_LIMITS.outputs);
+  if (Array.isArray(s.controls) && s.controls.length <= KIT_LIMITS.controls)
+    for (const [i, c] of s.controls.entries()) {
+      bound(`controls.${i}`, obj(c), 16);
+      bound(`controls.${i}.options`, obj(c).options, KIT_LIMITS.options);
+      bound(`controls.${i}.palette`, obj(c).palette, KIT_LIMITS.palette);
+    }
+  const data = obj(s.data);
+  bound("data", data, 6);
+  bound("data.inline", data.inline, 40);
+  const pages = obj(data.price_pages);
+  bound("data.price_pages", pages, 8);
+  bound("data.price_pages.metrics", pages.metrics, LIMITS.metrics[1]);
+  bound("data.price_pages.features", pages.features, LIMITS.features[1]);
+  bound("data.price_pages.vendors", pages.vendors, LIMITS.vendors[1]);
+  bound("view", s.view, 8);
+  return errors;
+}
+
+/**
+ * The refusal for a tool call whose spec has a collection over its bound, or null. The route calls it BEFORE the MCP SDK
+ * sees the request: the SDK validates every element of the tool input and reports every issue, so ten thousand empty
+ * controls would cost fifty thousand error messages. Here they cost one sentence.
+ */
+export function refuseOversize(message: unknown): { id: unknown; text: string } | null {
+  for (const m of Array.isArray(message) ? message.slice(0, 20) : [message]) {
+    const call = m && typeof m === "object" ? (m as { id?: unknown; method?: unknown; params?: { arguments?: unknown } }) : {};
+    const errors = call.method === "tools/call" ? oversize(call.params?.arguments) : [];
+    if (errors.length) return { id: call.id ?? null, text: `The spec is too large. Nothing was checked or created. Fix these and call the tool again:\n- ${errors.join("\n- ")}` };
+  }
+  return null;
+}
+
+/** Validate an untrusted spec. Returns what to build, or the problems (at most MAX_ERRORS), each as a sentence that says how to fix it. */
 export function parseSpec(input: unknown): ParsedSpec {
+  const big = oversize(input);
+  if (big.length) return { ok: false, errors: big };
+  const r = validate(input);
+  return r.ok ? r : { ok: false, errors: capErrors(r.errors) };
+}
+
+function validate(input: unknown): ParsedSpec {
   const r = spec.safeParse(input);
   if (!r.success) return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "spec"}: ${i.message}`) };
   const s = r.data;

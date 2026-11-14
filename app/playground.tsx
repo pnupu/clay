@@ -69,6 +69,8 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
   const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef(false);
   const tickRef = useRef(false);
+  /** The agent's build (or a re-check) is still reading pricing pages: the state is reloaded every 3 s until it ends. */
+  const readingRef = useRef(false);
 
   const run = useCallback(async (what: string, path: string, method = "POST", body?: unknown) => {
     busyRef.current = true;
@@ -99,13 +101,17 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
     let n = 0;
     const t = setInterval(async () => {
       setNow(Date.now());
-      if (++n % 5 || document.hidden || busyRef.current || tickRef.current) return;
+      if ((++n % 5 && !readingRef.current) || document.hidden || busyRef.current || tickRef.current) return;
       tickRef.current = true;
       const s = await call(`${api}/state`).catch(() => null).finally(() => (tickRef.current = false));
       if (s?.sources && !busyRef.current) setState(s);
     }, 3000);
     return () => clearInterval(t);
   }, [api]);
+
+  useEffect(() => {
+    readingRef.current = state?.work?.status === "running";
+  }, [state]);
 
   const sources = useMemo(() => state?.sources ?? {}, [state]);
   const models = useMemo(() => Object.fromEntries(Object.entries(sources).map(([id, s]) => [id, s.snapshot?.model ?? null])) as Record<string, PricingModel | null>, [sources]);
@@ -164,6 +170,10 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
   if (!state) return <main className="shell"><p className="muted">Loading…</p></main>;
 
   const collectedAll = domain.vendors.every((v) => sources[v.id]?.snapshot || sources[v.id]?.error);
+  // Web reads started by the agent go on after its tool call has answered. While they run, sources arrive one by one.
+  const work = state.work;
+  const reading = work?.status === "running";
+  const missing = domain.vendors.filter((v) => !sources[v.id]?.snapshot && !sources[v.id]?.error);
 
   return (
     <Dom.Provider value={h}>
@@ -175,16 +185,25 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
           {domain.note && <p className="muted" style={{ maxWidth: "70ch", margin: "6px 0 0" }}>{domain.note}</p>}
         </div>
         <div className="actions">
-          {busy ? <span className="muted">{busy}…</span> : collected.length > 0 && (
+          {busy ? <span className="muted">{busy}…</span> : reading ? (
+            <span className="live" data-building><i />{work.kind === "recheck" ? `Re-reading the pricing pages: ${work.pending.length} to go…` : `Reading the pricing pages: ${collected.length} of ${domain.vendors.length} read…`}</span>
+          ) : collected.length > 0 && (
             <span className="live"><i />{healthy.length} of {domain.vendors.length} sources read · oldest check {ago(oldestCheck, now)}</span>
           )}
-          {!collectedAll && canWrite && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
+          {!collectedAll && !reading && canWrite && <button className="primary" disabled={!!busy} onClick={() => run("Reading pricing pages", `${api}/collect`)}>Collect pricing pages</button>}
           {collected.length > 0 && canWrite && <button disabled={!!busy} onClick={() => run("Re-checking sources", `${api}/recheck`)}>Re-check all now</button>}
         </div>
       </header>
       {error && <p className="alert">{error}</p>}
+      {work?.status === "stalled" && missing.length > 0 && <p className="alert">The reading of the pricing pages stopped before the end. Not read: {missing.map((v) => v.name).join(", ")}.{canWrite ? " Press Collect pricing pages to read them." : ""}</p>}
+      {work?.status === "done" && work.stop && missing.length > 0 && <p className="alert">The reading of the pricing pages stopped early: {work.stop}</p>}
 
-      {collected.length === 0 ? (
+      {collected.length === 0 && reading ? (
+        <section className="card" data-building>
+          <h2>Reading the pricing pages…</h2>
+          <p>Your agent is building this comparison from the public pricing pages of {domain.vendors.map((v) => v.name).join(", ")}. Each vendor appears here as soon as its page is read, usually within a minute. You do not need to reload.</p>
+        </section>
+      ) : collected.length === 0 ? (
         <section className="card empty">
           <h2>No data yet</h2>
           <p>Collect reads each vendor&apos;s public pricing page with Context.dev (search to find the page, then structured extraction). It takes about 10 seconds and uses about 6 credits per vendor.</p>
@@ -324,6 +343,15 @@ export default function Playground({ domain, explored, canWrite, admin }: { doma
                       {s.error && <p className="small bad">{s.error}</p>}
                     </div>
                     {canWrite && <button className="small-btn" disabled={!!busy} onClick={() => run(`Re-checking ${s.name}`, `${api}/recheck`, "POST", { id: s.id })}>Re-check</button>}
+                  </li>
+                ))}
+                {domain.vendors.filter((v) => !sources[v.id]).map((v) => (
+                  <li key={v.id}>
+                    <span className="dot" style={{ background: h.color(v.id) }} />
+                    <div>
+                      <span>{v.name}</span>
+                      <p className="small muted">{reading ? "Reading its pricing page…" : "Not read"}</p>
+                    </div>
                   </li>
                 ))}
               </ul>

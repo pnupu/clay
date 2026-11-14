@@ -51,6 +51,13 @@ export class ContextDevError extends Error {
 
 type Json = Record<string, unknown>;
 
+const RATE_LIMIT_RETRIES = 3;
+/** How long to wait before a rate-limited request is sent again: the "Retry in N seconds" of the API's message plus a little, 1 to 30 s. */
+export function retryAfterMs(message: string, jitter = Math.random()): number {
+  const stated = Number(/retry in (\d+(?:\.\d+)?) second/i.exec(message)?.[1] ?? 5);
+  return Math.round(Math.min(30, Math.max(1, stated + 1 + 2 * jitter)) * 1000);
+}
+
 /** One API call. Records method, path, status, latency and credits (never the key or the body) in run/requests.jsonl. */
 export async function cd<T = Json>(method: string, path: string, body?: unknown): Promise<T & { _ms: number }> {
   const key = process.env.CONTEXT_DEV_API_KEY;
@@ -90,32 +97,41 @@ export async function cd<T = Json>(method: string, path: string, body?: unknown)
   }) : null;
   if (refusal === "global") throw new ContextDevError(429, "DAILY_CAP", `The daily budget of this Clay deployment is used up: ${daily} Context.dev requests were counted today (CONTEXT_DEV_DAILY_CAP; a brand read counts as 2). No request was sent. The budget resets at 00:00 UTC.`);
   if (refusal === "user") throw new ContextDevError(429, "USER_DAILY_CAP", userCapMessage(personal));
-  await slot();
-  overCap();
-  const t0 = Date.now();
-  pending++;
-  let res: Response | null = null;
-  let data: Json = {};
-  try {
-    res = await fetch(BASE + path, {
-      method,
-      headers: { Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(120_000),
-    });
-    data = (await res.json().catch(() => ({}))) as Json;
-  } finally {
-    // Every request that was sent is logged, also one that failed or timed out (status 0): it may have been billed, and it counts toward the cap.
+  // The account's rate limit (10 request units per minute) is shared by every function instance and every person, so the
+  // pacing in slot() cannot always prevent a 429. Builds run in the background (lib/mcp.ts answers the agent early), so a
+  // wait is cheap and a stopped build is not: a 429 RATE_LIMITED is sent again after the wait the API states, up to 3 times.
+  for (let attempt = 0; ; attempt++) {
+    await slot();
+    overCap();
+    const t0 = Date.now();
+    pending++;
+    let res: Response | null = null;
+    let data: Json = {};
     try {
-      // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
-      mkdirSync("run", { recursive: true });
-      appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res?.status ?? 0, ms: Date.now() - t0, credits: (data.key_metadata as Json | undefined)?.credits_consumed ?? null, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
-    } catch {}
-    pending--;
+      res = await fetch(BASE + path, {
+        method,
+        headers: { Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(120_000),
+      });
+      data = (await res.json().catch(() => ({}))) as Json;
+    } finally {
+      // Every request that was sent is logged, also one that failed or timed out (status 0): it may have been billed, and it counts toward the cap.
+      try {
+        // lean: request log is a local file; on Vercel the filesystem is read-only, so this is skipped there. Use the Context.dev request logs API instead.
+        mkdirSync("run", { recursive: true });
+        appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), via: FIXTURE ? "fixture" : "app", method, path, status: res?.status ?? 0, ms: Date.now() - t0, credits: (data.key_metadata as Json | undefined)?.credits_consumed ?? null, cache: (data.cache_metadata as Json | undefined)?.status ?? null }) + "\n");
+      } catch {}
+      pending--;
+    }
+    const ms = Date.now() - t0;
+    if (res.status === 429 && data.error_code === "RATE_LIMITED" && attempt < RATE_LIMIT_RETRIES) {
+      await new Promise((r) => setTimeout(r, retryAfterMs(String(data.message ?? ""))));
+      continue;
+    }
+    if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
+    return { ...(data as T), _ms: ms };
   }
-  const ms = Date.now() - t0;
-  if (!res.ok) throw new ContextDevError(res.status, (data.error_code as string) ?? null, `Context.dev ${method} ${path} -> ${res.status} ${data.error_code ?? ""} ${data.message ?? ""}`.trim());
-  return { ...(data as T), _ms: ms };
 }
 
 /** Find a page with Search (POST /web/search). Returns the top result on the vendor's own domain, or null. */

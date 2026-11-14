@@ -2,12 +2,12 @@
 // On Vercel (BLOB_STORE_ID is set by the connected private Blob store) it is one private blob: reads bypass the CDN cache,
 // and every write is conditional on the ETag that was read, so a concurrent writer never loses an update.
 // The webhook secrets in `monitor.secret` live only in this server-side document.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
-import { currentUserId, type Account } from "./accounts.ts";
+import { currentUserId, playgroundCapMessage, type Account } from "./accounts.ts";
 
 export type Snapshot = {
   url: string;
@@ -57,6 +57,21 @@ export type Exploration = {
   updatedAt: string;
 };
 
+/**
+ * Web reads in progress for a price playground: a first build, a revision or a re-check. The call that started them
+ * answers before they end (an agent's client cuts a tool call at about 60 s), and the sources fill in while this stands.
+ */
+export type Work = { id: string; kind: "build" | "recheck"; startedAt: string; pending: string[]; finishedAt: string | null; stop: string | null };
+/** A function instance lives at most 300 s (maxDuration). Work that is older and not finished was cut off. */
+const WORK_STALE_MS = 330_000;
+/** Where the web reads of a playground stand: running, stalled (cut off before the end), done, or null when none were tracked. */
+export function workStatus(p: Pick<Playground, "work">, now = Date.now()) {
+  const w = p.work;
+  if (!w) return null;
+  const status = w.finishedAt ? ("done" as const) : now - Date.parse(w.startedAt) > WORK_STALE_MS ? ("stalled" as const) : ("running" as const);
+  return { status, kind: w.kind, startedAt: w.startedAt, pending: w.finishedAt ? [] : w.pending, stop: w.stop };
+}
+
 export type Playground = {
   domain: Domain;
   createdAt: string;
@@ -64,6 +79,8 @@ export type Playground = {
   decision: Decision | null;
   events: ChangeEvent[];
   exploration: Exploration | null;
+  /** The web reads that last ran, or that run now (workStatus()). */
+  work?: Work | null;
   /** A preview playground (lib/kit.ts): controls, a sandboxed preview and outputs. Its `domain` holds only the id and the title. */
   kit?: KitState;
   /** The Clerk user id of the person whose agent created it. Missing: the admin's (lib/accounts.ts). */
@@ -195,6 +212,29 @@ export function update<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
 export function publicState(s: Store, id: string, owner = true) {
   const p = s.playgrounds[id];
   const sources = Object.fromEntries(Object.entries(p.sources).map(([k, src]) => [k, { ...src, monitor: src.monitor ? { id: src.monitor.id, webhookUrl: src.monitor.webhookUrl } : null }]));
-  return { id, sources, decision: p.decision, events: p.events, demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
+  return { id, sources, decision: p.decision, events: p.events, work: workStatus(p), demoPage: s.demoPage, publicBaseUrl: publicBase(), owner };
 }
 export type PublicState = ReturnType<typeof publicState>;
+
+/**
+ * The id a new playground gets: the wanted one, or, when it is taken, the wanted one with a short random suffix. A create
+ * never fails on a taken id, so its answer cannot tell a caller that somebody else's playground exists.
+ */
+export function freeId(wanted: string, taken: (id: string) => boolean, random = () => randomBytes(3).toString("hex")): string {
+  for (let id = wanted; ; id = `${wanted.slice(0, 33)}-${random()}`) if (!taken(id)) return id;
+}
+
+/**
+ * Insert a new playground in ONE store update: the owner's allowance is checked, a free id is taken and the playground is
+ * stored together, so parallel creates by one person cannot pass the cap side by side. Nothing slow (a web read) happens
+ * before it: a refused create has spent nothing.
+ */
+export async function insertPlayground(domain: Domain, make: (d: Domain) => Playground): Promise<{ id: string } | { refused: string }> {
+  return update((s) => {
+    const refused = playgroundCapMessage(s.playgrounds);
+    if (refused) return { refused };
+    const id = freeId(domain.id, (x) => !!s.playgrounds[x]);
+    s.playgrounds[id] = make({ ...domain, id });
+    return { id };
+  });
+}

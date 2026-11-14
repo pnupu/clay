@@ -5,12 +5,19 @@ import { z } from "zod";
 import { LIMITS } from "./config";
 import { DOMAIN } from "./domain";
 import { initialValues, renderOutputs } from "./kit";
-import { createPlayground, createPreview, recheck, revisePlayground, revisePreview } from "./pipeline";
+import { createPlayground, createPreview, recheckAll, revisePlayground, revisePreview, settled } from "./pipeline";
 import { KIT_REFERENCE } from "./reference";
-import { BRAND_NOTE, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
-import { mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
+import { BRAND_NOTE, buildReport, collectionReport, controlsNow, dataReport, decisionReport, eventReport, previewReport, previewStatus, rankingReport, readReport, WEB_TEXT_NOTE } from "./report";
+import { MAX_SPEC_BYTES, mergeSpec, parseSpec, specShape, toSpec, type Spec } from "./spec";
 import { load, type Playground } from "./store";
-import { canRead, canWrite, currentActor, playgroundCapMessage } from "./accounts";
+import { canRead, canWrite, currentActor } from "./accounts";
+
+/**
+ * How long a tool call waits for web reads before it answers. An agent's client cuts a tool call at about 60 seconds
+ * (Claude Code and Codex both), and a cut call looks like a failure although the server finished. So every tool answers
+ * well inside that, and says "running" when the reads go on.
+ */
+const WAIT_MS = Number(process.env.CLAY_TOOL_WAIT_MS ?? 20_000);
 
 const HOLDS_RULE = "A saved decision holds while the chosen vendor can be fully priced under the saved assumptions and costs at most the saved tolerance (dollars per month, set by the person, default 0) more than the cheapest fully priced vendor.";
 
@@ -48,21 +55,22 @@ view.type "price_ranking": a "which vendor or plan" decision for a usage-priced 
 - Metrics (sliders): the 1 to 3 usage dimensions that drive the cost for THIS person. initial is their own number when they gave one; min and max sit around what they said, not around the whole market. Write describe in the words pricing pages use, with synonyms; the extraction finds the prices with that text.
 - Features (checkboxes): the hard requirements the person mentioned, and only ones that pricing pages state per plan.
 - No facts. Never put prices, plan names or limits in the spec. They are read from each pricing page, each with a source quote and a check that the number is on the page.
-The call reads every pricing page: 10 to 60 seconds, up to 2 minutes when requests wait for the rate limit. The result lists per vendor what was read and a problems list that says how to fix each problem. Repair a broken first build with revise_playground before you hand over the URL: for a page that was not read, try once with the exact pricing_url (or only the domain); if the vendor still cannot be priced, remove it and tell the person. A vendor that "cannot be ranked" only at some values is a true finding and stays.
+The call answers within about 20 seconds, with build.status. "done": every pricing page is read; the result lists per vendor what was read, and a problems list that says how to fix each problem. "running": the pages are still being read (5 to 40 seconds each, more when requests wait for the rate limit) and arrive by themselves; the URL works already and shows each vendor as it arrives. When it is running, first tell the person in a sentence that the comparison is being built from the live pricing pages and give them the URL to watch it fill in. Then call read_playground, which waits up to 20 seconds for the reads, and repeat it until build.status is "done"; it returns the same problems list. Never call create_playground a second time for a build that is running.
+Repair a broken first build with revise_playground before you tell the person it is ready: for a page that was not read, try once with the exact pricing_url (or only the domain); if the vendor still cannot be priced, remove it and tell the person. A vendor that "cannot be ranked" only at some values is a true finding and stays.
 
-Then give the person the URL: for a preview, "move the controls until it is right, then press Settle"; for prices, "explore, select a vendor and save the decision". When they say they are done, call read_playground.`,
+Then give the person the URL: for a preview, "move the controls until it is right, then press Settle"; for prices, "explore, select a vendor and save the decision". When they say they are done, call read_playground. Always use the playground_id and url of the result: when the id you asked for is taken, the playground gets that id with a short suffix.`,
 
   read_playground: `Read what the person did in a playground. It reads stored data and does not contact the web. Call it when the person says they are done, and before you act on a result. With no playground_id it lists the playgrounds.
 
 Preview playground: returns settled (the values, and the outputs as code-ready text), the exploration summary, and the preview status. When settled is present, carry it out: write settled.outputs into the person's file exactly as given, then say what you changed. When it is "none", the person has not pressed Settle: ask them to, and do not treat the current values as a decision. When preview.status is "failed", the error text is the browser's: repair the code with revise_playground and ask the person to reload.
 
-Price playground: returns the control values now, the cost ranking, the saved decision (vendor, assumptions, tolerance, whether it holds on the data as last read), the exploration summary and the source change events. ${HOLDS_RULE} For "does it still hold today", call recheck_playground too.
+Price playground: returns the control values now, the cost ranking, the saved decision (vendor, assumptions, tolerance, whether it holds on the data as last read), the exploration summary, the source change events, build (where the reading of the pricing pages stands: "running", "done" or "stalled") and problems (what to repair with revise_playground). While build.status is "running", this call waits up to 20 seconds for the reads; call it again until it says "done", then act on problems. ${HOLDS_RULE} For "does it still hold today", call recheck_playground too.
 
 The exploration summary gives, per control, the range the person tried and the value they settled on. Use it: "tried 4 to 16, settled on 10" tells you their real range and how sure they are. A control they never moved was not examined by them: leave its value in their code as it is.`,
 
   recheck_playground: `Re-read every pricing page of a price playground now, and report what changed since the last read and whether the saved decision still holds. A preview playground has nothing to re-check.
 
-Use it when the person asks if a decision is still valid, or wants current prices before they act. It takes 5 to 60 seconds and spends web requests, so do not call it on every turn. A change on a real page is reported only when two fresh extractions agree on it, so a reported change is one you can state to the person.
+Use it when the person asks if a decision is still valid, or wants current prices before they act. It spends web requests, so do not call it on every turn. It answers within about 20 seconds: with the result, or with status "running" when the pages are still being read. Then tell the person that today's prices are being read, and call read_playground until its build.status is "done": its change_events and saved_decision then hold the result. A change on a real page is reported only when two fresh extractions agree on it, so a reported change is one you can state to the person.
 
 ${HOLDS_RULE} The result gives the verdict with the costs behind it. When the decision no longer holds, say what changed, the new cheapest vendor and the gap, and send the person back to the playground URL to look again; do not pick for them.`,
 
@@ -72,18 +80,30 @@ Give playground_id and only the parts that change. Each part you give replaces t
 
 Preview playground: the settled result is cleared and the preview is unverified again; what the person tried is kept for the controls you did not change. Ask the person to reload the page.
 
-Price playground: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, features, product or notes changes what is extracted, so every page is read again (10 seconds to 2 minutes). A change of only the title or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed. After one failed repair of a vendor, remove it and tell the person; do not keep trying pages.`,
+Price playground: a new vendor, or a vendor with a new pricing page, is read once. A change to the metrics, features, product or notes changes what is extracted, so every page is read again. As with a first build, the call answers within about 20 seconds with build.status "done" or "running"; when it is running, call read_playground until it is done. A change of only the title or of a range reads nothing. The saved decision is kept unless its vendor or one of its controls is removed. After one failed repair of a vendor, remove it and tell the person; do not keep trying pages.`,
 
   kit_reference: `Return the reference for preview playgrounds: the four control types, how the preview binds to them ({{control_id}} in html and css, clay.values in JavaScript), what the sandbox allows, how outputs work, and two complete worked specs (a Tailwind button with brand colours; spring physics tuned by feel). Read-only, instant, no web request. Call it once before your first create_playground with view.type "preview".`,
 };
 
+/** The largest request the MCP endpoint reads: one spec at its size limit plus the JSON-RPC envelope. */
+export const MAX_MCP_BYTES = MAX_SPEC_BYTES + 20_000;
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 1) }] });
 const fail = (message: string) => ({ ...text(message), isError: true });
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function buildServer(origin: string): McpServer {
+/**
+ * `background`: keeps the function instance alive for web reads that go on after the tool has answered (the route passes
+ * Next.js after()). Without it the reads still run on a long-lived server such as `next dev`.
+ */
+export function buildServer(origin: string, background: (work: Promise<unknown>) => void = () => {}): McpServer {
   const server = new McpServer({ name: "clay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const url = (id: string) => `${origin}/p/${id}`;
+  /** Wait for web reads at most WAIT_MS. `done: false` means they go on in the background. */
+  const within = async <T>(work: Promise<T> | null): Promise<{ done: true; value: T | null } | { done: false }> => {
+    if (!work) return { done: true, value: null };
+    background(work.catch(() => {}));
+    return Promise.race([work.then((value) => ({ done: true as const, value })), new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), WAIT_MS))]);
+  };
   // Ownership: the caller sees their own playgrounds (the admin sees all) and may read the examples (lib/accounts.ts).
   const list = async () => Object.values((await load()).playgrounds).filter((p) => canWrite(currentActor(), p)).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
   /** The playground, or an error that names the ids that exist. */
@@ -99,16 +119,22 @@ export function buildServer(origin: string): McpServer {
   };
   /** `detail`: the vendors to describe in full. The others get one line, so a revise does not repeat what the agent already has. */
   const built = async (id: string, extra: object, stop: string | null, detail?: string[]) => {
-    const report = collectionReport((await load()).playgrounds[id]);
+    const p = (await load()).playgrounds[id];
+    const report = collectionReport(p);
+    const build = buildReport(p);
     return text({
       playground_id: id,
       url: url(id),
+      build,
       ...extra,
       ...(stop ? { stopped: `Reading stopped early: ${stop}. Do not retry now; tell the person.` } : {}),
       ...report,
       vendors: report.vendors.map((v) => (!detail || detail.includes(v.vendor) ? v : { vendor: v.vendor, pricing_page: v.pricing_page, plans_read: v.plans.length, unchanged: true })),
       kind: "price",
-      next: "If problems lists a build error, fix it with revise_playground. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
+      next:
+        build.status === "running"
+          ? "The pricing pages are still being read. 1. Tell the person now, in a sentence, that the comparison is being built from the live pricing pages, and give them the url: it works already and each vendor appears as its page is read. 2. Call read_playground: it waits up to 20 seconds. Repeat until build.status is \"done\". 3. Then fix what problems lists with revise_playground, and tell the person the page is ready and what you changed."
+          : "If problems lists a build error, fix it with revise_playground. Else give the person the url, ask them to explore and to save a decision on the page, and call read_playground afterwards.",
       note: WEB_TEXT_NOTE,
     });
   };
@@ -134,16 +160,19 @@ export function buildServer(origin: string): McpServer {
   server.registerTool("create_playground", { title: "Create a playground", description: TOOLS.create_playground, inputSchema: specShape }, async (args) => {
     const parsed = parseSpec(args);
     if (!parsed.ok) return fail(`The spec is not valid. Nothing was created. Fix these and call create_playground again:\n- ${parsed.errors.join("\n- ")}`);
-    const id = parsed.domain.id;
-    const exists = `A playground with id "${id}" already exists at ${url(id)}. To change it, call revise_playground. To build a separate one, call create_playground with another id.`;
-    const capped = playgroundCapMessage((await load()).playgrounds);
-    if (capped) return fail(capped);
-    const taken = async () => !canWrite(currentActor(), (await load()).playgrounds[id] ?? {});
-    const takenMessage = `The id "${id}" is taken. Call create_playground again with another id.`;
+    // The id asked for may be taken (by anyone): the playground then gets that id with a suffix, and the result says so.
+    const renamed = (id: string) => (id === parsed.domain.id ? {} : { id_note: `The id "${parsed.domain.id}" was taken, so this playground got the id "${id}". Use "${id}" in every later call.` });
     try {
-      if (parsed.kind === "preview") return (await createPreview(parsed.domain, parsed.kit)).created ? preview(id, {}, parsed.warnings) : fail((await taken()) ? takenMessage : exists);
+      if (parsed.kind === "preview") {
+        const r = await createPreview(parsed.domain, parsed.kit);
+        if ("refused" in r) return fail(r.refused);
+        await within(r.brand);
+        return preview(r.id, renamed(r.id), parsed.warnings);
+      }
       const r = await createPlayground(parsed.domain, origin);
-      return r.created ? built(id, {}, r.error) : fail((await taken()) ? takenMessage : exists);
+      if ("refused" in r) return fail(r.refused);
+      const w = await within(r.work);
+      return built(r.id, renamed(r.id), w.done ? w.value : null);
     } catch (e) {
       return fail(`The playground could not be built: ${message(e)}`);
     }
@@ -165,8 +194,10 @@ export function buildServer(origin: string): McpServer {
     },
     async ({ playground_id, since, include_spec }) => {
       if (!playground_id) return text({ playgrounds: await list() });
-      const p = await find(playground_id);
-      if (typeof p === "string") return fail(p);
+      const found = await find(playground_id);
+      if (typeof found === "string") return fail(found);
+      // While pricing pages are being read, wait for them (at most WAIT_MS), so one more call usually sees the finished build.
+      const p = found.kit ? found : ((await settled(playground_id, WAIT_MS)) ?? found);
       const t = since == null ? null : Date.parse(since);
       if (t != null && Number.isNaN(t)) return fail(`since "${since}" is not a date-time. Use ISO 8601, for example 2026-11-13T18:00:00Z, or leave it out.`);
       return text({ ...(p.kit ? previewReport(p, url(playground_id)) : readReport(p, url(playground_id), t)), ...(include_spec ? { spec: toSpec(p) } : {}) });
@@ -181,8 +212,19 @@ export function buildServer(origin: string): McpServer {
       if (typeof before === "string") return fail(before);
       if (before.kit) return fail(`"${playground_id}" is a preview playground: it has no pricing pages to re-check. Call read_playground for its settled result.`);
       const ids = before.domain.vendors.map((v) => v.id);
-      const results = await Promise.allSettled(ids.map((id) => recheck(playground_id, id, "manual", origin)));
+      const started = new Date().toISOString();
+      const w = await within(recheckAll(playground_id, ids, "manual", origin));
       const p = (await load()).playgrounds[playground_id];
+      if (!w.done)
+        return text({
+          playground_id,
+          url: url(playground_id),
+          status: "running",
+          build: buildReport(p),
+          saved_decision_before_this_recheck: decisionReport(p) ?? "none: the person has not saved a decision yet",
+          next: `The pricing pages are still being re-read. Tell the person that today's prices are being read. Then call read_playground with since "${started}": it waits up to 20 seconds. Repeat until build.status is "done". Its change_events are what changed today, and saved_decision says whether the decision holds on today's prices.`,
+        });
+      const results = w.value!;
       const stop = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
       const changed = results.flatMap((r) => (r.status === "fulfilled" && r.value ? [eventReport(r.value)] : []));
       return text({
@@ -232,7 +274,8 @@ export function buildServer(origin: string): McpServer {
           return preview(playground_id, { settled_result_cleared, tell_person }, parsed.warnings);
         }
         const r = await revisePlayground(parsed.domain, origin);
-        return built(playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person }, r.error, r.recollected);
+        const w = await within(r.work);
+        return built(playground_id, { pages_read_again: r.recollected, saved_decision_cleared: r.decisionCleared, tell_person }, w.done ? w.value : null, r.recollected);
       } catch (e) {
         return fail(`The playground could not be revised: ${message(e)}`);
       }
