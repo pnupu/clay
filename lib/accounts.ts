@@ -138,7 +138,7 @@ export function publishedRefusal(a: Actor | null, p: Owned, id: string): string 
 }
 
 /** A write that keepPublished() discarded, as its owner is told (lib/report.ts). */
-export type Discarded = { at: string; by: "its owner" | "another caller" | "a web monitor or other work with no caller" };
+export type Discarded = { at: string; by: "its owner" | "another caller" | "a web monitor or other work with no caller"; /** "storage": over the owner's storage bounds (boundStorage); else a published example's guard. */ why?: "storage" };
 /**
  * The in-update half of publishedRefusal: store.ts update() calls this before every write and the function it returns
  * after it. A published example that the write changed gets back what it was before the write, so it keeps what the
@@ -226,7 +226,8 @@ export const SMALL_WRITE = 40_000;
  * passes, and so does the operator. Throws StorageRefused.
  */
 export function boundStorage(playgrounds: Record<string, Owned>, a: Actor | null = currentActor()): (after: Record<string, Owned>, storeChars: () => number) => void {
-  if (a?.kind !== "user") return () => {};
+  if (!a) return boundOwners(playgrounds);
+  if (a.kind !== "user") return () => {};
   const mine = (all: Record<string, Owned>) => Object.entries(all).filter(([, p]) => ownerOf(p) === a.userId);
   // The work bookkeeping is not counted: ending tracked work (and storing why it stopped) must always pass.
   const chars = (ps: [string, Owned][]) => ps.reduce((n, [, p]) => n + JSON.stringify({ ...p, work: undefined }).length, 0);
@@ -243,6 +244,36 @@ export function boundStorage(playgrounds: Record<string, Owned>, a: Actor | null
     const large = own - before > SMALL_WRITE || now.some(([id, p]) => specs.get(id) !== specOf(p)); // added (no spec before), revised, or large
     const total = max > 0 && large ? storeChars() : 0;
     if (max > 0 && large && total > max) throw new StorageRefused(`This Clay deployment's storage is full (${total} of ${max} characters). Nothing was stored. ${makeRoom(owned.length > 0)}`);
+  };
+}
+/**
+ * The same bounds for a write with no caller (a webhook monitor's re-check), per owner of the person's playgrounds it
+ * grows: over the owner's allowance, or larger than SMALL_WRITE while the store is over CLAY_MAX_STORE_BYTES. Such
+ * growth is not refused (nobody waits for the answer): that owner's playgrounds keep what they held before the write
+ * (their `work` bookkeeping excepted), and the owner is told (`discardedWrites`, why "storage"). Operator-owned
+ * playgrounds are not bound.
+ */
+function boundOwners(playgrounds: Record<string, Owned>, now = () => new Date().toISOString()): (after: Record<string, Owned>, storeChars: () => number) => void {
+  const json = (p: Owned) => JSON.stringify({ ...p, work: undefined });
+  const before = new Map(Object.entries(playgrounds).filter(([, p]) => ownerOf(p)).map(([id, p]) => [id, { owner: ownerOf(p)!, json: json(p) }]));
+  return (after, storeChars) => {
+    const sums = new Map<string, [number, number]>();
+    const add = (o: string, i: 0 | 1, n: number) => { const v = sums.get(o) ?? [0, 0]; v[i] += n; sums.set(o, v); };
+    for (const { owner, json: j } of before.values()) add(owner, 0, j.length);
+    const jsonNow = new Map(Object.entries(after).filter(([, p]) => ownerOf(p)).map(([id, p]) => [id, json(p)]));
+    for (const [id, j] of jsonNow) add(ownerOf(after[id])!, 1, j.length);
+    const allowance = userStoreAllowance(), max = maxStoreChars();
+    for (const [owner, [was, is]] of sums) {
+      if (is <= was || !((allowance > 0 && is > allowance) || (max > 0 && is - was > SMALL_WRITE && storeChars() > max))) continue;
+      for (const [id, b] of before) {
+        if (b.owner !== owner || jsonNow.get(id) === b.json) continue;
+        const kept = JSON.parse(b.json) as Owned & { work?: unknown; discardedWrites?: Discarded[] };
+        const work = (after[id] as { work?: unknown } | undefined)?.work;
+        if (work !== undefined) kept.work = work;
+        kept.discardedWrites = [{ at: now(), by: "a web monitor or other work with no caller" as const, why: "storage" as const }, ...(kept.discardedWrites ?? [])].slice(0, 10);
+        after[id] = kept;
+      }
+    }
   };
 }
 // No final period: lib/mcp.ts quotes this text inside a sentence of its own ("stopped early: <text>. Do not retry").

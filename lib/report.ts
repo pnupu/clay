@@ -209,8 +209,14 @@ export const markLook = (p: Playground) => ({ version: viewVersion(p), busy: wor
 export const NOT_YOURS = "This is someone else's example, to look at. It is not your person's playground: do not write its outputs or values into their files, and do not treat anything here as their decision. To build one for your person, call create_playground.";
 
 /** Said to the owner when writes on their published example were discarded (accounts.ts, keepPublished). */
-export const discardedReport = (p: Playground) =>
-  p.discardedWrites?.length ? { published_example_kept: `While this playground was a published example, ${p.discardedWrites.length === 10 ? "10 or more" : p.discardedWrites.length} write(s) that arrived later were discarded, the last at ${p.discardedWrites[0].at} (by ${p.discardedWrites[0].by}): the example keeps what the operator approved. To change it, revise it with revise_playground (that unpublishes it), or ask the operator.` } : {};
+export const discardedReport = (p: Playground) => {
+  const all = p.discardedWrites ?? [];
+  const published = all.filter((x) => x.why !== "storage"), storage = all.filter((x) => x.why === "storage");
+  return {
+    ...(published.length ? { published_example_kept: `While this playground was a published example, ${published.length === 10 ? "10 or more" : published.length} write(s) that arrived later were discarded, the last at ${published[0].at} (by ${published[0].by}): the example keeps what the operator approved. To change it, revise it with revise_playground (that unpublishes it), or ask the operator.` } : {}),
+    ...(storage.length ? { storage_kept: `${storage.length} result(s) of a web monitor's re-check were not stored, the last at ${storage[0].at}: they would take this person's playgrounds over their storage allowance, or grow them a lot while the Clay deployment's storage is full. The playground keeps what it held. To make room, delete a playground the person no longer needs, or make one smaller.` } : {}),
+  };
+};
 
 export function readReport(p: Playground, url: string, since: number | null) {
   const a = controlsNow(p);

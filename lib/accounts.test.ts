@@ -367,9 +367,8 @@ test("storage bounds: a person's allowance and a full store hold for every write
   run(ann, (x) => (x.a.pad = "x"), 6000);
   const carl: Actor = { kind: "user", userId: "user_carl", via: "key" };
   assert.throws(() => run(carl, (x) => (x.c = { domain: { id: "c" }, owner: "user_carl", pad: "x" }), 5001), (e) => e instanceof Error && /Ask the operator/.test(e.message));
-  // The operator, and work with no caller, are not bound.
+  // The operator is not bound. Work with no caller is bound per owner (next test).
   run(admin, (x) => (x.a.pad = "x".repeat(9000)), 99999);
-  boundStorage(s(), null)(s(), () => 99999);
   delete process.env.CLAY_USER_STORE_BYTES;
   delete process.env.CLAY_MAX_STORE_BYTES;
 });
@@ -420,5 +419,36 @@ test("storage bounds: a full store stops creates, revisions and large growth, no
   refused((x) => (x.a.kit!.kit = { js: "x".repeat(50_000) }));
   refused((x) => (x.a.domain = { id: "a", question: "a longer title" }));
   refused((x) => (x.a.kit!.web = { src: { read: { fields: { note: "y".repeat(SMALL_WRITE + 1) } } } }));
+  delete process.env.CLAY_MAX_STORE_BYTES;
+});
+
+test("storage bounds: a webhook monitor's write is bound by the owner's allowance; the owner keeps the prior data and is told", async () => {
+  const { boundStorage, SMALL_WRITE } = await import("./accounts.ts");
+  const { discardedReport } = await import("./report.ts");
+  process.env.CLAY_USER_STORE_BYTES = "5000";
+  process.env.CLAY_MAX_STORE_BYTES = "100000";
+  type P = { domain: { id: string }; owner?: string; sources: { alpha: { plans: string } }; work?: unknown; discardedWrites?: import("./accounts.ts").Discarded[] };
+  const s = () => ({ ann: { domain: { id: "ann" }, owner: "user_ann", sources: { alpha: { plans: "x".repeat(4000) } } }, ours: { domain: { id: "ours" }, sources: { alpha: { plans: "x" } } } }) as Record<string, P>;
+  const monitor = (change: (x: Record<string, P>) => void, store = 50) => {
+    const x = s();
+    const bound = boundStorage(x, null);
+    change(x);
+    bound(x, () => store);
+    return x;
+  };
+  // A re-check that takes Ann over her allowance: her playground keeps the earlier read (its work bookkeeping is new).
+  let x = monitor((y) => Object.assign(y.ann, { sources: { alpha: { plans: "x".repeat(6000) } }, work: { finishedAt: "t" } }));
+  assert.deepEqual([x.ann.sources.alpha.plans.length, x.ann.work, x.ann.discardedWrites?.[0].why], [4000, { finishedAt: "t" }, "storage"]);
+  assert.match(discardedReport(x.ann as never).storage_kept ?? "", /1 result\(s\) of a web monitor's re-check were not stored/);
+  // Within her allowance it is stored, also while the deployment's store is full; the operator's own playground is not bound.
+  x = monitor((y) => (y.ann.sources.alpha.plans = "x".repeat(4500)), 200000);
+  assert.equal(x.ann.sources.alpha.plans.length, 4500);
+  x = monitor((y) => (y.ours.sources.alpha.plans = "x".repeat(SMALL_WRITE * 2)), 200000);
+  assert.equal(x.ours.sources.alpha.plans.length, SMALL_WRITE * 2);
+  // Large growth (over SMALL_WRITE) of a person's playground while the store is full is not stored.
+  process.env.CLAY_USER_STORE_BYTES = "0";
+  x = monitor((y) => (y.ann.sources.alpha.plans = "x".repeat(SMALL_WRITE + 5000)), 200000);
+  assert.equal(x.ann.sources.alpha.plans.length, 4000);
+  delete process.env.CLAY_USER_STORE_BYTES;
   delete process.env.CLAY_MAX_STORE_BYTES;
 });
