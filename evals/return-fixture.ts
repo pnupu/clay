@@ -4,6 +4,7 @@
 // Usage: node evals/return-fixture.ts <port>
 //   POST /control {"prices": {"resend.com": 45}}   sets the monthly base price per host; {"reset": true} restores the start.
 //   POST /control {"models": {"swift-2": [6, 30]}} sets a model's input and output price per 1M tokens on the model price page.
+//   https://contactsales.dev/pricing is a page that reads well and states no price (custom pricing only).
 //   then start the app with CONTEXT_DEV_BASE_URL=http://127.0.0.1:<port> CONTEXT_DEV_API_KEY=fixture CONTEXT_DEV_DAILY_CAP=0
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo, Server } from "node:net";
@@ -15,6 +16,8 @@ const prices = { ...START };
 /** The model price page (a data.web source of a preview playground): USD per 1M input and output tokens. */
 export const MODELS_START: Record<string, [number, number]> = { "swift-2": [1, 5], "deep-2": [3, 15] };
 export const MODELS_HOST = "modelprices.dev";
+/** A vendor with a readable page and no price on it. */
+export const UNPRICED_HOST = "contactsales.dev";
 const models: Record<string, [number, number]> = structuredClone(MODELS_START);
 
 const body = (req: IncomingMessage) =>
@@ -52,6 +55,11 @@ createServer(async (req, res) => {
     // One row per model, in the fields the playground's schema asks for (model, input, output), each with its quote.
     const rows = Object.entries(models).map(([model, [input, output]]) => ({ model, input, output, quote: `${model}: $${input} per 1M input tokens, $${output} per 1M output tokens` }));
     return send(200, { url: b.url, request_id: "fixture", cache_metadata: { status: "miss", age_ms: 0 }, key_metadata: { credits_consumed: 0 }, markdown: { requested: true, success: true, data: `${host} model prices (fixture, fictional prices).\n${rows.map((r) => r.quote + ".").join("\n")}` }, json: wantsJson ? { requested: true, success: true, data: { rows } } : { requested: false, success: null, data: null } });
+  }
+  // A vendor whose page reads well and states no price ("contact sales"): it can be read again every day and never priced.
+  if (host === UNPRICED_HOST) {
+    const text = `${host} pricing (fixture, fictional).\nEnterprise plan: custom pricing, contact sales.`;
+    return send(200, { url: b.url, request_id: "fixture", cache_metadata: { status: "miss", age_ms: 0 }, key_metadata: { credits_consumed: 0 }, markdown: { requested: true, success: true, data: text }, json: wantsJson ? { requested: true, success: true, data: { vendor: host, currency: "USD", plans: [{ name: "Enterprise", base_price: null, custom_pricing: true, price_quote: "Enterprise plan: custom pricing, contact sales", meters: {}, features: {} }] } } : { requested: false, success: null, data: null } });
   }
   if (!(host in prices)) return send(404, { error_code: "NOT_FOUND", message: "the fixture has no page for this host" });
   const base = prices[host];
