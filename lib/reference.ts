@@ -83,7 +83,6 @@ Good controls: the 3 to 6 dimensions behind THIS person's complaint, not every p
   - clay.values.<id>: the value now. Read it inside your animation loop or event handler, so a move takes effect at once.
   - clay.onChange((values) => { ... }): runs at once and after every move.
   - clay.data.brand: {domain, title, colors: [{hex, name}], logos: [{url, mode, type}]} when the spec has data.brand. clay.data.inline: your data.inline.
-  - clay.fill("...{{id}}..."): fills a template with the values now.
 - The sandbox: the preview runs in a frame with no network, no imports, no forms, no popups, no storage. Images: data: URLs, or the brand's logo URLs from clay.data.brand.logos. A library the real code uses (Framer Motion, react-spring, GSAP) cannot be loaded: write the same behaviour in a few lines of plain JavaScript, with the same parameters, so that the settled values mean the same in the real code. Say so in notes when the match is approximate.
 - Size: html ${KIT_LIMITS.html}, css ${KIT_LIMITS.css}, js ${KIT_LIMITS.js} characters. view.height: 120 to 900 px.
 

@@ -63,6 +63,11 @@ test("a price spec goes to the price engine; price and preview parts cannot be m
   assert.equal(again.domain.note, "Drag the slider from 40k to 150k.");
   assert.deepEqual({ ...again.domain, question: price.title, note: undefined }, { ...r.domain, note: undefined });
   assert.equal(toSpec(newPlayground(again.domain)).notes, "Drag the slider from 40k to 150k.");
+  // A revision removes a data source with null; the palette that needed it must then be a list.
+  const noBrand = mergeSpec(BUTTON_EXAMPLE, { data: { brand: null } });
+  assert.ok(errors(noBrand).some((e) => /"brand" needs data\.brand/.test(e)));
+  const listed = parseSpec(mergeSpec(BUTTON_EXAMPLE, { data: { brand: null }, controls: [{ ...BUTTON_EXAMPLE.controls![0], palette: ["#533afd"] }, ...BUTTON_EXAMPLE.controls!.slice(1)] }));
+  assert.ok(listed.ok && listed.kind === "preview" && listed.kit.brand === null);
   assert.ok(errors({ ...price, controls: BUTTON_EXAMPLE.controls }).some((e) => /controls: the price_ranking view brings its own controls/.test(e)));
   assert.ok(errors({ ...BUTTON_EXAMPLE, data: { ...BUTTON_EXAMPLE.data, price_pages: price.data!.price_pages } }).some((e) => /a preview view has no price ranking/.test(e)));
   assert.ok(errors({ ...price, data: { price_pages: { ...price.data!.price_pages!, vendors: [price.data!.price_pages!.vendors[0]] } } }).some((e) => e.startsWith("data.price_pages.vendors")));
@@ -77,6 +82,14 @@ test("values from the browser: only values a control can have are stored; output
   // A multi-line output keeps its indentation; only a one-line output is collapsed.
   const css = { ...kit, outputs: [{ id: "css", label: "Rule", template: ".btn {\n  border-radius: {{radius}}px;\n  {{shadow}}\n}\n" }] };
   assert.equal(renderOutputs(css, { ...cleanValues(kit.controls, ok)!, shadow: false }).css, ".btn {\n  border-radius: 9px;\n\n}");
+  // A closed palette takes only its own colours and the start colour.
+  const closed = kitOf({ ...BUTTON_EXAMPLE, data: undefined, controls: [{ ...BUTTON_EXAMPLE.controls![0], palette: ["#111111", "#222222"], free: false }, ...BUTTON_EXAMPLE.controls!.slice(1)] });
+  assert.equal(cleanValues(closed.controls, { ...ok, bg: "#222222" })!.bg, "#222222");
+  assert.equal(cleanValues(closed.controls, { ...ok, bg: "#3b82f6" })!.bg, "#3b82f6");
+  assert.equal(cleanValues(closed.controls, { ...ok, bg: "#ff00ff" }), null);
+  // A very small step keeps its decimals (JavaScript prints 1e-7 with an exponent).
+  const tiny = kitOf({ ...SPRING_EXAMPLE, controls: [...SPRING_EXAMPLE.controls!.slice(0, 2), { ...SPRING_EXAMPLE.controls![2], min: 0, max: 0.001, step: 1e-7, initial: 0.0005 }] });
+  assert.equal(cleanValues(tiny.controls, { stiffness: 120, damping: 26, mass: 0.0003217 })!.mass, 0.0003217);
   // A slider on a fractional grid has no floating-point dust.
   const spring = kitOf(SPRING_EXAMPLE);
   assert.equal(cleanValues(spring.controls, { stiffness: 120, damping: 26, mass: 0.1 + 0.2 })!.mass, 0.3);
@@ -92,6 +105,15 @@ test("the exploration summary keeps the path: the range tried per slider, the va
   assert.equal(words[1], "Corner radius: tried 2 to 20 px, settled on 12 px (started at 4 px).");
   assert.equal(words[0], "Background: tried #111111, #222222; settled on #222222 (started at #3b82f6).");
   assert.equal(words[4], "Shadow: left at off, never moved.");
+  // A settle reports every control. A control the person never touched stays "never moved"; a slider keeps its range.
+  const settled = mergeKitExploration(kit.controls, e, { controls: { bg: { final: "#222222" }, radius: { final: 12 }, pad_x: { final: 12 }, weight: { final: "font-normal" }, shadow: { final: false } } }, "t3");
+  assert.deepEqual(settled!.controls.shadow, { start: false, final: false, tried: [] });
+  assert.deepEqual(settled!.controls.bg.tried, ["#111111", "#222222"]);
+  assert.equal(explorationWords({ kit, exploration: settled } as KitState)[3], "Text weight: left at Normal, never moved.");
+  // Back to the start value is a move, and it is reported as one.
+  const back = mergeKitExploration(kit.controls, settled, { controls: { bg: { tried: ["#3b82f6"], final: "#3b82f6" }, radius: { min: 4, max: 4, final: 4 } } }, "t4");
+  assert.deepEqual(back!.controls.bg, { start: "#3b82f6", final: "#3b82f6", tried: ["#111111", "#222222", "#3b82f6"] });
+  assert.equal(back!.controls.radius.final, 4);
   // A malformed report changes nothing.
   assert.equal(mergeKitExploration(kit.controls, e, { controls: { radius: { final: 999 } } }, "t3"), null);
   assert.equal(mergeKitExploration(kit.controls, e, { controls: { weight: { final: "font-black" } } }, "t3"), null);

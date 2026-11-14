@@ -68,7 +68,7 @@ ${HOLDS_RULE} The result gives the verdict with the costs behind it. When the de
 
   revise_playground: `Change an existing playground in place, at the same URL. Use it (1) to repair a first build: a problem from the create result, or a preview error from read_playground; and (2) when the person wants to try something the playground lacks: another control, a wider range, another vendor.
 
-Give playground_id and only the parts that change. Each part you give replaces that whole part: title, notes, controls (the full list), view (the full view), outputs (the full list), and inside data each source (data.price_pages whole, data.brand, data.inline). Parts you leave out stay. The result is validated like a new spec. When you no longer have the spec, read_playground with include_spec returns it.
+Give playground_id and only the parts that change. Each part you give replaces that whole part: title, notes, controls (the full list), view (the full view), outputs (the full list), and inside data each source (data.price_pages whole, data.brand, data.inline; null removes data.brand or data.inline). Parts you leave out stay. The result is validated like a new spec. When you no longer have the spec, read_playground with include_spec returns it.
 
 Preview playground: the settled result is cleared and the preview is unverified again; what the person tried is kept for the controls you did not change. Ask the person to reload the page.
 
@@ -124,7 +124,7 @@ export function buildServer(origin: string): McpServer {
       preview: previewStatus(k),
       outputs_at_initial_values: renderOutputs(k.kit, initialValues(k.kit.controls)),
       data: dataReport(k),
-      problems: k.brandError ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain, or give the colours as a palette list and tell the person they are not checked.`] : [],
+      problems: k.brandError ? [`data.brand: the brand of ${k.kit.brand?.domain} could not be read (${k.brandError.slice(0, 200)}). The playground works without it: a palette "brand" shows only the control's initial colour. Fix: revise_playground with data.brand giving the brand's own site domain; or with data.brand null and the colours as a palette list, and tell the person they are not checked.`] : [],
       warnings,
       next: "Give the person the url and say: move the controls until it is right, then press Settle. When they say they are done, or that the preview is broken, call read_playground: it returns the settled outputs to write into their code, or the preview error to repair with revise_playground.",
       ...(k.kit.brand ? { note: BRAND_NOTE } : {}),

@@ -184,7 +184,7 @@ export async function createPreview(domain: Domain, kit: Kit): Promise<{ created
   return {
     created: await update((s) => {
       if (s.playgrounds[domain.id]) return false;
-      s.playgrounds[domain.id] = { ...newPlayground(domain), kit: { kit, ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } };
+      s.playgrounds[domain.id] = { ...newPlayground(domain), kit: { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: null } };
       return true;
     }),
   };
@@ -203,7 +203,7 @@ export async function revisePreview(domain: Domain, kit: Kit): Promise<void> {
     const same = (id: string) => JSON.stringify(p.kit!.kit.controls.find((c) => c.id === id)) === JSON.stringify(kit.controls.find((c) => c.id === id));
     const kept = Object.fromEntries(Object.entries(p.kit.exploration?.controls ?? {}).filter(([id]) => same(id)));
     p.domain = domain;
-    p.kit = { kit, ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
+    p.kit = { kit, rev: randomUUID(), ...read, preview: { status: "unverified", error: null, at: null }, settled: null, exploration: p.kit.exploration && Object.keys(kept).length ? { controls: kept, updatedAt: p.kit.exploration.updatedAt } : null };
   });
 }
 

@@ -1,5 +1,5 @@
 import { refused, type Ctx } from "@/app/api/respond";
-import { cleanValues, mergeKitExploration, renderOutputs } from "@/lib/kit";
+import { cleanValues, isCurrent, mergeKitExploration, renderOutputs } from "@/lib/kit";
 import { update } from "@/lib/store";
 
 /** The person settles a preview playground: the values, the outputs rendered from them on the server, and the time are stored for the agent. */
@@ -7,10 +7,11 @@ export async function POST(req: Request, { params }: Ctx) {
   const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
-  const body = (await req.json().catch(() => null)) as { values?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { values?: unknown; rev?: unknown } | null;
   return update((s) => {
     const k = s.playgrounds[pg]?.kit;
     if (!k) return Response.json({ error: `Playground "${pg}" is not a preview playground.` }, { status: 404 });
+    if (!isCurrent(k, body?.rev)) return Response.json({ error: "Your agent has revised this playground. Reload the page, then settle." }, { status: 409 });
     const values = cleanValues(k.kit.controls, body?.values);
     if (!values) return Response.json({ error: "values must give every control a value it can have" }, { status: 400 });
     const at = new Date().toISOString();

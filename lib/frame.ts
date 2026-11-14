@@ -126,8 +126,7 @@ window.addEventListener("message", function (e) {
 window.clay = Object.freeze({
   get values() { return view(); },
   data: cfg.data,
-  onChange: function (fn) { if (typeof fn === "function") { listeners.push(fn); call(fn); } },
-  fill: function (tpl) { return fill(cfg.controls, values, String(tpl), false); }
+  onChange: function (fn) { if (typeof fn === "function") { listeners.push(fn); call(fn); } }
 });
 draw();
 window.addEventListener("load", function () { setTimeout(function () { post({ type: "ready" }); }, 0); });`;

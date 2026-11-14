@@ -24,6 +24,8 @@ export type KitExploration = { controls: Record<string, { start: Value; final: V
 export type Settled = { values: Values; outputs: Record<string, string>; at: string };
 export type KitState = {
   kit: Kit;
+  /** Changes with every revision of the kit. A report from a page that still runs an older kit is refused (isCurrent). */
+  rev?: string;
   brandData: BrandData | null;
   brandError: string | null;
   /** The preview code cannot be run on the server. The page reports what happened when it was opened. */
@@ -35,7 +37,11 @@ export type KitState = {
 const ID = /^[a-z][a-z0-9_]{1,29}$/;
 const HEX = /^#[0-9a-f]{6}$/;
 const PLACEHOLDER = /\{\{\s*([^{}]*?)\s*\}\}/g;
-const decimals = (n: number) => (String(n).split(".")[1] ?? "").length;
+/** Decimal places of a number as written, also when JavaScript prints it with an exponent (1e-7 has 7). */
+const decimals = (n: number) => {
+  const [mantissa, exponent] = String(n).split("e-");
+  return Math.min(12, (mantissa.split(".")[1] ?? "").length + Number(exponent ?? 0));
+};
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const isStr = (x: unknown, max: number, min = 1): x is string => typeof x === "string" && x.trim().length >= min && x.length <= max;
 
@@ -50,7 +56,10 @@ export function cleanValue(c: Control, v: unknown): Value | undefined {
   if (c.type === "slider") return isNum(v) && v >= c.min && v <= c.max ? snap(c, v) : undefined;
   if (c.type === "toggle") return typeof v === "boolean" ? v : undefined;
   if (c.type === "select") return c.options.some((o) => o.value === v) ? (v as string) : undefined;
-  return typeof v === "string" && HEX.test(v.toLowerCase()) ? v.toLowerCase() : undefined;
+  const hex = typeof v === "string" && HEX.test(v.toLowerCase()) ? v.toLowerCase() : undefined;
+  // lean: a closed palette "brand" is not enforced here, because the brand's colours are not part of the control. Only the
+  // page offers them; the owner could settle another colour by calling the route by hand. Pass the brand in if that matters.
+  return hex && !c.free && c.palette !== "brand" && hex !== c.initial && !c.palette.includes(hex) ? undefined : hex;
 }
 
 /** All values of a kit from outside. Returns null when a control is missing or has a value it cannot have. Unknown keys are dropped. */
@@ -209,6 +218,9 @@ export function checkKit(raw: RawKit): { ok: true; kit: Kit; warnings: string[] 
   return { ok: true, warnings, kit: { ...(raw.notes ? { notes: raw.notes } : {}), controls, preview: { html, css, js, tailwind: raw.view.tailwind === true, height }, outputs: outputs.map((o) => ({ id: o.id, label: o.label.trim(), template: o.template })), brand: raw.brand ?? null, inline: raw.inline ?? null } };
 }
 
+/** Does a report from the page belong to the kit as it is now? A kit stored before revisions were marked accepts every report. */
+export const isCurrent = (k: KitState, rev: unknown): boolean => !k.rev || rev === k.rev;
+
 /** The colours a colour control offers: its palette (the brand's colours for "brand"), always with the initial colour. */
 export function paletteOf(c: Extract<Control, { type: "color" }>, brand: BrandData | null): string[] {
   const list = c.palette === "brand" ? (brand?.colors.map((x) => x.hex) ?? []) : c.palette;
@@ -240,8 +252,9 @@ export function mergeKitExploration(controls: Control[], prev: KitExploration | 
     } else {
       const tried = Array.isArray(seen.tried) ? seen.tried.slice(0, 40).map((v) => cleanValue(c, v)) : [];
       if (tried.some((v) => v === undefined)) return null;
-      // The last 12 distinct values the person moved to, oldest first.
-      out.controls[c.id] = { start: was.start, final, tried: [...was.tried, ...(tried as Value[]), final].filter((v, i, all) => all.lastIndexOf(v) === i).slice(-12) };
+      // The last 12 distinct values the person moved to, oldest first. The final value counts only when it is a move:
+      // a settle reports every control, also the ones the person never touched.
+      out.controls[c.id] = { start: was.start, final, tried: [...was.tried, ...(tried as Value[]), ...(final !== was.final ? [final] : [])].filter((v, i, all) => all.lastIndexOf(v) === i).slice(-12) };
     }
   }
   return out;

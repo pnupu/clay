@@ -1,4 +1,5 @@
 import { refused, type Ctx } from "@/app/api/respond";
+import { isCurrent } from "@/lib/kit";
 import { update } from "@/lib/store";
 
 /**
@@ -10,12 +11,14 @@ export async function POST(req: Request, { params }: Ctx) {
   const no = await refused(req);
   if (no) return no;
   const { pg } = await params;
-  const body = (await req.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { ok?: unknown; error?: unknown; rev?: unknown } | null;
   const error = typeof body?.error === "string" ? body.error.replace(/\s+/g, " ").trim().slice(0, 500) : null;
   if (!error && body?.ok !== true) return new Response(null, { status: 400 });
   const status = await update((s) => {
     const k = s.playgrounds[pg]?.kit;
     if (!k) return 404;
+    // A tab that still runs the kit of before a revision says nothing about the kit of now.
+    if (!isCurrent(k, body?.rev)) return 409;
     k.preview = { status: error ? "failed" : "ok", error, at: new Date().toISOString() };
     return 204;
   });

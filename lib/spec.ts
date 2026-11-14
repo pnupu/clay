@@ -57,8 +57,8 @@ export const specShape = {
   data: z
     .strictObject({
       price_pages: pricePages.optional().describe("For view price_ranking: what to read from the vendors' public pricing pages. Never put prices here; they are read from the pages."),
-      brand: z.strictObject({ domain: hostname.describe("The brand's own site, for example linear.app.") }).optional().describe("For view preview: brand facts of one site, read live by Context.dev: its colours and logos. Use it when the person names a brand. A color control with palette 'brand' offers these colours."),
-      inline: z.record(z.string().max(40), z.unknown()).optional().describe("For view preview: values you supply yourself, read in view.js as clay.data.inline. The page marks them as provided by the agent, not checked."),
+      brand: z.strictObject({ domain: hostname.describe("The brand's own site, for example linear.app.") }).nullish().describe("For view preview: brand facts of one site, read live by Context.dev: its colours and logos. Use it when the person names a brand. A color control with palette 'brand' offers these colours."),
+      inline: z.record(z.string().max(40), z.unknown()).nullish().describe("For view preview: values you supply yourself, read in view.js as clay.data.inline. The page marks them as provided by the agent, not checked."),
     })
     .optional()
     .describe("Where the facts come from. Each source keeps its origin on the page."),
@@ -88,7 +88,7 @@ export function parseSpec(input: unknown): ParsedSpec {
     return { ok: true, kind: "price", domain: { ...p.domain, ...(s.notes ? { note: s.notes } : {}) } };
   }
   if (s.data?.price_pages) errors.push('data.price_pages: a preview view has no price ranking. Remove it, or build a second playground with view.type "price_ranking".');
-  const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand, inline: s.data?.inline });
+  const k = checkKit({ notes: s.notes, controls: s.controls, view: s.view, outputs: s.outputs, brand: s.data?.brand ?? undefined, inline: s.data?.inline ?? undefined });
   if (!k.ok) errors.push(...k.errors);
   if (errors.length || !k.ok) return { ok: false, errors };
   return { ok: true, kind: "preview", domain: { id: s.id, question: s.title, product: "", metrics: [], features: [], vendors: [] }, kit: k.kit, warnings: k.warnings };
@@ -112,7 +112,7 @@ export function toSpec(p: Playground): Spec {
   };
 }
 
-/** A revision: the parts given replace the same parts of the current spec; inside `data`, each source given replaces that source. */
+/** A revision: the parts given replace the same parts of the current spec; inside `data`, each source given replaces that source, and null removes it. */
 export function mergeSpec(current: Spec, change: Partial<Spec>): unknown {
   const given = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
   return { ...current, ...given, id: current.id, ...(current.data || change.data ? { data: { ...current.data, ...change.data } } : {}) };

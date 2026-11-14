@@ -73,21 +73,25 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
     if (!canWrite || frame.status === "loading" || reports.current >= 3) return;
     const t = setTimeout(() => {
       reports.current++;
-      fetch(`${api}/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(frame.status === "ok" ? { ok: true } : { error: frame.error }) }).catch(() => {});
+      fetch(`${api}/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rev: state.rev, ...(frame.status === "ok" ? { ok: true } : { error: frame.error }) }) }).catch(() => {});
     }, frame.status === "ok" ? 1500 : 0);
     return () => clearTimeout(t);
-  }, [frame, canWrite, api]);
+  }, [frame, canWrite, api, state.rev]);
 
   // ---- The exploration summary for the agent: per control, what was tried since the last report. Sent after a pause.
   const seen = useRef<Record<string, { min?: number; max?: number; tried: Value[] }>>({});
   const moved = useRef(false);
-  const set = (c: Control, raw: unknown) => {
-    const v = cleanValue(c, raw);
-    if (v === undefined || v === values[c.id]) return;
+  /** Remember a move for the next report: the range of a slider, the values of any other control. */
+  const note = (c: Control, v: Value) => {
     const s = (seen.current[c.id] ??= { tried: [] });
     if (typeof v === "number") Object.assign(s, { min: Math.min(s.min ?? v, v), max: Math.max(s.max ?? v, v) });
     else if (s.tried.length < 40) s.tried.push(v);
     moved.current = true;
+  };
+  const set = (c: Control, raw: unknown) => {
+    const v = cleanValue(c, raw);
+    if (v === undefined || v === values[c.id]) return;
+    note(c, v);
     setValues({ ...values, [c.id]: v });
   };
   useEffect(() => {
@@ -96,20 +100,19 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
       const controls = Object.fromEntries(Object.entries(seen.current).map(([k, s]) => [k, { ...s, final: values[k] }]));
       seen.current = {};
       moved.current = false;
-      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ controls }) }).catch(() => {});
+      fetch(`${api}/explore`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rev: state.rev, controls }) }).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
-  }, [values, canWrite, api]);
+  }, [values, canWrite, api, state.rev]);
 
   const reset = () => {
-    for (const c of kit.controls) if (c.initial !== values[c.id] && typeof c.initial !== "number") (seen.current[c.id] ??= { tried: [] }).tried.push(c.initial);
-    moved.current = true;
+    for (const c of kit.controls) if (c.initial !== values[c.id]) note(c, c.initial);
     setValues(initialValues(kit.controls));
   };
   const settle = async () => {
     setBusy(true);
     try {
-      const r = await fetch(`${api}/settle`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values }) });
+      const r = await fetch(`${api}/settle`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rev: state.rev, values }) });
       const body = (await r.json()) as { settled?: KitState["settled"]; error?: string };
       if (body.settled) setSettled(body.settled);
       setError(body.settled ? null : (body.error ?? "The values could not be saved."));
@@ -209,12 +212,39 @@ export default function Kit({ id, title, state, canWrite }: { id: string; title:
   );
 }
 
+/**
+ * The exact-value field of a slider. While the person types, the text is theirs: "1" on the way to "120" is not pulled
+ * into the range. A value inside the range takes effect at once; leaving the field brings any other text into the range.
+ */
+function Exact({ c, value, onChange }: { c: Extract<Control, { type: "slider" }>; value: number; onChange: (v: unknown) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const inRange = (raw: string) => raw.trim() !== "" && Number.isFinite(Number(raw)) && Number(raw) >= c.min && Number(raw) <= c.max;
+  return (
+    <input
+      type="number"
+      min={c.min}
+      max={c.max}
+      step={c.step}
+      value={text ?? value}
+      aria-label={`${c.label}, exact value`}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (inRange(e.target.value)) onChange(snap(c, Number(e.target.value)));
+      }}
+      onBlur={() => {
+        if (text != null && text.trim() !== "" && Number.isFinite(Number(text)) && !inRange(text)) onChange(snap(c, Number(text)));
+        setText(null);
+      }}
+    />
+  );
+}
+
 function Field({ c, value, palette, names, onChange }: { c: Control; value: Value; palette: string[]; names: { hex: string; name: string }[]; onChange: (v: unknown) => void }) {
   if (c.type === "slider") {
     return (
       <div className={`${css.field} ${css.slider}`} data-control={c.id} title={c.meaning}>
         <label htmlFor={c.id}>{c.label}</label>
-        <input type="number" min={c.min} max={c.max} step={c.step} value={value as number} onChange={(e) => e.target.value !== "" && onChange(snap(c, Number(e.target.value)))} aria-label={`${c.label}, exact value`} />
+        <Exact c={c} value={value as number} onChange={onChange} />
         <span className="small muted">{c.unit ?? ""}</span>
         <input id={c.id} type="range" min={c.min} max={c.max} step={c.step} value={value as number} onChange={(e) => onChange(Number(e.target.value))} />
       </div>
