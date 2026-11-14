@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseConfig, toConfig } from "./config.ts";
+import { DOMAIN, extractionInstructions, INSTRUCTIONS_LIMIT } from "./domain.ts";
 
 const good = () => ({
   id: "email-api",
@@ -51,6 +52,19 @@ test("ids, sizes and unknown keys are checked", () => {
   assert.match(errors(edit((c) => void Object.assign(c.vendors[0], { demo: true }))).join(" "), /vendors.0/);
   assert.match(errors(edit((c) => void Object.assign(c, { searchQuery: "x" }))).join(" "), /config: /);
   assert.match(errors("not an object").join(" "), /config: /);
+});
+
+test("product and notes must fit into the extraction instructions", () => {
+  // The first build of the managed Postgres example (2026-11-14): a product of 73 and notes of 500 characters made the
+  // instructions 2,054 characters, and Context.dev refused every page read with "too big, max 2000".
+  const product = "managed PostgreSQL database hosting for one always-on production database";
+  const room = INSTRUCTIONS_LIMIT - extractionInstructions({ ...DOMAIN, product, notes: "x" }).length + 1;
+  assert.ok(room > 300 && room < 600, `room for notes is ${room}`);
+  assert.deepEqual(errors(edit((c) => Object.assign(c, { product, notes: "n".repeat(room) }))), []);
+  assert.deepEqual(errors(edit((c) => Object.assign(c, { product, notes: "n".repeat(500) }))), [`notes: product and notes are part of the extraction instructions, and together they are ${500 - room} characters too long. Shorten notes by at least ${500 - room} characters.`]);
+  // What is accepted is never longer than the limit, also at the largest product.
+  const r = parseConfig(edit((c) => Object.assign(c, { product: "p".repeat(120), notes: "n".repeat(room - 47) })));
+  assert.ok(r.ok && extractionInstructions(r.domain).length <= INSTRUCTIONS_LIMIT);
 });
 
 test("metric ranges must be ordered and contain the initial value", () => {

@@ -1,7 +1,7 @@
 // The trust boundary for playgrounds created at runtime. A config comes from an agent or an HTTP caller: it is untrusted data.
 // Everything is checked here (sizes, types, id formats, https only), and nothing else in the app accepts a Domain from outside.
 import { z } from "zod";
-import type { Domain } from "./domain.ts";
+import { extractionInstructions, INSTRUCTIONS_LIMIT, type Domain } from "./domain.ts";
 
 export const LIMITS = { vendors: [2, 6], metrics: [1, 5], features: [0, 6] } as const;
 
@@ -83,7 +83,12 @@ export function parseConfig(input: unknown): { ok: true; domain: Domain } | { ok
     return { id: v.id, name: v.name, domain: host ?? "", ...(v.pricing_url ? { url: v.pricing_url } : {}) };
   });
   if (errors.length) return { ok: false, errors };
-  return { ok: true, domain: { id: c.id, question: c.question, product: c.product, ...(c.notes ? { notes: c.notes } : {}), metrics: c.metrics, features: c.features, vendors } };
+  const domain: Domain = { id: c.id, question: c.question, product: c.product, ...(c.notes ? { notes: c.notes } : {}), metrics: c.metrics, features: c.features, vendors };
+  // product and notes are part of the extraction instructions, which have a fixed room: a text that is too long would make
+  // every page read fail at Context.dev. Say by how much, so that the agent shortens it before anything is read.
+  const over = extractionInstructions(domain).length - INSTRUCTIONS_LIMIT;
+  if (over > 0) return { ok: false, errors: [`notes: product and notes are part of the extraction instructions, and together they are ${over} characters too long. Shorten notes${c.notes ? "" : " or product"} by at least ${over} characters.`] };
+  return { ok: true, domain };
 }
 
 /** The config that parseConfig() would turn into this Domain. Used to revise a playground. */

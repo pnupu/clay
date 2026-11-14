@@ -183,6 +183,13 @@ export function extractionSchema(d: Domain) {
   };
 }
 
+/**
+ * Context.dev takes at most 2,000 characters of extraction instructions (ScrapeJsonParams.instructions, maxLength 2000 in
+ * docs.context.dev/openapi.json on 2026-11-14). A longer text is refused with "too big, max 2000" for every page, so a
+ * playground with such a text reads nothing. lib/config.ts refuses a config whose product and notes do not fit.
+ */
+export const INSTRUCTIONS_LIMIT = 2000;
+
 export const extractionInstructions = (d: Domain) =>
   `Extract the pricing of this vendor's ${d.product}. ` +
   "Use only facts stated on this page. Never estimate, infer or calculate a number: when the page does not state it, return null. " +
