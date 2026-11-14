@@ -3,6 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
 import { exampleGroups } from "@/app/example-groups";
+import { CLERK_TEXT } from "@/app/clerk-text";
 import { ROOT_CSS } from "@/app/tokens";
 import KitScripts from "./kit-scripts";
 import "@/app/clay.css";
@@ -88,5 +89,5 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       </body>
     </html>
   );
-  return clerkOn() ? <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/connect" afterSignOutUrl="/">{body}</ClerkProvider> : body;
+  return clerkOn() ? <ClerkProvider localization={CLERK_TEXT} signInUrl="/sign-in" signUpUrl="/sign-up" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/connect" afterSignOutUrl="/">{body}</ClerkProvider> : body;
 }

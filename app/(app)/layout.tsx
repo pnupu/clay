@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import Account from "@/app/account";
 import { clerkOn, viewer } from "@/app/api/respond";
 import { exampleGroups } from "@/app/example-groups";
+import { CLERK_TEXT } from "@/app/clerk-text";
 import { ROOT_CSS } from "@/app/tokens";
 import "@/app/clay.css";
 import "@/app/app.css";
@@ -67,5 +68,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
   // Without Clerk keys the app runs as before accounts existed: the owner key only.
-  return clerkOn() ? <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/connect" afterSignOutUrl="/">{body}</ClerkProvider> : body;
+  return clerkOn() ? <ClerkProvider localization={CLERK_TEXT} signInUrl="/sign-in" signUpUrl="/sign-up" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/connect" afterSignOutUrl="/">{body}</ClerkProvider> : body;
 }
