@@ -24,7 +24,7 @@ const WAIT_MS = Number(process.env.CLAY_TOOL_WAIT_MS ?? 20_000);
  * How long a create or a revise waits for its own web reads (pricing pages, data.web) before it answers. The person waits
  * for the URL, and the page fills in by itself, so the call answers at once: a read that is already done or cached still
  * answers "done" in one call, and every other build says "running" up to 17 seconds sooner. read_playground and
- * recheck_playground keep WAIT_MS; so does a preview whose only read is the brand (a second call would cost more).
+ * recheck_playground keep WAIT_MS; so does the brand of a preview whose web sources are read (firstAnswer below).
  */
 const FIRST_WAIT_MS = Math.min(WAIT_MS, Number(process.env.CLAY_FIRST_WAIT_MS ?? 3_000));
 
@@ -67,6 +67,15 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
     if (!work) return { done: true, value: null };
     background(work.catch(() => {}));
     return Promise.race([work.then((value) => ({ done: true as const, value })), new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), ms))]);
+  };
+  /**
+   * The wait of a preview create or revise. Web sources get the short wait. The brand keeps the long one while nothing
+   * else is being read, because a second call for the colours alone would cost more than it saves; when web sources
+   * still run after the short wait, a second call comes anyway, and the answer does not wait for the brand.
+   */
+  const firstAnswer = async (r: { brand: Promise<void> | null; web: Promise<string | null> | null }) => {
+    const brand = within(r.brand);
+    if ((await within(r.web, FIRST_WAIT_MS)).done) await brand;
   };
   // Ownership: the caller sees their own playgrounds (the admin sees all) and may read the examples (lib/accounts.ts).
   const list = async () => Object.values((await load()).playgrounds).filter((p) => canWrite(currentActor(), p)).map((p) => ({ playground_id: p.domain.id, title: p.domain.question, url: url(p.domain.id), ...(p.kit ? { kind: "preview", settled: !!p.kit.settled } : { kind: "price", decision_saved: !!p.decision }) }));
@@ -149,7 +158,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       if (parsed.kind === "preview") {
         const r = await createPreview(parsed.domain, parsed.kit);
         if ("refused" in r) return fail(r.refused);
-        await within(Promise.all([r.brand, r.web]), r.web ? FIRST_WAIT_MS : WAIT_MS);
+        await firstAnswer(r);
         return preview(r.id, { ...tellNow(url(r.id)), ...renamed(r.id), ...(r.existed ? again : {}), ...(await leftOut(r.id, parsed.leftOut)) }, parsed.warnings);
       }
       const r = await createPlayground(parsed.domain, origin);
@@ -291,7 +300,7 @@ export function buildServer(origin: string, background: (work: Promise<unknown>)
       try {
         if (parsed.kind === "preview") {
           const r = await revisePreview(parsed.domain, parsed.kit);
-          await within(Promise.all([r.brand, r.web]), r.web ? FIRST_WAIT_MS : WAIT_MS);
+          await firstAnswer(r);
           const preview_kept = !r.previewKept ? null : r.outputsKept ? "Only words changed: the preview code, the controls and the outputs are the same, so the verified state and the settled result stand." : "The preview code and the controls are the same, so its verified state stands. The outputs changed: the person must reload the page before they settle.";
           return preview(playground_id, { ...(r.unpublished ? { example_mark_cleared: EXAMPLE_CLEARED } : {}), settled_result_cleared: r.settledCleared, ...(preview_kept ? { preview_kept } : {}), tell_person, ...(await leftOut(playground_id, parsed.leftOut)) }, parsed.warnings);
         }
