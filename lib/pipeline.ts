@@ -7,6 +7,7 @@ import { brand, cd, ContextDevError, scrape, capturedAt, servedFromCache } from 
 import { confirmed, diffModels, noPriceMark, noPriceRead, verdict } from "./diff";
 import { BRAND_PENDING, brandPending, runSignature, type Kit, type KitState } from "./kit";
 import { confirmChanges, diffWeb, guard, pageHash, webInstructions, webSchema, WEB_LIMITS, type WebChange, type WebRead, type WebSource, type WebState, CACHED_FACTS, oldestCapture, staleCapture } from "./web";
+import { alertOnChange, holdsNow, sendAlert } from "./alert";
 import { endWork, insertPlayground, load, newPlayground, publicBase, sourceArrived, startWork, update, workStatus, type ChangeEvent, type Playground, type Snapshot, type Source, type Work } from "./store";
 
 export const DEMO_PATH = "/demo-vendor/pricing";
@@ -675,7 +676,10 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
     error = message(e);
     if (e instanceof ContextDevError && e.stop) throw e;
   } finally {
+    /** The message to the owner's alert address when this write changes whether the saved decision holds (lib/alert.ts). */
+    let tell: { url: string; text: string } | null = null;
     await update((s) => {
+      tell = null;
       const p = s.playgrounds[pg];
       arrived(p, id);
       if (!p?.sources[id]) return; // revised or removed while the page was read
@@ -690,6 +694,7 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       // The page states no price: `error` holds the explanation of that (collect(): what was tried), and the source is
       // marked unpriced, apart from a failed read. A failure text of an earlier check is not an explanation: it is replaced.
       const stored = p.sources[id];
+      const heldBefore = p.alert ? holdsNow(p) : null;
       const noPrice = !hasPrices(snapshot.model);
       const read = error == null && note == null;
       const why = noPrice ? (stored.unpriced ? stored.error : `No price is stated on the pricing page of ${stored.name} (${emptyReason(snapshot.model)}).`) : null;
@@ -702,7 +707,20 @@ async function recheckOnce(pg: string, id: string, trigger: ChangeEvent["trigger
       else if (error == null) stored.noPriceSeenAt = null;
       Object.assign(stored, { snapshot: src.demo ? { ...snapshot, url: demoUrl(origin) } : snapshot, error: error ?? note ?? why, unpriced: read && noPrice, ...(read ? { unpricedSince: since } : {}), ...(error == null && readAt && !held ? { readAt } : {}), lastCheckedAt: new Date().toISOString(), ...(src.demo ? { url: demoUrl(origin) } : {}) });
       if (event) p.events = [event, ...p.events].slice(0, 30);
+      // The one place where the data a saved decision is judged on changes after a re-check (the button, recheck_playground,
+      // the scheduled re-check and a monitor's webhook all store here): whether it still holds is told from here, once.
+      tell = alertOnChange(p, heldBefore, event, `${publicBase() ?? origin}/p/${pg}`);
     });
+    // Sent after the store is written, so a slow or failed send never fails the re-check or holds the store; the result is
+    // kept for the owner.
+    const message = tell as { url: string; text: string } | null;
+    if (message) {
+      const r = await sendAlert(message.url, message.text);
+      await update((s) => {
+        const a = s.playgrounds[pg]?.alert;
+        if (a && a.url === message.url) a.last = { at: new Date().toISOString(), ok: r.ok, status: r.status, kind: "change" };
+      }).catch(() => {});
+    }
   }
   return event;
 }

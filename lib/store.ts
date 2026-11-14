@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { DOMAIN, type Domain, type PricingModel } from "./domain.ts";
 import type { Decision, FieldChange, Verdict } from "./diff.ts";
 import type { KitState } from "./kit.ts";
+import type { Alert } from "./alert.ts";
 import { boundStorage, currentUserId, isExample, keepPublished, StorageRefused, playgroundCapMessage, type Account, type Discarded, deploymentCapMessage } from "./accounts.ts";
 
 export type Snapshot = {
@@ -131,6 +132,8 @@ export type Playground = {
   discardedWrites?: Discarded[];
   /** Results of a webhook monitor's re-check that the owner's storage bounds kept out (accounts.ts, boundOwners). Owner only. */
   storageKept?: { at: string }[];
+  /** Where to tell the owner that the saved decision stopped holding or holds again (lib/alert.ts). A secret: owner only. */
+  alert?: Alert | null;
 };
 
 export type Store = {

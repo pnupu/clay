@@ -185,7 +185,7 @@ export function nonOwnerView(p: Playground): Playground {
   // alone can tell which values the owner tried, when code fails only for some. A non-owner gets none of it.
   const preview = p.kit ? { status: "unverified" as const, error: null, at: null } : undefined;
   // discardedWrites: told to the owner only.
-  return { ...p, exploration: null, discardedWrites: undefined, storageKept: undefined, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
+  return { ...p, exploration: null, discardedWrites: undefined, storageKept: undefined, alert: undefined, ...(p.kit ? { kit: { ...p.kit, settled: null, exploration: null, preview: preview! } } : {}) };
 }
 /**
  * The version of what a visitor sees of a playground: a hash of the non-owner view itself (nonOwnerView), so whatever

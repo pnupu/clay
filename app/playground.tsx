@@ -11,6 +11,7 @@ import { demoFields, demoModel, type DemoFields } from "@/lib/demo";
 import { commitNumber, liveNumber } from "@/lib/numberbox";
 import { isCubic, isLog, toPos, toValue } from "./scale";
 import { useFlip } from "./flip";
+import AlertSetting from "./alert";
 import type { Exploration, PublicState } from "@/lib/store";
 
 type Src = PublicState["sources"][string];
@@ -390,6 +391,7 @@ export default function Playground({ domain, explored, canWrite, admin, embedded
               ) : (
                 <Standing decision={decision} st={savedStand} name={nameOf(decision.chosen)!} cheapestName={nameOf(savedStand.cheapest)} savedWords={wordsOf(saved ?? decision)} atSaved={atSaved} own={canWrite} now={now} file={canWrite ? recordPath(domain.id) : null} checked={Object.values(sources).map((x) => (x.error ? x.snapshot?.fetchedAt : (x.lastCheckedAt ?? x.snapshot?.fetchedAt)) ?? "").filter(Boolean).sort()[0] ?? null} onLoad={loadSaved} onClear={canWrite ? () => run("Clearing", `${api}/decision`, "DELETE") : null} />
               )}
+              {canWrite && decision && savedStand && <AlertSetting api={api} />}
               {!canWrite && <p className="small" data-example style={{ marginTop: 10 }}>This is an example, so no decision is saved here. {connected ? "Ask your agent to build one and save your own." : <><Link href="/connect" prefetch={false}>Connect your own agent</Link> to build one and save your own.</>}</p>}
               {canWrite && decision && !pick && !atSaved && <p className="small muted" style={{ marginTop: 10 }}>To save a decision for the values you are trying, select a vendor in the ranking.</p>}
               {pick && unsaved && canWrite && (
